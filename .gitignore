@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+venv/
+.env
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (prevent repo bloat)
+data/
+output/
+archive/
+*.csv
+*.xlsx
+*.h5
+*.pth
+*.log
+*.bak
+.ipynb_checkpoints/

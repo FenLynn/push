@@ -1,0 +1,4 @@
+#!/bin/sh
+# Pre-commit hook
+echo "[Scigit] Running pre-commit checks..."
+# Add doc generation logic here if needed

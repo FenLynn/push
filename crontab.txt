@@ -1,0 +1,36 @@
+## morning
+00 7 * * * . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_morning.sh  >> ~/log/log.cron 2>&1 &
+
+## finance
+25 20  * * * . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_finance.sh  >> ~/log/log.cron 2>&1 &
+
+## paper
+30 19  * * * . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_paper.sh  >> ~/log/log.cron 2>&1 &
+
+## stock
+31 11  * * . /root/.bashrc; 1-5 /bin/bash ${PUSHPATH}/run/push_stock.sh  >> ~/log/log.cron 2>&1 &
+06 15  * * . /root/.bashrc; 1-5 /bin/bash ${PUSHPATH}/run/push_stock.sh  >> ~/log/log.cron 2>&1 &
+
+## etf
+30 10  * * . /root/.bashrc; 1-5 /bin/bash ${PUSHPATH}/run/push_etf.sh  >> ~/log/log.cron 2>&1 &
+00 14  * * . /root/.bashrc; 1-5 /bin/bash ${PUSHPATH}/run/push_etf.sh  >> ~/log/log.cron 2>&1 &
+
+## game
+30 16  * * . /root/.bashrc; 1-5 /bin/bash ${PUSHPATH}/run/push_game.sh  >> ~/log/log.cron 2>&1 &
+00 13  * * . /root/.bashrc; 0,6 /bin/bash ${PUSHPATH}/run/push_game.sh  >> ~/log/log.cron 2>&1 &
+
+#### update info
+00 19  * * * . /root/.bashrc; /bin/bash ${PUSHPATH}run/update_daily.sh  >> ~/log/log.cron 2>&1 &
+
+#### damai
+00 8  * * * . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_damai.sh  >> ~/log/log.cron 2>&1 &
+
+
+#### life
+00 21  * * * . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_life.sh  >> ~/log/log.cron 2>&1 &
+
+## fund
+30 23  * * 1-5 . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_night.sh  >> ~/log/log.cron 2>&1 &
+30 5   * * 2-6 . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_night.sh  >> ~/log/log.cron 2>&1 &
+
+30 21  * * 1-5 . /root/.bashrc; /bin/bash ${PUSHPATH}/run/push_fund.sh  >> ~/log/log.cron 2>&1 &

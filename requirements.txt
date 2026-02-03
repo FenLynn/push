@@ -1,0 +1,12 @@
+pandas
+matplotlib
+akshare
+chinese_calendar
+jieba
+wordcloud
+zhdate
+opencv-python
+tqdm
+bs4
+ttrss-python
+opencv-python-headless
