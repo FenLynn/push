@@ -6,7 +6,10 @@ from .indicators import (
     CPIIndicator, SocialFinanceIndicator,
     MarginIndicator, ForexIndicator, CommodityIndicator,
     SOXIndicator, ShiborIndicator, BondIndicator,
-    GDPIndicator, PPIIndicator, PMIIndicator, M2Indicator
+    GDPIndicator, PPIIndicator, PMIIndicator, M2Indicator,
+    SugarIndicator, CommodityIndexIndicator, EnergyIndexIndicator,
+    PigIndicator, OilIndicator,
+    LPRIndicator, InternationalRateIndicator, InsuranceIndicator
 )
 from datetime import datetime
 import logging
@@ -18,7 +21,7 @@ class FinanceSource(BaseSource):
         self.plotter = Plotter()
         self.indicators = [
             CPIIndicator(self.manager, self.plotter),
-            # SocialFinanceIndicator(self.manager, self.plotter),
+            SocialFinanceIndicator(self.manager, self.plotter),
             MarginIndicator(self.manager, self.plotter),
             ForexIndicator(self.manager, self.plotter),
             CommodityIndicator(self.manager, self.plotter),
@@ -30,6 +33,16 @@ class FinanceSource(BaseSource):
             PPIIndicator(self.manager, self.plotter),
             PMIIndicator(self.manager, self.plotter),
             M2Indicator(self.manager, self.plotter),
+            # Phase 2: Price and Commodity Indices
+            SugarIndicator(self.manager, self.plotter),
+            CommodityIndexIndicator(self.manager, self.plotter),
+            EnergyIndexIndicator(self.manager, self.plotter),
+            PigIndicator(self.manager, self.plotter),
+            OilIndicator(self.manager, self.plotter),
+            # Phase 3: Financial Interest Rates
+            LPRIndicator(self.manager, self.plotter),
+            InternationalRateIndicator(self.manager, self.plotter),
+            InsuranceIndicator(self.manager, self.plotter),
         ]
         self.logger = logging.getLogger("Push.Source.Finance")
 

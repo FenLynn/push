@@ -11,3 +11,11 @@ from .gdp import GDPIndicator
 from .ppi import PPIIndicator
 from .pmi import PMIIndicator
 from .m2 import M2Indicator
+from .sugar import SugarIndicator
+from .commodity_index import CommodityIndexIndicator
+from .energy_index import EnergyIndexIndicator
+from .pig import PigIndicator
+from .oil import OilIndicator
+from .lpr import LPRIndicator
+from .international_rate import InternationalRateIndicator
+from .insurance import InsuranceIndicator
