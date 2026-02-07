@@ -1,6 +1,14 @@
 from .config import *
 from .net import *
 from .time import *
+import random
+import time
+import requests
+import json
+import base64
+import numpy as np
+import cv2
+from io import BytesIO
 
 def upload_image_to_cdn(image_path,is_compress=0,target_size=150,_cdn=1): 
     if is_vps:
@@ -9,38 +17,57 @@ def upload_image_to_cdn(image_path,is_compress=0,target_size=150,_cdn=1):
         url=upload_image_to_github(image_path=image_path, is_compress=is_compress, target_size=target_size,_cdn=_cdn)
     return url
 
-def upload_image_to_smms(image_path,is_compress=0,target_size=150,_cdn=1):   #服务器用
+def upload_image_to_smms(image_path, is_compress=0, target_size=150, _cdn=1):
+    """
+    Upload to SMMS with retry logic and CDN optimization.
+    Stats: 3 retries, random 1-10s delay.
+    """
     if is_compress:
         pic_compress(pic_path=image_path, out_path=image_path, target_size=target_size)
-    else:
-        pass
+    
     headers = {'Authorization': smms_token}
-    files = {'smfile': open(image_path, 'rb')}
     url = 'https://smms.app/api/v2/upload'
+    
+    final_url = ""
+    max_retries = 3
+    
+    print(f"Info: Starting upload for {image_path} (Max retries: {max_retries})")
 
-    for i in range(5):
-        print ('Info: Upload Round {} for pic: {}'.format(i+1,image_path))
-#        time.sleep(15)
+    for i in range(max_retries):
         try:
-            res = requests.post(url, files=files, headers=headers).json()
-            print ('----------- \n')
-            print (res)
-            print ('----------- \n')
-            ss =  res['data']['url'] if res['success'] else res['images']
-            break
-        except json.decoder.JSONDecodeError or requests.exceptions.JSONDecodeError:
-            print ('Info:  {} upload error '.format(image_path))
-            ss = ''
-            time.sleep(5)
-            continue
-    if not ss:
-        return ss
-    else:
-        print (ss)
-        _cdnurl=cdn(ss) if _cdn else ss
-        print (_cdnurl)
-        return _cdnurl
-
+            files = {'smfile': open(image_path, 'rb')}
+            res = requests.post(url, files=files, headers=headers, timeout=30).json()
+            
+            if res.get('success'):
+                final_url = res['data']['url']
+                print(f"Info: Upload success on round {i+1}")
+                break
+            elif res.get('code') == 'image_repeated':
+                final_url = res['images']
+                print(f"Info: Image already exists at {final_url}")
+                break
+            else:
+                print(f"Warning: Upload failed on round {i+1}. Message: {res.get('message')}")
+        
+        except Exception as e:
+            print(f"Warning: Exception on round {i+1}: {e}")
+        
+        # Random backoff if not last attempt
+        if i < max_retries - 1:
+            wait_time = random.randint(1, 10)
+            print(f"Info: Waiting {wait_time}s before retry...")
+            time.sleep(wait_time)
+            
+    if not final_url:
+        print(f"Error: Failed to upload {image_path} after {max_retries} attempts.")
+        return None
+        
+    print(f"Info: Final SMMS URL: {final_url}")
+    
+    # CDN handling
+    if _cdn:
+        return cdn(final_url)
+    return final_url
 
 def upload_image_to_github(image_path, is_compress=0, target_size=150, _cdn=1) -> str:
     # 配置参数（需用户修改部分）
@@ -56,11 +83,6 @@ def upload_image_to_github(image_path, is_compress=0, target_size=150, _cdn=1) -
     if is_compress:
         pic_compress(pic_path=image_path, out_path=image_path, target_size=target_size)
 
-    # def check_image_exist(api_url):
-    #     get_response = requests.get(api_url,  headers=headers)
-    #     sha = get_response.json().get("sha")  if get_response.status_code == 200 else None 
-    #     return sha
-    
     def check_proxy_available():
         """检查代理服务器连通性"""
         try:
@@ -80,7 +102,6 @@ def upload_image_to_github(image_path, is_compress=0, target_size=150, _cdn=1) -
         api_url = f"https://api.github.com/repos/{config['username']}/{config['repo']}/contents/{filename}"
         headers = {
             "Authorization": f"token {config['token']}",
-            #"Authorization": f"Bearer {config['token']}",
             "Accept": "application/vnd.github.v3+json"
         }
         data = {
@@ -88,22 +109,14 @@ def upload_image_to_github(image_path, is_compress=0, target_size=150, _cdn=1) -
             "content": encoded_image,
             "branch": config['branch']
         }
-        # sha = check_image_exist(api_url)
-        # #print (sha)
-        # if sha :
-        #     data["sha"] = sha
         
         response = requests.put(api_url, json=data, headers=headers, timeout=10)  # 首次无代理上传
-        mylog.debug(response.status_code)
-        mylog.debug(response.json()['content']['html_url'])
         
         if response.status_code == 201:
             image_url=response.json()['content']['html_url']
             cdn_url=f"https://{config['cdn_domain']}/gh/{config['username']}/{config['repo']}@{config['branch']}/{filename}"
             print (cdn_url)
             return cdn_url
-            
-            #return cdn(image_url)
         else:
             raise Exception(f"API Error: {response.json().get('message')}")
 
@@ -126,8 +139,6 @@ def upload_image_to_github(image_path, is_compress=0, target_size=150, _cdn=1) -
         return ""
     return ""
 
-
-
 def pic_compress(pic_path='./test.jpg', out_path='./test.jpg', target_size=199, quality=99, step=5, pic_type='.jpg'):
     # 读取图片bytes
     with open(pic_path, 'rb') as f:
@@ -135,7 +146,7 @@ def pic_compress(pic_path='./test.jpg', out_path='./test.jpg', target_size=199, 
     img_np = np.frombuffer(pic_byte, np.uint8)
     img_cv = cv2.imdecode(img_np, cv2.IMREAD_ANYCOLOR)
     current_size = len(pic_byte) / 1024
-    #mylog.debug("图片压缩前的大小为(KB)：", current_size)
+    
     while current_size > target_size:
         pic_byte = cv2.imencode(pic_type, img_cv, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1]
         if quality - step < 0:
@@ -154,21 +165,19 @@ def cdn(_url):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     }
     try:
-        response = safe_request(_cdn_request_url, headers=headers)
-        data=response.json()
-        if data['code'] == 200:
-            print ('Info: {} cdn success!'.format(data['url']))
+        response = requests.get(_cdn_request_url, headers=headers, timeout=10)
+        data = response.json()
+        if data.get('code') == 200:
+            print(f"Info: CDN Success -> {data['url']}")
             return data['url']
         else:
-            print ('Info: {} cdn failure!'.format(_url))
+            print(f"Warning: CDN Failed ({data.get('msg', 'unknown')}), using original: {_url}")
             return _url
-    except:
+    except Exception as e:
+        print(f"Warning: CDN Exception {e}, using original: {_url}")
         return _url
 
-
-
-
-
+# ... Plot helper functions (fmt_demical, pic1_fmt etc) maintained ...
 def fmt_demical(_df,column_list=[],num=2):
     for i in column_list:
         _df[i]=round(_df[i],2)
@@ -177,7 +186,6 @@ def fmt_demical(_df,column_list=[],num=2):
 def fmt_no(num,ndem=2):
     return round(num,2)
 
-        
 def pic1_fmt(fig,axes,title='',xlabel='x',ylabel='y',rotation=15,sci_on=False):
     axes.set_title(title,fontsize=24)
     axes.grid(linestyle='--')
@@ -189,7 +197,7 @@ def pic1_fmt(fig,axes,title='',xlabel='x',ylabel='y',rotation=15,sci_on=False):
     if sci_on:
         axes.ticklabel_format(style='sci', scilimits=(-1,2), axis='y')
     fig.tight_layout()
-    
+
 def pic11_fmt(fig,axes,axes2,title='',xlabel='x',ylabel1='y1',ylabel2='y2',rotation=15,sci_on=False,set_label_y_color=True):
     axes.set_title(title,fontsize=24)
     axes.grid(linestyle='--')
@@ -217,7 +225,6 @@ def pic11_fmt(fig,axes,axes2,title='',xlabel='x',ylabel1='y1',ylabel2='y2',rotat
         axes.ticklabel_format(style='sci', scilimits=(-1,2), axis='y')
         axes2.ticklabel_format(style='sci', scilimits=(-1,2), axis='y')
     fig.tight_layout()
-    
 
 def pic12_fmt(fig,axes,title='',xlabel='x',ylabel='y',rotation=15,sci_on=False,set_label_y_color=True):
     plt.subplots_adjust(wspace = 0, hspace = 0 )
@@ -249,7 +256,6 @@ def pic12_fmt(fig,axes,title='',xlabel='x',ylabel='y',rotation=15,sci_on=False,s
         axes[1].ticklabel_format(style='sci', scilimits=(-1,2), axis='y')
     fig.tight_layout()
 
-
 def pic21_fmt(fig,axes,title='',xlabel='x',ylabel1='y',ylabel2='y',rotation=15,sci_on=False,set_label_y_color=True):
     plt.subplots_adjust(wspace = 0, hspace = 0 )
     axes[0].set_title(title,fontsize=24)
@@ -263,7 +269,6 @@ def pic21_fmt(fig,axes,title='',xlabel='x',ylabel1='y',ylabel2='y',rotation=15,s
         axes[1].spines['left'].set_color(mycolors[1])
         axes[0].tick_params(axis = 'y', which = 'both', labelsize = 12, colors=mycolors[0]) 
         axes[1].tick_params(axis = 'y', which = 'both', labelsize = 12, colors=mycolors[1])
-
     else:
         axes[0].set_ylabel(ylabel1,fontsize=16)
         axes[1].set_ylabel(ylabel2,fontsize=16)

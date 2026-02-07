@@ -1,0 +1,13 @@
+# Local 环境配置 - 覆盖 default.yaml 中的值
+# 主机名: py, localhost, 或 IP 192.168.*
+
+network:
+  # 本地 TTR RSS（局域网）
+  ttrss_url: "http://192.168.12.21:1040"
+  ttrss_username: "admin"
+  # ttrss_password 仍从环境变量读取
+  
+  # 本地不需要代理
+  http_proxy: ""
+
+# 其他配置继承 default.yaml

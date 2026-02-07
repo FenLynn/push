@@ -313,7 +313,7 @@ def get_oil_price():
 
     url='https://v2.xxapi.cn/api/oilPrice'
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
-    price={'四川':{'date':[],'price':[]},'陕西':{'date':[],'price':[]},'湖北':{'date':[],'price':[]}}
+    price={'四川':{'date':[],'price':[]},'陕西':{'date':[],'price':[]},'湖北':{'date':[],'price':[]},'北京':{'date':[],'price':[]}}
     try:
         #response = safe_request.get(url, headers=headers)
         response = safe_request(url,  timeout=5 ,headers=headers)

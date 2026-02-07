@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>{{ title }}</title>
+    <style>
+        /* Pure White Theme - No Color Config */
+        :root{--bg:#ffffff;--c:#ffffff;--t:#333333;--m:#999999;--b:#eeeeee;--a:#3b82f6;--h:#ef4444;--hb:#fff0f0}
+        @media(prefers-color-scheme:dark){:root{--bg:#000000;--c:#000000;--t:#f1f5f9;--m:#94a3b8;--b:#333333;--hb:#450a0a}}
+        *{margin:0;padding:0;box-sizing:border-box}html{width:100%;-webkit-text-size-adjust:100%}
+        body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--t);font-size:14px;line-height:1.4;min-height:100vh}
+        .container{padding:10px; max-width: 800px; margin: 0 auto;}
+        
+        /* Minimal Header */
+        .header{background:var(--c);padding:15px 5px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+        .h-main{display:flex;align-items:center;gap:8px}
+        .h-icon{font-size:20px}
+        .h-title{font-weight:bold;font-size:18px;color:var(--t)}
+        .h-meta{font-size:12px;color:var(--m)}
+        
+        /* Minimal Card - No background distinction */
+        .card{background:var(--c);margin-bottom:20px;overflow:hidden}
+        .c-hd{padding:10px 5px;font-weight:bold;font-size:15px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--b)}
+        .c-nm{color:var(--t)}
+        .c-ct{color:var(--h);font-size:12px;font-weight:normal}
+        
+        /* Image Box - Pure White */
+        .c-img-box{padding:10px 0; min-height: 100px; background: var(--bg); display:flex; justify-content:center; align-items:center;}
+        .c-img{width:100%;display:block;}
+        
+        .c-ft{padding:8px 5px;text-align:right;font-size:12px;color:var(--m)}
+        
+        .ft{text-align:center;padding:30px;font-size:12px;color:var(--m)}
+        .err-msg{padding:40px;text-align:center;color:var(--m);font-size:12px;width:100%}
+        a{text-decoration:none; display:block;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="h-main">
+                <span class="h-icon">📈</span>
+                <div>
+                    <div class="h-title">{{ title }}</div>
+                    <div class="h-meta">{{ today }}</div>
+                </div>
+            </div>
+            <div class="h-meta">CoreDB</div>
+        </div>
+
+        {% for item in items %}
+        <div class="card">
+            <div class="c-hd">
+                <span class="c-nm">{{ item.display_name }}</span>
+                {% if item.value %}
+                <span class="c-ct">{{ item.value }}</span>
+                {% endif %}
+            </div>
+            
+            <a href="{{ item.url }}" target="_blank" class="c-img-box">
+                <img src="{{ item.url }}" alt="{{ item.name }}" class="c-img" loading="lazy" onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\'err-msg\'>图片加载失败 (上传失败)<br>请检查图床配置</div>'">
+            </a>
+            
+            <div class="c-ft">
+                Update: {{ item.date }}
+            </div>
+        </div>
+        {% endfor %}
+        
+        <div class="ft">
+            Power by Push Service
+        </div>
+    </div>
+</body>
+</html>

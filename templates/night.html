@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>{{ title }}</title>
+    <style>
+        :root{--bg:#ffffff;--c:#ffffff;--t:#333333;--m:#999999;--red:#ef4444;--green:#10b981}
+        @media(prefers-color-scheme:dark){:root{--bg:#000000;--c:#000000;--t:#f1f5f9;--m:#94a3b8;--red:#f87171;--green:#34d399}}
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--t);font-size:14px;line-height:1.4;min-height:100vh;padding:10px}
+        .header{background:var(--c);padding:12px;margin-bottom:15px}
+        .h-title{font-weight:800;font-size:16px}
+        .h-meta{font-size:12px;color:var(--m);margin-top:4px}
+        .section{background:var(--c);margin-bottom:15px;padding:10px}
+        .sec-title{font-size:14px;font-weight:700;margin-bottom:8px;color:#3b82f6}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{background:rgba(59,130,246,0.05);padding:6px 4px;text-align:center;font-weight:600;color:var(--t)}
+        td{padding:6px 4px;text-align:center;color:var(--t)}
+        tbody tr:nth-child(even){background:rgba(0,0,0,0.02)}
+        .green{color:var(--green)}
+        .red{color:var(--red)}
+        .ft{text-align:center;padding:20px;font-size:10px;color:var(--m)}
+        .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+        .chart-grid img{width:100%;display:block}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="h-title">🌙 {{ title }}</div>
+        <div class="h-meta">{{ date }}</div>
+    </div>
+
+    {% if indexes %}
+    <div class="section">
+        <div class="sec-title">📈 夜盘指数</div>
+        <table>
+            <tr>
+                <th>名称</th>
+                <th>涨跌幅</th>
+                <th>振幅</th>
+                <th>更新时间</th>
+            </tr>
+            {% for idx in indexes %}
+            <tr>
+                <td>{{ idx.name }}</td>
+                <td class="{{ 'green' if idx.change > 0 else 'red' if idx.change < 0 else '' }}">
+                    {{ idx.change }}
+                </td>
+                <td>{{ idx.amplitude }}</td>
+                <td style="font-size:11px">{{ idx.time }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        <img src="https://image.sinajs.cn/newchart/usstock/min/IXIC.gif" style="width:100%;margin-top:10px"/>
+    </div>
+    {% endif %}
+
+    {% if stocks %}
+    <div class="section">
+        <div class="sec-title">📈 夜盘股票</div>
+        <table>
+            <tr>
+                <th>名称</th>
+                <th>涨跌幅</th>
+                <th>成交额(亿)</th>
+                <th>市盈率</th>
+                <th>市值(亿)</th>
+            </tr>
+            {% for stock in stocks %}
+            <tr>
+                <td>{{ stock.name }}</td>
+                <td class="{{ 'green' if stock.change > 0 else 'red' if stock.change < 0 else '' }}">
+                    {{ stock.change }}
+                </td>
+                <td>{{ stock.volume }}</td>
+                <td>{{ stock.pe }}</td>
+                <td>{{ stock.market_cap }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        <div class="chart-grid">
+            <img src="https://image.sinajs.cn/newchart/usstock/min/TSLA.gif"/>
+            <img src="https://image.sinajs.cn/newchart/usstock/min/nvda.gif"/>
+            <img src="https://image.sinajs.cn/newchart/usstock/min/AAPL.gif"/>
+            <img src="https://image.sinajs.cn/newchart/usstock/min/BABA.gif"/>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="ft">Data via AkShare · Push Service</div>
+</body>
+</html>

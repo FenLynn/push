@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            --bg-body: #fff; --text-main: #333; --text-sub: #64748b;
+            --bg-card: #fff; --border-card: #f1f5f9;
+            --bg-header: #f8fafc; --text-header: #475569; --border-header: #e0f2fe;
+            --bg-th: #fff; --text-th: #94a3b8; --border-row: #f8fafc;
+            --hl-bg: #fff1f2; --hl-text: #e11d48;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-body: #0f172a; --text-main: #e2e8f0; --text-sub: #94a3b8;
+                --bg-card: #1e293b; --border-card: #334155;
+                --bg-header: #0f172a; --text-header: #cbd5e1; --border-header: #1e293b;
+                --bg-th: #1e293b; --text-th: #64748b; --border-row: #334155;
+                --hl-bg: #450a0a; --hl-text: #fca5a5;
+            }
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-size:16px; font-family:-apple-system,sans-serif; color:var(--text-main); background:var(--bg-body); }
+        .ct { padding:0; max-width:800px; margin:0 auto; width:100%; }
+        
+        /* Header */
+        .hd { display:flex; justify-content:space-between; align-items:center; padding:12px 10px; border-bottom:1px solid var(--border-card); }
+        .greeting { font-size:24px; font-weight:800; background:linear-gradient(135deg,#22d3ee,#3b82f6); -webkit-background-clip:text; color:transparent; }
+        .date { font-size:12px; color:var(--text-sub); font-weight:500; }
+
+        /* Card */
+        .cd { background:var(--bg-card); margin-bottom:16px; border-bottom:1px solid var(--border-card); }
+        .ch { padding:6px 10px; font-weight:700; font-size:14px; background:var(--bg-header); color:var(--text-header); display:flex; align-items:center; border-bottom:1px dashed var(--border-header); }
+        .cb { padding:0; }
+
+        /* Table */
+        table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
+        th { padding:4px 2px; font-size:11px; color:var(--text-th); text-align:left; background:var(--bg-th); white-space:nowrap; font-weight:400; } /* Normal weight */
+        td { padding:4px 2px; border-bottom:1px solid var(--border-row); color:var(--text-main); vertical-align:middle; } /* Auto height */
+        
+        /* Columns - Layout Adjusted */
+        .tm { width:48px; font-family:monospace; font-weight:500; color:var(--text-sub); text-align:center; white-space:nowrap; }
+        .tp { width:32px; text-align:center; }
+        .lg { width:32%; font-size:12px; color:var(--text-sub); font-weight:400; white-space:normal; line-height:1.3; } /* Wrapping enabled */
+        .vs { width:auto; font-weight:600; white-space:normal; } /* Wrapping enabled */
+        
+        .match-box { display:flex; align-items:center; flex-wrap:wrap; font-size:13px; gap:2px; } /* Wrap enabled */
+        .team { white-space:normal; word-break:break-word; } /* Wrap enabled */
+        .vs-tag { color:var(--text-sub); font-size:10px; margin:0 2px; font-weight:400; }
+        
+        /* Game Pill */
+        .g-pill { display:inline-block; padding:1px 3px; border-radius:3px; font-size:9px; font-weight:700; transform:scale(0.85); white-space:nowrap; }
+        .lol { background:#dbeafe; color:#1e40af; }
+        .kpl { background:#fae8ff; color:#86198f; }
+        .dota { background:#fee2e2; color:#991b1b; }
+        
+        /* Highlights */
+        .hl-row { background-color:var(--hl-bg); }
+        .hl-row .tm { color:var(--hl-text); font-weight:700; }
+        .hl-txt { color:var(--hl-text); font-weight:800; }
+        
+        /* Hero Banner - Revert to Dark Style */
+        .hero { 
+            background: linear-gradient(135deg, #1e293b, #0f172a); 
+            border-radius: 8px; 
+            padding: 12px; 
+            margin: 10px; 
+            color: #fff;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .hero::after {
+            content: "FOCUS"; position: absolute; right: -10px; bottom: -20px;
+            font-size: 60px; font-weight: 900; color: rgba(255,255,255,0.05); font-style: italic; pointer-events: none;
+        }
+        .hero-tag { background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; vertical-align: text-bottom; margin-right: 6px; }
+        .hero-title { font-size: 12px; color: #94a3b8; margin-bottom: 6px; display: flex; justify-content: space-between; }
+        .hero-teams { font-size: 18px; font-weight: 800; display: flex; align-items: center; justify-content: space-between; margin: 8px 0; }
+        .hero-vs { font-size: 14px; color: #64748b; margin: 0 10px; font-style: italic; }
+        .hero-tm { background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px; font-size: 13px; font-family: monospace; color: #fff; font-weight: 500; }
+
+        .ft { margin-top:10px; padding-top:10px; border-top:1px dashed var(--border-header); font-size:10px; color:var(--text-sub); text-align:center; }
+    </style>
+</head>
+<body>
+    <div class="ct">
+        <div class="hd">
+            <div class="greeting">🎮 电竞前线</div>
+            <div class="date">{{ date_str }}</div>
+        </div>
+
+        {% if hero_match %}
+        <div class="hero">
+            <div class="hero-title">
+                <span><span class="hero-tag">焦点</span>{{ hero_match.league }}</span>
+                <span class="hero-tm">{{ hero_match.time }}</span>
+            </div>
+            <div class="hero-teams">
+                <div style="flex:1; text-align:right;">{{ hero_match.team_a | safe }}</div>
+                <div class="hero-vs">VS</div>
+                <div style="flex:1; text-align:left; color:#0284c7;">{{ hero_match.team_b | safe }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if not days_data %}
+            <div style="padding:20px; text-align:center; color:#9ca3af; font-size:13px;">近期暂无赛程 😴</div>
+        {% else %}
+            {% for day in days_data %}
+            <div class="cd">
+                <div class="ch">
+                    {% if day.is_today %}🔥{% else %}📅{% endif %} 
+                    {{ day.date_label }} <span style="font-weight:400; font-size:12px; margin-left:6px; color:#94a3b8;">{{ day.weekday }}</span>
+                </div>
+                <div class="cb">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="tm">时间</th>
+                                <th class="tp">项目</th>
+                                <th class="lg">赛事</th>
+                                <th class="vs">对阵</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for match in day.matches %}
+                            <tr class="{% if match.highlight %}hl-row{% endif %}">
+                                <td class="tm">{{ match.time }}</td>
+                                <td class="tp">
+                                    {% if '王者' in match.type or 'KPL' in match.type %}
+                                    <span class="g-pill kpl">KPL</span>
+                                    {% elif '英雄' in match.type or 'LOL' in match.type or 'LPL' in match.type or 'LCK' in match.type %}
+                                    <span class="g-pill lol">LOL</span>
+                                    {% elif 'DOTA' in match.type or '刀塔' in match.type %}
+                                    <span class="g-pill dota">Dota</span>
+                                    {% else %}
+                                    <span class="g-pill" style="background:#f1f5f9;color:#475569">{{ match.type[:2] }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="lg">{{ match.league }}</td>
+                                <td class="vs">
+                                    <div class="match-box">
+                                        <span class="team">{{ match.team_a | safe }}</span>
+                                        <span class="vs-tag">vs</span>
+                                        <span class="team">{{ match.team_b | safe }}</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="ft">
+            Power by Antigravity · Generated at {{ update_time }}
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            --bg-body: #fff; --text-main: #333; --text-sub: #6b7280; --text-weak: #9ca3af;
+            --bg-card: #fff; --border-card: #f3f4f6;
+            --bg-header-c: #faf5ff; --text-header-c: #6b21a8; --border-header-c: #f3e8ff;
+            --bg-th: #fff; --text-th: #6b7280; --border-row: #f3f4f6;
+            --hl-hot: #dc2626; --hl-rate: #d97706;
+            --bg-page-header: linear-gradient(135deg, #f5f3ff 0%, #fff 100%);
+            --border-page-header: #d8b4fe;
+            --text-title: #4c1d95; --text-date-bg: #fff; --text-date-border: #ddd6fe; --text-date: #7c3aed;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-body: #0f172a; --text-main: #e2e8f0; --text-sub: #94a3b8; --text-weak: #64748b;
+                --bg-card: #1e293b; --border-card: #334155;
+                --bg-header-c: #3b0764; --text-header-c: #d8b4fe; --border-header-c: #581c87;
+                --bg-th: #1e293b; --text-th: #94a3b8; --border-row: #334155;
+                --hl-hot: #f87171; --hl-rate: #fbbf24;
+                --bg-page-header: #1e293b;
+                --border-page-header: #581c87;
+                --text-title: #e9d5ff; --text-date-bg: #3b0764; --text-date-border: #581c87; --text-date: #e9d5ff;
+            }
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-size: 16px; line-height: 1.4; font-family: -apple-system, sans-serif; color: var(--text-main); background: var(--bg-body); -webkit-text-size-adjust: 100%; }
+        .ct { padding: 8px; max-width: 800px; margin: 0 auto; width: 100%; }
+        
+        /* Compact Header */
+        .hd { display: flex; justify-content: space-between; align-items: center; padding: 12px 12px; margin-bottom: 12px; background: var(--bg-page-header); border-left: 5px solid var(--border-page-header); border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .hd-title { font-size: 20px; font-weight: 900; color: var(--text-title); letter-spacing: -0.5px; }
+        .hd-date { font-size: 13px; color: var(--text-date); font-weight: 500; background: var(--text-date-bg); padding: 4px 8px; border-radius: 12px; border: 1px solid var(--text-date-border); }
+
+        .cd { background: var(--bg-card); margin-bottom: 14px; border: 1px solid var(--border-card); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); overflow: hidden; }
+        .ch { padding: 10px 12px; font-weight: 700; font-size: 16px; background: var(--bg-header-c); color: var(--text-header-c); border-bottom: 1px solid var(--border-header-c); display: flex; align-items: center; }
+        .cb { padding: 0; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 15px; table-layout: fixed; }
+        
+        /* Rank */
+        th:first-child { width: 36px; text-align: center; color: var(--text-weak); }
+        td:first-child { text-align: center; color: var(--text-weak); font-weight: 700; }
+        
+        /* Name */
+        th:nth-child(2) { width: auto; text-align: left; padding-left: 4px; }
+        td:nth-child(2) { text-align: left; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; padding-right: 4px; }
+        
+        /* Common Cell */
+        th { padding: 8px 6px; font-size: 13px; font-weight: 400; color: var(--text-th); background: var(--bg-th); border-bottom: 1px solid var(--border-row); white-space: nowrap; }
+        td { padding: 11px 6px; border-bottom: 1px solid var(--border-row); color: var(--text-main); white-space: nowrap; }
+        
+        /* Last Column spacing */
+        th:last-child { padding-right: 12px; }
+        td:last-child { padding-right: 12px; }
+        
+        tr:last-child td { border-bottom: none; }
+        
+        /* Visuals */
+        .hot { color: var(--hl-hot); font-weight: 700; } 
+        .sub { font-size: 12px; color: var(--text-weak); margin-left: 4px; }
+        .hl { color: var(--hl-rate); } 
+        
+        .ft { margin-top: 20px; border-top: 1px dashed var(--border-card); padding-top: 15px; font-size: 13px; color: var(--text-weak); text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="ct">
+        <div class="hd">
+            <div class="hd-title">
+                <span style="font-size:24px; vertical-align: -2px; margin-right:6px;">🎬</span>{{ title }}
+            </div>
+            <div class="hd-date">
+                {{ date.split(' ')[0] }}
+            </div>
+        </div>
+
+        <!-- 1. Realtime Box Office -->
+        {% if box_real %}
+        <div class="cd">
+            <div class="ch">🔥 实时票房 (万)</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>影片</th>
+                            <th width="19%" style="text-align:right">实时</th>
+                            <th width="14%" style="text-align:right">占比</th>
+                            <th width="17%" style="text-align:right">累计(亿)</th>
+                            <th width="11%" style="text-align:right">天</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in box_real %}
+                        <tr>
+                            <td>{% if loop.index <= 3 %}🥇{% else %}{{ loop.index }}{% endif %}</td>
+                            <td>{{ i.name }}</td>
+                            <td class="hot" style="text-align:right">{{ i.box }}</td>
+                            <td style="text-align:right">{{ i.share }}%</td>
+                            <td class="hl" style="text-align:right">{{ i.total }}</td>
+                            <td style="text-align:right">{{ i.days }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 2. Yearly Box Office -->
+        {% if box_year %}
+        <div class="cd">
+            <div class="ch">📅 年度票房 (亿)</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>影片</th>
+                            <th width="18%" style="text-align:right">总票房</th>
+                            <th width="12%" style="text-align:right">票价</th>
+                            <th width="24%" style="text-align:right">日期</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in box_year %}
+                        <tr>
+                             <td>{% if loop.index <= 3 %}🥇{% else %}{{ loop.index }}{% endif %}</td>
+                            <td>{{ i.name }}</td>
+                            <td class="hot" style="text-align:right">{{ i.box }}</td>
+                            <td style="text-align:right">{{ i.avg }}</td>
+                            <td style="text-align:right;color:#aaa">{{ i.date }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 3. TV Series -->
+        {% if tv_list %}
+        <div class="cd">
+            <div class="ch">📺 热播剧</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>名称</th>
+                            <th width="18%" style="text-align:left">类型</th>
+                            <th width="16%" style="text-align:right">热度</th>
+                            <th width="16%" style="text-align:right">好评</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in tv_list %}
+                        <tr>
+                            <td>{% if loop.index <= 3 %}🥇{% else %}{{ loop.index }}{% endif %}</td>
+                            <td>{{ i.name }}</td>
+                            <td class="sub" style="text-align:left">{{ i.type.split('/')[0] }}</td>
+                            <td class="hot" style="text-align:right">{{ i.hot }}</td>
+                            <td class="hl" style="text-align:right">{{ i.rate }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- 4. Variety Shows -->
+        {% if show_list %}
+        <div class="cd">
+            <div class="ch">🎪 综艺</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>节目</th>
+                            <th width="20%" style="text-align:left">类型</th>
+                            <th width="16%" style="text-align:right">热度</th>
+                            <th width="16%" style="text-align:right">好评</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in show_list %}
+                        <tr>
+                            <td>{% if loop.index <= 3 %}🥇{% else %}{{ loop.index }}{% endif %}</td>
+                            <td>{{ i.name }}</td>
+                            <td class="sub" style="text-align:left">{{ i.type }}</td>
+                            <td class="hot" style="text-align:right">{{ i.hot }}</td>
+                             <td class="hl" style="text-align:right">{{ i.rate }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="ft">PushPlus • 娱乐风向标</div>
+    </div>
+</body>
+</html>

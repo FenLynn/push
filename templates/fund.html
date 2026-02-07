@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            --b:#fff;--t:#333;--ts:#444;--tw:#999;
+            --bc:#fff;--bd:#eee;
+            --bh:#f9fafb;--bdh:#eee;
+            --bth:#f3f4f6;--tth:#555;--br:#f0f0f0;--bre:#fafafa;
+            --bph:linear-gradient(135deg,#fef2f2 0%,#fff 100%);--bdph:#ef4444;
+            --bs:0 2px 6px rgba(239,68,68,.08);
+            --hl:#dc2626;--k:#d97706;
+            --plc:#16a34a;--plb:#ecfdf5;
+            --pmc:#d97706;--pmb:#fffbeb;
+            --phc:#ef4444;--phb:#fef2f2;
+            --tt:#1f2937;--td:#6b7280;--tdb:#fff;--tdbd:#e5e7eb;
+            --ft:#444;--ftb:#f3f4f6;
+            --fts:#333;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --b:#0f172a;--t:#e2e8f0;--ts:#cbd5e1;--tw:#64748b;
+                --bc:#1e293b;--bd:#334155;
+                --bh:#0f172a;--bdh:#334155;
+                --bth:#1e293b;--tth:#94a3b8;--br:#334155;--bre:#1e293b;
+                --bph:#1e293b;--bdph:#991b1b;
+                --bs:none;
+                --hl:#f87171;--k:#fbbf24;
+                --plc:#4ade80;--plb:#064e3b;
+                --pmc:#fbbf24;--pmb:#451a03;
+                --phc:#f87171;--phb:#450a0a;
+                --tt:#e2e8f0;--td:#94a3b8;--tdb:#334155;--tdbd:#475569;
+                --ft:#94a3b8;--ftb:#334155;
+                --fts:#e2e8f0;
+            }
+        }
+
+        body{font-size:16px;line-height:1.5;font-family:-apple-system,sans-serif;color:var(--t);background:var(--b)}
+        .ct{padding:8px;max-width:600px;margin:0 auto}
+        .cd{background:var(--bc);margin-bottom:10px;border:1px solid var(--bd);border-radius:6px}
+        .ch{padding:8px 10px;font-weight:700;font-size:16px;background:var(--bh);border-bottom:1px solid var(--bdh)}
+        /* Compact Table for Mobile (7 columns) - Font Increased to 15px */
+        table{width:100%;border-collapse:collapse;font-size:15px;table-layout:fixed}
+        
+        /* Layout Optimization (V14 - Spacing): 
+           Index: 30% (Keep Wide)
+           PE/PE%/PB/PB%: 10.5% each (42%) -> Increased for separation
+           Yield: 10.5%
+           Valuation: Remaining (~17.5%) -> Sufficient for 2 chars
+        */
+        th{background:var(--bth);padding:4px 0;font-size:12px;font-weight:600;color:var(--tth);text-align:right;vertical-align:middle;white-space:nowrap}
+        td{padding:6px 1px;border-bottom:1px solid var(--br);text-align:right;white-space:nowrap;color:var(--t)}
+        tr:nth-child(even){background-color:var(--bre)}
+
+        /* Col 1: Name (30%) */
+        th:first-child{width:30%;text-align:left;padding-left:4px}
+        td:first-child{text-align:left;padding-left:4px;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+        
+        /* Cols 2-5: PE/PB Pct - Width 10.5% */
+        th:nth-child(2),th:nth-child(3),th:nth-child(4),th:nth-child(5){width:10.5%}
+        
+        /* Col 6: Yield - Width 10.5% */
+        th:nth-child(6){width:10.5%}
+
+        /* Col 7: Valuation - Expand */
+        th:last-child{width:auto;padding-right:6px;padding-left:8px;text-align:center}
+        td:last-child{padding-right:6px;padding-left:8px;text-align:center}
+        
+        .k{margin-right:2px;font-size:12px}
+        .o{color:var(--hl);font-weight:700}
+        .s{color:var(--k);font-weight:800}
+        .n a{text-decoration:none;color:var(--t);font-weight:500}
+        
+        .l{color:var(--plc);background:var(--plb);padding:2px 6px;border-radius:4px;font-size:12px}
+        .m{color:var(--pmc);background:var(--pmb);padding:2px 6px;border-radius:4px;font-size:12px}
+        .h{color:var(--phc);background:var(--phb);padding:2px 6px;border-radius:4px;font-size:12px}
+        
+        .ft{margin-top:10px;border-top:1px solid var(--ftb);padding-top:10px;font-size:12px;color:var(--ft);text-align:left}
+        .fi{display:inline-block;margin-right:10px;line-height:1.4}
+        .hd{display:flex;justify-content:space-between;align-items:center;padding:12px;margin-bottom:10px;background:var(--bph);border-left:5px solid var(--bdph);border-radius:8px;box-shadow:var(--bs)}
+    </style>
+</head>
+<body>
+    <div class="ct">
+        <div class="hd">
+            <div style="font-size:20px;font-weight:900;color:var(--tt);letter-spacing:-.5px">
+                <span style="font-size:22px;vertical-align:-1px;margin-right:4px">📈</span>{{ title }}
+            </div>
+            <div style="font-size:12px;color:var(--td);font-weight:500;background:var(--tdb);padding:2px 6px;border-radius:12px;border:1px solid var(--tdbd)">
+                {{ date.split(' ')[0] }}
+            </div>
+        </div>
+
+        {% if f_l %}
+        <div class="cd">
+            <div class="ch" style="color:var(--plc);border-left:4px solid var(--plc)">🟢 低估 ({{ f_l|length }})</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>指数</th>
+                            <th>PE</th>
+                            <th>PE%</th>
+                            <th>PB</th>
+                            <th>PB%</th>
+                            <th>股息</th>
+                            <th>估值</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in f_l %}
+                        <tr>
+                            <td class="n">
+                                {% if loop.index <= 3 %}<span class="k">👑</span>{% endif %}
+                                <a href="{{ f.link }}"><span {% if f.roe|float > 15 %}class="s"{% endif %}>{{ f.name }}</span></a>
+                            </td>
+                            <td>{{ f.pe }}</td>
+                            <td>{{ f.pe_pct }}</td>
+                            <td>{{ f.pb }}</td>
+                            <td>{{ f.pb_pct }}</td>
+                            <td {% if f.yield|float > 4 %}class="o"{% endif %}>{{ f.yield }}</td>
+                            <td><span class="l">{{ f.valuation }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if f_m %}
+        <div class="cd">
+            <div class="ch" style="color:var(--pmc);border-left:4px solid var(--pmc)">🟠 正常 ({{ f_m|length }})</div>
+            <div class="cb">
+                <table>
+                     <thead>
+                        <tr>
+                            <th>指数</th>
+                            <th>PE</th>
+                            <th>PE%</th>
+                            <th>PB</th>
+                            <th>PB%</th>
+                            <th>股息</th>
+                            <th>估值</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                         {% for f in f_m %}
+                        <tr>
+                             <td class="n"><a href="{{ f.link }}"><span {% if f.roe|float > 15 %}class="s"{% endif %}>{{ f.name }}</span></a></td>
+                             <td>{{ f.pe }}</td>
+                             <td>{{ f.pe_pct }}</td>
+                             <td>{{ f.pb }}</td>
+                             <td>{{ f.pb_pct }}</td>
+                             <td {% if f.yield|float > 4 %}class="o"{% endif %}>{{ f.yield }}</td>
+                             <td><span class="m">{{ f.valuation }}</span></td>
+                        </tr>
+                         {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if f_h %}
+        <div class="cd">
+             <div class="ch" style="color:var(--phc);border-left:4px solid var(--phc)">🔴 高估 ({{ f_h|length }})</div>
+             <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>指数</th>
+                            <th>PE</th>
+                            <th>PE%</th>
+                            <th>PB</th>
+                            <th>PB%</th>
+                            <th>股息</th>
+                            <th>估值</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                         {% for f in f_h %}
+                         <tr>
+                             <td class="n"><a href="{{ f.link }}"><span {% if f.roe|float > 15 %}class="s"{% endif %}>{{ f.name }}</span></a></td>
+                             <td>{{ f.pe }}</td>
+                             <td>{{ f.pe_pct }}</td>
+                             <td>{{ f.pb }}</td>
+                             <td>{{ f.pb_pct }}</td>
+                             <td {% if f.yield|float > 4 %}class="o"{% endif %}>{{ f.yield }}</td>
+                             <td><span class="h">{{ f.valuation }}</span></td>
+                         </tr>
+                         {% endfor %}
+                    </tbody>
+                </table>
+             </div>
+        </div>
+        {% endif %}
+        
+        {% if not f_l and not f_m and not f_h %}
+        <div class="cd">
+            <div class="cb" style="text-align:center;padding:40px;color:var(--tw)">暂无数据</div>
+        </div>
+        {% endif %}
+
+        <div class="ft">
+            <div class="fi">👑低估榜首</div>
+            <div class="fi"><b style="color:var(--pmc)">黄金</b>:ROE>15%</div>
+            <div class="fi"><b style="color:var(--phc)">高息</b>:股息>4%</div>
+            <div class="fi"><b>PE%/PB%</b>:历史百分位</div>
+            <div style="margin-top:5px;text-align:center;color:#ccc;font-size:10px">
+                数据:蛋卷基金 • 点击指数名看详情
+            </div>
+        </div>
+    </div>
+</body>
+</html>

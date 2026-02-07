@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  push-service:
+    build: .
+    image: push-service:latest
+    container_name: push-service
+    volumes:
+      - .:/app
+    environment:
+      - PUSHPLUS_TOKEN=${PUSHPLUS_TOKEN}
+      - TTRSS_USER=${TTRSS_USER}
+      - TTRSS_PASSWORD=${TTRSS_PASSWORD}
+      - TTRSS_URL=${TTRSS_URL}
+    restart: unless-stopped
+    command: tail -f /dev/null

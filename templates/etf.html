@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            --b:#fff;--t:#333;--ts:#666;--tw:#999;
+            --bc:#fff;--bd:#eee;
+            --bh:#f9fafb;--bdh:#eee;
+            --bth:#f3f4f6;--tth:#555;--br:#f0f0f0;--bre:#fafafa;
+            /* Header Gradient - Blue for ETF */
+            --bph:linear-gradient(135deg, #eff6ff 0%, #fff 100%); --bdph:#3b82f6; 
+            --tt:#1e3a8a; --td:#64748b; --tdb:#f1f5f9; --tdbd:#cbd5e1;
+            
+            --bs:0 2px 6px rgba(59,130,246,.08);
+            
+            --red: #ef4444; --green: #10b981; --gray: #94a3b8; --blue: #3b82f6;
+            --bg-card: #ffffff; --border-card: #e2e8f0;
+            
+            /* Market Bar */
+            --mb-bg: rgba(59, 130, 246, 0.05); --mb-border: rgba(59, 130, 246, 0.1);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --b:#0f172a;--t:#e2e8f0;--ts:#94a3b8;--tw:#64748b;
+                --bc:#1e293b;--bd:#334155;
+                --bh:#0f172a;--bdh:#334155;
+                --bth:#1e293b;--tth:#94a3b8;--br:#334155;--bre:#1e293b;
+                
+                --bph:#1e293b; --bdph:#3b82f6;
+                --tt:#e0f2fe; --td:#94a3b8; --tdb:#334155; --tdbd:#475569;
+                
+                --bs:none;
+                
+                --red: #f87171; --green: #34d399; --gray: #64748b; --blue: #60a5fa;
+                --bg-card: #1e293b; --border-card: #334155;
+                
+                --mb-bg: rgba(59, 130, 246, 0.1); --mb-border: rgba(59, 130, 246, 0.2);
+            }
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing: antialiased; }
+        body { font-size:16px; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color:var(--t); background:var(--b); line-height: 1.5; }
+        .ct { padding:10px; max-width:800px; margin:0 auto; width:100%; }
+        
+        /* Fund-style Header */
+        .hd { display:flex; justify-content:space-between; align-items:center; padding:12px; margin-bottom:15px; background:var(--bph); border-left:5px solid var(--bdph); border-radius:8px; box-shadow:var(--bs); }
+        .hd-title { font-size:20px; font-weight:900; color:var(--tt); letter-spacing:-.5px; display: flex; align-items: center; }
+        .hd-date { font-size:12px; color:var(--td); font-weight:500; background:var(--tdb); padding:2px 6px; border-radius:12px; border:1px solid var(--tdbd); }
+        
+        /* Market Bar (Embedded in Header or Separate?) -> Keep separate for clarity */
+        .market-bar { display: flex; gap: 12px; background: var(--mb-bg); border: 1px solid var(--mb-border); padding: 8px 12px; border-radius: 8px; font-size: 14px; margin-bottom: 15px; }
+        .market-item { display: flex; align-items: center; gap: 6px; }
+        .market-label { opacity: 0.9; font-size: 11px; text-transform: uppercase; color: var(--ts); }
+        .market-val { font-weight: 700; font-family: monospace; color: var(--t); }
+
+        /* Stats Bar */
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+        .stat-card { background: var(--bc); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--bd); box-shadow: var(--bs); }
+        .stat-label { font-size: 11px; color: var(--ts); margin-bottom: 4px; }
+        .stat-val { font-size: 17px; font-weight: 800; color: var(--t); }
+        .stat-val span { font-size: 11px; font-weight: 500; margin-left: 2px; }
+
+        /* Sector Section */
+        .sc-hd { display: flex; align-items: center; gap: 8px; margin: 20px 0 8px; padding-left: 4px; }
+        .sc-title { font-size: 17px; font-weight: 800; color: var(--t); }
+        .sc-line { height: 2px; flex: 1; background: linear-gradient(to right, var(--bd), transparent); }
+
+        /* Card */
+        .cd { background:var(--bc); border-radius: 8px; border:1px solid var(--bd); overflow: hidden; margin-bottom: 12px; box-shadow: var(--bs); }
+        
+        /* Table */
+        table { width:100%; border-collapse:collapse; table-layout:fixed; }
+        th { background:var(--bth); padding:8px 8px; font-size:11px; color:var(--tth); text-align:right; border-bottom: 1px solid var(--bdh); font-weight:600; text-transform: uppercase; letter-spacing: 0.5px; } 
+        td { padding:10px 8px; border-bottom:1px solid var(--br); vertical-align:middle; text-align:right; font-weight: 500; font-size: 15px; white-space:nowrap; color: var(--t); }
+        
+        .name { text-align:left; width: 42%; font-weight: 700; color: var(--t); overflow:hidden; text-overflow:ellipsis; }
+        th:first-child { text-align:left; }
+        
+        .code { font-size: 11px; color: var(--ts); font-weight: 400; font-family: monospace; display: block; margin-top: 2px; }
+        .price { width: 18%; font-family: monospace; }
+        .change { width: 22%; font-weight: 800; }
+        .vol { width: 18%; font-family: monospace; color: var(--ts); font-size: 13px; }
+        
+        /* Change Colors */
+        .up { color: var(--red); }
+        .down { color: var(--green); }
+        .gray { color: var(--gray); }
+        
+        /* Badges */
+        .bdg { font-size: 10px; padding: 1px 4px; border-radius: 4px; margin-left: 3px; vertical-align: middle; transform: none; display:inline-block; }
+        .bdg-hot { background: var(--red); color: #fff; }
+        .bdg-blue { background: var(--blue); color: #fff; }
+        .bdg-dry { background: var(--bd); color: var(--ts); }
+
+        .p-up { color: var(--red); background: rgba(239, 68, 68, 0.1); padding: 2px 6px; border-radius: 4px; display: inline-block; min-width: 52px; font-size: 13px; }
+        .p-down { color: var(--green); background: rgba(16, 185, 129, 0.1); padding: 2px 6px; border-radius: 4px; display: inline-block; min-width: 52px; font-size: 13px; }
+
+        .ft { margin-top:25px; padding: 20px 0; border-top:1px solid var(--bd); font-size:11px; color:var(--ts); text-align:center; opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <div class="ct">
+        <!-- Dashboard Header -->
+        <div class="hd">
+            <div class="hd-title">
+                <span style="font-size:24px; margin-right:6px">📈</span>
+                {{ title }}
+            </div>
+            <div class="hd-date" style="padding:4px 8px; display:flex; gap:8px; align-items:center; font-family:monospace; font-size:14px; font-weight:700;">
+                <span style="color:var(--t)">💰{{ stats.total_vol }}亿</span>
+                <span style="height:12px; width:1px; background:var(--bd)"></span>
+                <span style="color:var(--red)">🔴{{ stats.up_count }}</span>
+                <span style="color:var(--green)">🟢{{ stats.down_count }}</span>
+            </div>
+        </div>
+        
+        <div class="market-bar">
+            {% if market.get('sh') %}
+            <div class="market-item">
+                <span class="market-label">上证:</span>
+                <span class="market-val">{{ market.sh.close }}</span>
+                <span class="market-val {% if market.sh.growth_rate|float > 0 %}up{% elif market.sh.growth_rate|float < 0 %}down{% endif %}">
+                    {% if market.sh.growth_rate|float > 0 %}+{% endif %}{{ market.sh.growth_rate }}%
+                </span>
+            </div>
+            {% endif %}
+            <div style="width:1px; height:12px; background:var(--bd); margin:0 4px"></div>
+            {% if market.get('sz') %}
+            <div class="market-item">
+                <span class="market-label">创业:</span>
+                <span class="market-val">{{ market.sz.close }}</span>
+                <span class="market-val {% if market.sz.growth_rate|float > 0 %}up{% elif market.sz.growth_rate|float < 0 %}down{% endif %}">
+                    {% if market.sz.growth_rate|float > 0 %}+{% endif %}{{ market.sz.growth_rate }}%
+                </span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">平均涨幅</div>
+                <div class="stat-val {% if stats.avg_change > 0 %}up{% elif stats.avg_change < 0 %}down{% endif %}">
+                    {{ stats.avg_change }}<span>%</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">领涨板块</div>
+                <div class="stat-val" style="font-size:16px; display:flex; align-items:baseline; gap:4px">
+                    <span>{{ stats.top_sector }}</span>
+                    <span style="font-size:13px; font-weight:700; color:{% if stats.top_sector_chg > 0 %}var(--red){% else %}var(--green){% endif %}">
+                        {% if stats.top_sector_chg > 0 %}+{% endif %}{{ stats.top_sector_chg }}%
+                    </span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">全场最热</div>
+                <div class="stat-val" style="font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">
+                    {{ stats.max_vol }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sector Loops -->
+        {% for sector, etfs in sectors.items() %}
+        <div class="sc-hd">
+            <div class="sc-title">{{ sector }}</div>
+            <div class="sc-line"></div>
+        </div>
+        <div class="cd">
+            <table>
+                <tbody>
+                    {% for etf in etfs %}
+                    <tr>
+                        <td class="name">
+                            {{ etf.name }}
+                            <span class="code">
+                                {{ etf.code }}
+                                {% if etf.badge == '放量' %}<span class="bdg bdg-hot">🔥 放量</span>
+                                {% elif etf.badge == '缩量' %}<span class="bdg bdg-blue">💤 缩量</span>
+                                {% elif etf.badge == '冷清' %}<span class="bdg bdg-dry">🧊 冷清</span>
+                                {% endif %}
+                            </span>
+                        </td>
+                        <td class="price">{{ etf.price }}</td>
+                        <td class="change">
+                            <span class="{% if etf.change > 0 %}p-up{% elif etf.change < 0 %}p-down{% else %}gray{% endif %}">
+                                {% if etf.change > 0 %}+{% endif %}{{ etf.change }}%
+                            </span>
+                        </td>
+                        <td class="vol">{{ etf.volume }}<span style="font-size:10px; margin-left:1px">亿</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+
+        <div class="ft">
+            AI Engine Antigravity · Dashboard Analytics v2.0
+        </div>
+    </div>
+</body>
+</html>

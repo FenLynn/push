@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="format-detection" content="telephone=no">
+    <title>股市推送</title>
+    <style>
+        body { font-size: 16px; line-height: 1.5; font-family: -apple-system, sans-serif; color: #333; }
+        .container { padding: 6px; max-width: 600px; margin: 0 auto; }
+        
+        /* New Header Layout */
+        .header { display: flex; flex-direction: column; align-items: center; padding: 12px 0 8px; }
+        .title { font-size: 24px; font-weight: 800; color: #ef4444; margin-bottom: 2px; }
+        .subtitle { color: #888; font-size: 13px; }
+
+        .card { background: #fff; margin-bottom: 10px; border: 1px solid #eee; border-radius: 6px; }
+        .card-header { padding: 8px 10px; font-weight: 700; font-size: 16px; background: #f9fafb; border-bottom: 1px solid #eee; }
+        .card-body { padding: 6px; }
+
+        /* Market Summary Grid */
+        .market-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; margin-bottom: 6px; }
+        .m-item { background: #f3f4f6; padding: 8px 4px; border-radius: 4px; }
+        .m-label { font-size: 12px; color: #666; }
+        .m-val { font-size: 15px; font-weight: 700; }
+
+        /* Horizontal Indices */
+        .indices-row { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 6px; white-space: nowrap; }
+        .index-item { flex: 1; min-width: 85px; background: #f9fafb; padding: 8px 6px; text-align: center; border-radius: 4px; border: 1px solid #eee; }
+        .idx-name { font-size: 13px; color: #666; }
+        .idx-val { font-size: 15px; font-weight: 700; display: block; }
+        .idx-chg { font-size: 13px; }
+
+        /* Sector Split */
+        .sector-cols { display: flex; gap: 10px; }
+        .sector-col { flex: 1; }
+        .sec-row { display: flex; justify-content: space-between; font-size: 14px; border-bottom: 1px dashed #eee; padding: 4px 0; }
+        .sec-name { color: #333; }
+        
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 15px; }
+        th { background: #f3f4f6; padding: 4px; font-size: 13px; font-weight: 400; color: #666; text-align: right; }
+        td { padding: 6px 4px; border-bottom: 1px solid #f0f0f0; text-align: right; }
+        th:last-child, td:last-child { padding-right: 8px; }
+        .name-cell { text-align: left; padding-left: 8px; }
+        .hl { background: #fff1f2; }
+
+        /* Tag Cloud */
+        .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tag { background: #f3f4f6; padding: 6px 10px; border-radius: 14px; font-size: 13px; display: flex; align-items: center; }
+        .tag-n { margin-right: 6px; color: #333; }
+        .tag-v { font-weight: 700; }
+
+        .up { color: #e11d48; }
+        .down { color: #16a34a; }
+        .gray { color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title">A股日报</div>
+            <div class="subtitle">{{ update_time }}</div>
+        </div>
+
+        {% if not trade_status %}
+        <div style="text-align:center; padding:20px; color:#888;">😴 休市中</div>
+        {% else %}
+
+
+        <div class="indices-row">
+            {% for idx in indexes %}
+            <div class="index-item">
+                <a href="{{ idx.url }}" class="idx-name" style="text-decoration:none;">{{ idx.name }}</a>
+                <span class="idx-val">{{ idx.close }}</span>
+                <span class="idx-chg {{ 'up' if idx.growth_rate|float > 0 else 'down' if idx.growth_rate|float < 0 else 'gray' }}">
+                    {{ idx.growth_rate }}%
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- ... (Market Summary skipped) ... -->
+        
+
+
+
+        <div class="card" style="margin-top: 6px;">
+            <div class="card-body">
+                <div class="market-grid">
+                    <div class="m-item">
+                        <div class="m-label">成交额</div>
+                        <div class="m-val">{{ summary.total_money }}亿</div>
+                    </div>
+                    <div class="m-item">
+                        <div class="m-label">风格</div>
+                        <div class="m-val" style="color:#6366f1;">{{ summary.style }}</div>
+                    </div>
+                    <div class="m-item">
+                        <div class="m-label">涨:跌</div>
+                        <div class="m-val"><span class="up">{{ summary.up_sum }}</span>:<span class="down">{{ summary.down_sum }}</span></div>
+                    </div>
+                     <div class="m-item">
+                        <div class="m-label">涨停:跌停</div>
+                        <div class="m-val"><span class="up">{{ summary.long_10 }}</span>:<span class="down">{{ summary.short_10 }}</span></div>
+                    </div>
+                </div>
+                <div style="text-align:center; margin-top:6px; font-size:16px; color:#555;">
+                     涨幅均值 <span class="{{ 'up' if summary.mean|float(0) > 0 else 'down' }}">{{ summary.mean }}%</span>
+                     · 
+                     中位数 <span class="{{ 'up' if summary.median|float(0) > 0 else 'down' }}">{{ summary.median }}%</span>
+                </div>
+            </div>
+        </div>
+
+
+        {% if sectors %}
+        <div class="card">
+            <div class="card-header">📊 板块动向</div>
+            <div class="card-body">
+                <div class="sector-cols">
+                    <div class="sector-col">
+                        <div style="font-size:11px; color:#e11d48; text-align:center; border-bottom:1px solid #eee; margin-bottom:2px;">🔥 领涨</div>
+                        {% for s in sectors.leaders %}
+                        <div class="sec-row">
+                            <span class="sec-name">{{ s.name }}</span>
+                            <span class="up">+{{ s.change }}%</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div style="width:1px; background:#eee;"></div>
+                    <div class="sector-col">
+                        <div style="font-size:11px; color:#16a34a; text-align:center; border-bottom:1px solid #eee; margin-bottom:2px;">📉 领跌</div>
+                        {% for s in sectors.losers %}
+                        <div class="sec-row">
+                            <span class="sec-name">{{ s.name }}</span>
+                            <span class="down">{{ s.change }}%</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+
+        {% if stocks %}
+        <div class="card">
+            <div class="card-header">⭐ 关注股票</div>
+            <div class="card-body">
+                <table>
+                    <tr>
+                        <th style="text-align:left; padding-left:8px;">名称</th>
+                        <th>现价</th>
+                        <th>涨跌</th>
+                        <th>成交(亿)</th>
+                    </tr>
+                    {% for s in stocks %}
+                    <tr>
+                        <td class="name-cell">
+                            <a href="{{ s.url }}" style="text-decoration:none; color:#333;">{{ s.name }}</a>
+                        </td>
+                        <td>{{ s.close }}</td>
+                        <td class="{{ 'up' if s.growth_rate|float > 0 else 'down' if s.growth_rate|float < 0 else 'gray' }}">
+                            {{ s.growth_rate }}%
+                        </td>
+                        <td>{{ s.turnover_billion }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+
+         {% if etfs %}
+        <div class="card">
+            <div class="card-header">🏦 关注ETF</div>
+            <div class="card-body">
+                <table>
+                    <tr>
+                        <th style="text-align:left; padding-left:8px;">名称</th>
+                        <th>现价</th>
+                        <th>涨跌</th>
+                        <th>成交(亿)</th>
+                    </tr>
+                    {% for s in etfs %}
+                    <tr>
+                        <td class="name-cell">
+                            <a href="{{ s.url }}" style="text-decoration:none; color:#333;">{{ s.name }}</a>
+                        </td>
+                        <td>{{ s.close }}</td>
+                        <td class="{{ 'up' if s.growth_rate|float > 0 else 'down' if s.growth_rate|float < 0 else 'gray' }}">
+                            {{ s.growth_rate }}%
+                        </td>
+                        <td>{{ s.turnover_billion }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+
+        <div class="card">
+            <div class="card-header">🚀 热门 & 新高</div>
+            <div class="card-body">
+                <div style="font-size:11px; color:#888; margin-bottom:4px;">成交额 Top 10</div>
+                <div class="tag-cloud">
+                     {% for s in turnover_ranking %}
+                    <span class="tag">
+                        <a href="{{ s.url }}" class="tag-n" style="text-decoration:none;">{{ s.name }}</a>
+                        <span class="tag-v {{ 'up' if s.growth_rate|float > 0 else 'down' }}">{{ s.growth_rate }}%</span>
+                    </span>
+                    {% endfor %}
+                </div>
+                
+                <div style="font-size:11px; color:#888; margin: 8px 0 4px;">创历史新高</div>
+                <div class="tag-cloud">
+                    {% for s in new_highs %}
+                    <span class="tag" style="background:#fff1f2; border:1px solid #fecdd3;">
+                        <a href="{{ s.url }}" class="tag-n" style="text-decoration:none;">{{ s.name }}</a>
+                        <span class="tag-v up">{{ s.growth_rate }}%</span>
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        {% endif %}
+
+        <div style="text-align:center; font-size:10px; color:#ccc; margin-top:8px;">
+           数据来源: Sina/EastMoney
+        </div>
+    </div>
+</body>
+</html>
