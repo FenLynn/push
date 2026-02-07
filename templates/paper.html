@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>光学文献</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --c: #ffffff;
+            --t: #333333;
+            --m: #999999;
+            --b: #eeeeee;
+            --a: #3b82f6;
+            --h: #ef4444;
+            --hb: #fff0f0;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #000000;
+                --c: #000000;
+                --t: #f1f5f9;
+                --m: #94a3b8;
+                --b: #333333;
+                --hb: #450a0a;
+            }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { width: 100%; -webkit-text-size-adjust: 100%; }
+        body {
+            font-family: -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--t);
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .container { padding: 8px; }
+        
+        .header {
+            background: var(--c);
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .h-main { display: flex; align-items: center; gap: 8px; }
+        .h-icon { font-size: 20px; }
+        .h-title {
+            font-weight: 800;
+            font-size: 16px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .h-meta { font-size: 12px; color: var(--m); }
+        .h-stats {
+            display: flex;
+            gap: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--a);
+        }
+        .no-data { text-align: center; padding: 30px; color: var(--m); }
+        
+        .card { background: var(--c); margin-bottom: 25px; overflow: hidden; }
+        .c-hd {
+            padding: 8px 12px;
+            font-weight: 700;
+            font-size: 13px;
+            border-bottom: 1px solid var(--b);
+            display: flex;
+            justify-content: space-between;
+            background: rgba(59, 130, 246, 0.05);
+        }
+        .c-nm { color: var(--a); }
+        .c-ct {
+            background: var(--a);
+            color: #fff;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 10px;
+        }
+        .item { padding: 8px 12px; border-bottom: 1px dashed var(--b); }
+        .item:last-child { border: 0; }
+        .item.hl {
+            background: var(--hb);
+            border-left: 3px solid var(--h);
+            padding-left: 9px;
+        }
+        .i-tt {
+            color: var(--t);
+            text-decoration: none;
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+        .item.hl .i-tt { color: var(--h); font-weight: 600; }
+        .i-meta {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            font-size: 10px;
+            color: var(--m);
+        }
+        .kw {
+            color: var(--h);
+            background: rgba(239, 68, 68, 0.1);
+            padding: 0 4px;
+            border-radius: 3px;
+        }
+        .ft { text-align: center; padding: 10px; font-size: 10px; color: var(--m); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="h-main">
+                <span class="h-icon">📚</span>
+                <div>
+                    <div class="h-title">光学文献</div>
+                    <div class="h-meta">{{ today }}</div>
+                </div>
+            </div>
+            <div class="h-stats">
+                <span>{{ journals }}刊</span><span>·</span><span>{{ articles_sum }}篇</span>
+            </div>
+        </div>
+
+        {% if articles_sum == 0 %}
+        <div class="no-data">📭 今天暂无更新</div>
+        {% else %}
+        {% for feed in paper %}
+        {% if feed.articles_nu > 0 %}
+        <div class="card">
+            <div class="c-hd">
+                <span class="c-nm">{{ feed.journal }}</span>
+                <span class="c-ct">{{ feed.articles_nu }}</span>
+            </div>
+            <div>
+                {% for p in feed.data %}
+                <div class="item {{ 'hl' if p.is_include_keyword else '' }}">
+                    <a href="{{ p.link }}" class="i-tt">{{ p.title }}</a>
+                    <div class="i-meta">
+                        {% if p.is_include_keyword and p.keywords %}
+                        {% for kw in p.keywords[:2] %}
+                        <span class="kw">{{ kw }}</span>
+                        {% endfor %}
+                        {% endif %}
+                        {% if p.author %}
+                        <span style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.author }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+
+        <div class="ft">Generated by Push · {{ update_time }}</div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,55 @@
+# 默认配置 - 通用设置
+# 环境特定配置会覆盖这里的值
+
+network:
+  # TTR RSS 配置（默认为远程阿里云）
+  ttrss_url: "http://47.109.56.199:12002"
+  ttrss_username: "admin"
+  ttrss_password: "${TTRSS_PASSWORD}"  # 从环境变量读取
+  
+  # PushPlus 配置
+  pushplus_token: "${PUSHPLUS_TOKEN}"  # 从环境变量读取
+  pushplus_webhook: "${PUSHPLUS_WEBHOOK}"
+  
+  # 其他网络配置
+  smms_token: "${SMMS_TOKEN}"
+  server_ip: ""
+  proxy: ""
+  http_proxy: ""  # 如果需要 HTTP 代理
+
+github:
+  token: "${GITHUB_TOKEN}"
+  owner: "Fenlynn"
+  repo: "image"
+  branch: "main"
+  cdn:
+    - "cdn.jsdelivr.net"
+    - "jsd.cdn.zzko.cn"
+    - "jsd.onmicrosoft.cn"
+
+finance:
+  gdsm_stock_list: ["601816", "603882", "601318"]
+  stock_id: ["600745", "300033", "002475"]
+  index_id: ["000001", "399001", "399006"]
+  stock_name: ["格力电器", "中芯国际", "闻泰科技"]
+  bold_stock: ["闻泰科技", "立讯精密", "中国平安"]
+  hk_stock_id: ["00700", "03690", "09618"]
+
+pic:
+  type: ".jpg"
+  width1: 12
+  height1: 5
+  width2: 2
+  height2: 1
+  dpi: 400
+
+host:
+  font_path: "/root/miniconda3/envs/py39/lib/python3.9/site-packages/matplotlib/mpl-data/fonts/msyh.ttf"
+
+logging:
+  level: "info"
+  enabled: false
+
+text:
+  stopword: ["什么", "为什么", "我", "如何"]
+  css_file: "table.css"
