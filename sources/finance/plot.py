@@ -54,75 +54,100 @@ class Plotter:
         """保存并关闭"""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         try:
+            # Add a small padding to prevent labels from being cut off
+            plt.tight_layout(pad=2.0)
             fig.savefig(path, bbox_inches='tight', facecolor='white')
         except Exception as e:
             print(f"Save Warning: {e}")
             fig.savefig(path, facecolor='white')
         plt.close(fig)
 
-    def _beautify(self, ax):
+    def _beautify(self, ax, data=None):
         """通用美化"""
         # Lighter grid
-        ax.grid(True, linestyle='--', alpha=0.3, color='#bdc3c7')
+        ax.grid(True, linestyle='--', alpha=0.2, color='#bdc3c7')
         
         # Close the box (Show all spines)
         for spine in ax.spines.values():
             spine.set_visible(True)
-            spine.set_color('#95a5a6')
+            spine.set_color('#dfe6e9') # Lighter spines
             
-        ax.tick_params(axis='both', which='both', colors='#34495e', labelsize=10)
+        ax.tick_params(axis='both', which='both', colors='#636e72', labelsize=10)
+        
+        # Remove extra whitespace at the bottom
+        ax.set_axisbelow(True) # Grid behind plots
+        
+        # Dynamic Y-axis scaling if data is provided
+        if data is not None:
+            try:
+                import pandas as pd
+                if isinstance(data, (list, tuple)):
+                    all_data = pd.concat([pd.to_numeric(d, errors='coerce') for d in data])
+                else:
+                    all_data = pd.to_numeric(data, errors='coerce')
+                
+                valid_data = all_data.dropna()
+                if not valid_data.empty:
+                    d_min, d_max = valid_data.min(), valid_data.max()
+                    if d_max == d_min:
+                        ax.set_ylim(d_min * 0.9, d_max * 1.1)
+                    else:
+                        diff = d_max - d_min
+                        # Use a tighter margin as requested to remove "white area"
+                        ax.set_ylim(d_min - diff * 0.05, d_max + diff * 0.1)
+            except: pass
 
-    def fmt_dual(self, fig, axes, title='', ylabel='', ylabel_right='', rotation=15, set_label_y_color=False):
-        pass
+    def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.3):
+        """实现渐变填充效果 (通过叠加不同透明度的 fill_between)"""
+        import numpy as np
+        for i in range(1, 6):
+            ax.fill_between(x, y, y.min(), color=color, alpha=alpha_top * (i/5.0), where=(y > y.min()))
 
     def _add_internal_title(self, ax, text):
-        """Add title inside chart - position at top center to avoid blocking data"""
+        """Add title inside chart - moved to bottom left per user request"""
         if not text: return
-        # Place at top-center to avoid blocking both left and right side data
-        ax.text(0.5, 0.96, text, transform=ax.transAxes, 
-                fontsize=11, fontweight='bold', va='top', ha='center',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.92, edgecolor='#95a5a6', linewidth=0.5))
+        # Place at bottom-left to avoid blocking data
+        ax.text(0.02, 0.05, text, transform=ax.transAxes, 
+                fontsize=10, fontweight='bold', va='bottom', ha='left',
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='#dfe6e9', linewidth=0.5))
 
-    def fmt_twinx(self, fig, ax_left, ax_right, title='', ylabel_left='', ylabel_right='', rotation=15):
+    def fmt_twinx(self, fig, ax_left, ax_right, title='', ylabel_left='', ylabel_right='', rotation=15, 
+                  data_left=None, data_right=None):
         """单图双轴格式化"""
         is_history_trend = '历史' in title or 'History' in title
         
         if is_history_trend:
             self._add_internal_title(ax_left, title)
         else:
-            ax_left.set_title(title, fontsize=16, weight='bold', pad=10)
+            ax_left.set_title(title, fontsize=16, weight='bold', pad=15, color='#2d3436')
 
-        self._beautify(ax_left)
-        ax_left.set_ylabel(ylabel_left, fontsize=11, weight='bold')
+        self._beautify(ax_left, data_left)
+        ax_left.set_ylabel(ylabel_left, fontsize=11, weight='bold', color='#2d3436')
         
-        self._beautify(ax_right) 
+        # Mirror y-axis formatting for right
+        # self._beautify(ax_right, data_right) # Don't re-add grid
+        ax_right.tick_params(axis='y', colors='#636e72', labelsize=10)
         ax_right.spines['left'].set_visible(False)
-        ax_right.set_ylabel(ylabel_right, fontsize=11, weight='bold')
+        ax_right.spines['right'].set_color('#dfe6e9')
+        if ylabel_right:
+            ax_right.set_ylabel(ylabel_right, fontsize=11, weight='bold', color='#2d3436')
         ax_right.grid(False)
         
-        # Force rotation after drawing
+        # Force rotation
         for label in ax_left.get_xticklabels():
-            label.set_rotation(15)
+            label.set_rotation(rotation)
             label.set_ha('right')
         
-        # Legends - place to avoid blocking chart
+        # Legends - loc='upper center' to avoid blocking curves, or 'best'
         h1, l1 = ax_left.get_legend_handles_labels()
         h2, l2 = ax_right.get_legend_handles_labels()
         if h1 or h2:
-            # For history chart with internal title at top-right, put legend at top-left
-            # For main chart, use upper left with slight offset
-            if is_history_trend:
-                loc = 'upper left'
-                bbox = None
-            else:
-                loc = 'upper left'  
-                bbox = None
-            
-            ax_left.legend(h1+h2, l1+l2, loc=loc, bbox_to_anchor=bbox,
-                         frameon=True, framealpha=0.92, fontsize=9, edgecolor='#95a5a6', fancybox=False)
+            legend = ax_left.legend(h1+h2, l1+l2, loc='best',
+                         frameon=True, framealpha=0.8, fontsize=9, edgecolor='#dfe6e9')
+            legend.get_frame().set_linewidth(0.5)
 
 
-    def fmt_single(self, fig, ax, title='', xlabel='', ylabel='', sci_on=False, rotation=15):
+    def fmt_single(self, fig, ax, title='', xlabel='', ylabel='', sci_on=False, rotation=15, data=None):
         """单图格式化"""
         is_history_trend = '历史' in title or 'History' in title
         
@@ -131,29 +156,29 @@ class Plotter:
         else:
              ax.set_title(title, fontsize=16, weight='bold', pad=10)
              
-        self._beautify(ax)
+        self._beautify(ax, data)
         ax.set_ylabel(ylabel, fontsize=11, weight='bold')
         if xlabel: ax.set_xlabel(xlabel, fontsize=11, weight='bold')
         
         # Force rotation
         for label in ax.get_xticklabels():
-            label.set_rotation(15)
+            label.set_rotation(rotation)
             label.set_ha('right')
             
-        # Legend
+        # Legend (loc='best')
         h, l = ax.get_legend_handles_labels()
         if h:
-             ax.legend(loc='upper left', frameon=True, framealpha=0.92, fontsize=9, 
-                      edgecolor='#95a5a6', fancybox=False)
+             ax.legend(loc='best', frameon=True, framealpha=0.8, fontsize=9, 
+                      edgecolor='#dfe6e9', fancybox=False)
         
         if sci_on:
              ax.ticklabel_format(style='sci', scilimits=(-1,2), axis='y')
 
     def draw_current_line(self, val, ax, color):
         """绘制当前值虚线"""
-        ax.axhline(y=val, color=color, linestyle='--', alpha=0.7, linewidth=1)
-
-    def draw_current_line(self, val, ax, color):
-        """绘制当前值虚线"""
-        ax.axhline(y=val, color=color, linestyle='--', alpha=0.7, linewidth=1)
+        try:
+            import pandas as pd
+            if pd.isna(val) or val is None: return
+            ax.axhline(y=val, color=color, linestyle='--', alpha=0.7, linewidth=1)
+        except: pass
 

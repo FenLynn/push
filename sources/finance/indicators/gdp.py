@@ -11,7 +11,6 @@ class GDPIndicator(BaseIndicator):
             df = ak.macro_china_gdp()
             
             # Parse quarter to date
-            # Format: "2025年第1-4季度" or "2025年第1季度"
             def parse_quarter_info(q_str):
                 import re
                 match = re.search(r'(\d{4})年第(\d+)(?:-(\d+))?季度', q_str)
@@ -19,7 +18,6 @@ class GDPIndicator(BaseIndicator):
                     year = int(match.group(1))
                     q_start = int(match.group(2))
                     q_end = int(match.group(3)) if match.group(3) else int(match.group(2))
-                    # Use end of quarter for date
                     month = q_end * 3
                     date = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
                     return pd.Series({'date': date, 'year': year, 'q_start': q_start, 'q_end': q_end})
@@ -28,35 +26,24 @@ class GDPIndicator(BaseIndicator):
             quarter_info = df['季度'].apply(parse_quarter_info)
             df = pd.concat([df, quarter_info], axis=1)
             
-            # Rename columns
             df = df.rename(columns={
                 '国内生产总值-绝对值': 'gdp_cumulative',
                 '国内生产总值-同比增长': 'gdp_growth'
             })
             
-            # Calculate single quarter GDP
-            # For single quarter rows (q_start == q_end), use cumulative directly
-            # For cumulative rows, calculate difference
-            df = df.sort_values(['year', 'q_end'], ascending=[False, False])
+            df = df.sort_values(['year', 'q_end'])
             df['gdp_single'] = df['gdp_cumulative']
             
-            # For each year, calculate single quarter values
-            for year in df['year'].unique():
-                if pd.isna(year):
-                    continue
+            for year in df['year'].dropna().unique():
                 year_mask = df['year'] == year
-                year_data = df[year_mask].sort_values('q_end')
-                
-                # Calculate single quarter GDP by subtraction
-                for idx in year_data.index:
-                    q_end = df.loc[idx, 'q_end']
-                    if q_end > 1:
-                        # Find previous quarter cumulative
-                        prev_q = q_end - 1
-                        prev_mask = (df['year'] == year) & (df['q_end'] == prev_q)
-                        if prev_mask.any():
-                            prev_cumulative = df.loc[prev_mask, 'gdp_cumulative'].values[0]
-                            df.loc[idx, 'gdp_single'] = df.loc[idx, 'gdp_cumulative'] - prev_cumulative
+                for q in [2, 3, 4]:
+                    curr_q_mask = year_mask & (df['q_end'] == q) & (df['q_start'] == 1)
+                    prev_q_mask = year_mask & (df['q_end'] == q-1) & (df['q_start'] == 1)
+                    
+                    if curr_q_mask.any() and prev_q_mask.any():
+                        curr_val = df.loc[curr_q_mask, 'gdp_cumulative'].values[0]
+                        prev_val = df.loc[prev_q_mask, 'gdp_cumulative'].values[0]
+                        df.loc[curr_q_mask, 'gdp_single'] = curr_val - prev_val
             
             return df.sort_values('date')
         except Exception as e:
@@ -64,66 +51,57 @@ class GDPIndicator(BaseIndicator):
             raise e
 
     def plot(self, df: pd.DataFrame) -> str:
-        # Use 3:1 ratio layout
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         
-        df['date'] = pd.to_datetime(df['date'])
+        # Consistent window for GDP (Quarterly, so 6 quarters ~ 18 months to see > 1 year)
+        latest_date = df['date'].max()
+        short_threshold = latest_date - pd.DateOffset(months=18)
+        df_short = df[df['date'] >= short_threshold].copy()
         
-        # Get only single quarter data (q_start == q_end) for recent 4 quarters
-        df_single = df[df['q_start'] == df['q_end']].copy()
-        df_short = df_single.iloc[-4:].copy()    # Recent 4 quarters
-        df_long = df_single.iloc[-80:].copy()    # History 80 quarters
+        df_long = df[df['q_start'] == 1].copy() 
+        df_long = df_long.iloc[-80:] # 20 Years
         
-        # Colors
-        c_single = '#3498DB'       # Single quarter - Blue
-        c_cumulative = '#E74C3C'   # Cumulative - Red
-        c_growth = '#F39C12'       # Growth rate - Orange
+        c_single = '#2C3E50'      # Dark Navy
+        c_cumulative = '#E74C3C'  # Premium Red
+        c_growth = '#3498DB'      # Energy Blue
         
-        # --- Top: Recent (4 Quarters) - Dual bars + Growth ---
+        # --- Top ---
         ax_top = axes[0]
-        
-        # Prepare data for grouped bars
         x = np.arange(len(df_short))
         width = 0.35
         
-        # Draw bars
-        bars1 = ax_top.bar(x - width/2, df_short['gdp_single'], width, 
-                          label='单季度GDP', color=c_single, alpha=0.8)
-        bars2 = ax_top.bar(x + width/2, df_short['gdp_cumulative'], width,
-                          label='累计GDP', color=c_cumulative, alpha=0.8)
+        b1 = ax_top.bar(x - width/2, df_short['gdp_single'], width, label='单季度GDP', color=c_single, alpha=0.9, edgecolor='white', linewidth=0.5)
+        b2 = ax_top.bar(x + width/2, df_short['gdp_cumulative'], width, label='累计GDP', color=c_cumulative, alpha=0.8, edgecolor='white', linewidth=0.5)
         
+        for bars in [b1, b2]:
+            for bar in bars:
+                height = bar.get_height()
+                ax_top.text(bar.get_x() + bar.get_width()/2., height + 1000,
+                        f'{int(height/10000)}万亿', ha='center', va='bottom', fontsize=8, color='#636e72')
+        
+        def get_label(row):
+            q = int(row['q_end'])
+            return f"{int(row['year'])} Q{q}"
         ax_top.set_xticks(x)
-        ax_top.set_xticklabels([f'Q{int(q)}' for q in df_short['q_end']], rotation=0)
+        ax_top.set_xticklabels([get_label(r) for idx, r in df_short.iterrows()])
         
-        # Growth rate on right axis
         ax_top_r = ax_top.twinx()
-        ax_top_r.plot(x, df_short['gdp_growth'], 'D-', color=c_growth,
-                     linewidth=2, markersize=5, label='同比增长(%)')
+        ax_top_r.plot(x, df_short['gdp_growth'], 'D-', color=c_growth, linewidth=3, markersize=8, label='同比增长(%)')
         
-        # Format top
-        self.plotter.fmt_twinx(fig, ax_top, ax_top_r,
-                             title='宏观数据-GDP (近期4季度)',
-                             ylabel_left='GDP(亿元)',
-                             ylabel_right='同比增长(%)',
-                             rotation=0)
-        ax_top.margins(x=0.1)
+        self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='宏观数据-GDP生产总值 (近期对比)', 
+                             ylabel_left='亿元', ylabel_right='同比增长(%)', rotation=0,
+                             data_left=df_short['gdp_cumulative'], data_right=df_short['gdp_growth'])
         
-        # --- Bottom: History (20 Years) - Growth Rate ---
+        # --- Bottom ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['gdp_growth'], color=c_growth,
-                   linewidth=1.5, label='GDP同比增长(%)')
-        ax_bot.fill_between(df_long['date'], df_long['gdp_growth'], 
-                           color=c_growth, alpha=0.3)
-        ax_bot.axhline(y=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
+        ax_bot.plot(df_long['date'], df_long['gdp_growth'], color=c_growth, linewidth=2, label='GDP同比')
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['gdp_growth'], color=c_growth)
+        ax_bot.axhline(y=0, color='#636e72', linestyle='--', linewidth=0.8, alpha=0.5)
         
-        # Format bottom with internal title
-        self.plotter.fmt_single(fig, ax_bot,
-                              title='历史走势 (20年)',
-                              ylabel='GDP同比增长(%)',
-                              rotation=15)
+        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='同比增长(%)', rotation=15, 
+                               data=df_long['gdp_growth'])
         self.plotter.set_no_margins(ax_bot)
         
-        # Save
         path = "output/finance/gdp.png"
         self.plotter.save(fig, path)
         return path
