@@ -27,7 +27,7 @@ class PigIndicator(BaseIndicator):
         # History: show ~10 years (Daily data, so ~2500 rows)
         df_long = df.iloc[-2500:].copy() 
         
-        color = '#273c75' # Energy Blue
+        color = '#d63031' # Carmine Red (Premium)
         
         # --- Top: Recent ---
         ax_top = axes[0]

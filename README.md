@@ -4,64 +4,136 @@
 
 ## 🌟 核心特性
 
-- **IFTTT 架构**: 数据源 (Source) 与推送通道 (Channel) 完全解耦。
-- **模块化设计**: 轻松添加新的信息源或推送方式。
-- **统一入口**: 通过 `main.py` 即可管理和运行所有任务。
-- **环境自适应**: 自动检测运行环境并加载相应配置（本地/云服务器）。
-- **健壮性**: 内置内容自动分割（处理长度限制）、日志系统和配置验证。
+- **IFTTT 架构**: 数据源 (Source) 与推送通道 (Channel) 完全解耦
+- **模块化设计**: 轻松添加新的信息源或推送方式
+- **统一入口**: 通过 `main.py` 即可管理和运行所有任务
+- **定时调度**: 内置 Cron 自动化执行
+- **任务监控**: 每日摘要报告 (23:00) ，显示成功/失败模块
+- **数据备份**: 支持 WebDAV 自动备份
+
+## 🚀 一键部署 (Docker)
+
+### 1. 配置环境变量
+
+```bash
+# 复制配置模板
+cp .env.example .env
+cp config.ini.example config.ini
+
+# 编辑 .env，填写必填项：
+# - PUSHPLUS_TOKEN: 你的 PushPlus 令牌 (必填)
+# - DB_PASS: 数据库密码
+# - TTRSS_PASSWORD: TTRSS 登录密码
+# - SMMS_TOKEN: SMMS 图片上传令牌 (推荐)
+# - PUSH_ENV: 环境标识 (可选, 如 local/server)
+# - TTRSS_URL: TTRSS 地址 (可选, 覆盖默认配置)
+```
+
+### 2. 启动服务
+
+```bash
+docker-compose up -d
+```
+
+### 3. 验证运行
+
+```bash
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f push-service
+```
+
+**就这么简单！服务会自动：**
+- 初始化 TTRSS 并导入 OPML 订阅
+- 按照 `config/crontab.txt` 的时间表自动执行推送
+- 每日 23:00 发送执行摘要报告
 
 ## 📁 目录结构
 
-- `core/`: 核心引擎、模板处理、分割器和日志。
-- `sources/`: 各类信息源实现（早报、证券、论文、影视等）。
-- `channels/`: 推送通道实现（目前支持 PushPlus）。
-- `templates/`: HTML 渲染模板。
-- `cloud/`: 核心底层工具库。
-- `main.py`: 统一命令行入口。
-
-## 🚀 快速开始
-
-### 1. 环境准备
-
-建议使用 Python 3.9 环境。
-
-```bash
-conda create -n py39 python=3.9
-conda activate py39
-pip install -r requirements.txt
+```
+push/
+├── main.py              # 统一命令行入口
+├── docker-compose.yml   # Docker 编排
+├── Dockerfile           # 容器构建
+├── requirements.txt     # Python 依赖
+│
+├── core/                # 核心引擎
+│   ├── engine.py       # 推送引擎
+│   ├── env.py          # 环境配置
+│   ├── task_scheduler.py # 任务调度器
+│   ├── trading_calendar.py # 交易日判断
+│   └── cache_db.py     # 统一缓存数据库
+│
+├── sources/             # 数据源
+│   ├── morning/        # 早报
+│   ├── finance/        # 财经日报
+│   ├── paper/          # 论文 (TTRSS)
+│   └── ...
+│
+├── channels/            # 推送通道
+│   └── pushplus.py     # PushPlus 微信推送
+│
+├── scripts/             # 脚本工具
+│   ├── entrypoint.sh   # Docker 入口
+│   ├── upgrade.sh      # 零停机升级
+│   ├── backup_webdav.py # WebDAV 备份
+│   ├── restore_webdav.py # 数据恢复
+│   └── daily_summary.py # 每日摘要
+│
+├── config/              # 配置文件
+│   ├── crontab.txt     # 定时任务
+│   └── nginx.conf      # TTRSS Nginx
+│
+└── templates/           # HTML 模板
 ```
 
-### 2. 配置敏感信息
+## 📋 可用模块
 
-通过环境变量设置关键 Token 和密码：
+| 模块 | 说明 | 运行时机 |
+|------|------|----------|
+| `morning` | 早报 (天气/金融/英语) | 每天 08:00 |
+| `paper` | 论文 (TTRSS) | 每天 08:00 |
+| `finance` | 财经日报 | A股交易日 18:00 |
+| `stock` | 股票行情 | A股交易日 18:00 |
+| `etf` | ETF 监控 | A股交易日 18:00 |
+| `fund` | 基金估值 | A股交易日 18:00 |
+| `night` | 美股夜盘 | 美股交易日次日 07:00 |
+| `game` | 游戏赛程 | 每天 12:00 |
+| `estate` | 成都房产 | 周一工作日 09:00 |
+
+## 🔧 常用命令
 
 ```bash
-export PUSHPLUS_TOKEN="你的PushPlus令牌"
-export TTRSS_PASSWORD="RSS服务密码"
+# 手动运行模块
+docker exec push-service python main.py run finance stock
+
+# 运行模块组
+docker exec push-service python main.py run @stock  # finance, stock, etf, fund
+docker exec push-service python main.py run @all    # 所有模块
+
+# 查看可用模块
+docker exec push-service python main.py list
+
+# 零停机升级
+./scripts/upgrade.sh
+
+# 手动备份到 WebDAV
+docker exec push-service python scripts/backup_webdav.py
 ```
 
-### 3. 使用命令行
+## 🔒 安全说明
 
-```bash
-# 列出所有可用模块
-python main.py list
+- TTRSS 仅监听 `127.0.0.1:18100`，公网无法直接访问
+- 访问 TTRSS 需通过 SSH 隧道：`ssh -L 18100:localhost:18100 user@your-vps`
+- 所有敏感信息均在 `.env` 中配置，不会提交到 Git
 
-# 运行特定模块
-python main.py run morning stock
+## 📚 更多文档
 
-# 运行所有模块
-python main.py run all
-```
-
-## ⏰ 自动化部署
-
-参考 `crontab.txt` 配置定时任务。确保在 crontab 中正确设置 `PUSHPLUS_TOKEN` 等环境变量。
-
-## 🛠️ 扩展开发
-
-1. 在 `sources/` 下继承 `BaseSource` 创建新的类。
-2. 在 `main.py` 的 `MODULES` 字典中注册该类。
-3. 运行测试并部署。
+- [Docker 部署手册](docs/DOCKER_MANUAL.md)
+- [架构设计文档](ARCHITECTURE.md)
+- [环境配置说明](ENV_CONFIG.md)
 
 ## 📄 开源协议
 

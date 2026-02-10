@@ -3,7 +3,6 @@ __pycache__/
 *.py[cod]
 *.pyd
 venv/
-.env
 dist/
 build/
 *.egg-info/
@@ -17,10 +16,18 @@ build/
 .DS_Store
 Thumbs.db
 
+# Sensitive Files (NEVER commit!)
+.env
+config.ini
+*.db
+setup_env.sh
+
 # Data (prevent repo bloat)
 data/
 output/
+logs/
 archive/
+backups/
 *.csv
 *.xlsx
 *.h5
@@ -28,3 +35,10 @@ archive/
 *.log
 *.bak
 .ipynb_checkpoints/
+
+# Docker runtime
+.docker-data/
+
+# Temporary files
+/tmp/
+*.tmp

@@ -53,40 +53,182 @@ class PaperSource(BaseSource):
     TTRSS_CAT_ID = None
     PAST_HOURS = 25
     
-    TEST_MODE = True
-    TEST_JOURNALS = ['Optics Express', 'Optics Letters', 'Applied Optics', 
-                     'Photonics Research', 'Optics Continuum', 'Optical Materials Express']
-    TEST_ARTICLES_PER_JOURNAL = 10
+    TEST_MODE = False
+    TEST_JOURNALS = ['Optics Express', 'Optics Letters', 'Applied Optics', 'Photonics Research']
+    TEST_ARTICLES_PER_JOURNAL = 15
     TEST_SKIP_MARK_READ = True
     
+    @staticmethod
+    def to_chinese_num(n):
+        chinese_nums = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+        if n <= 10: return chinese_nums[n]
+        return str(n)
+
+    @staticmethod
+    def to_roman_num(n):
+        roman_map = [(10, 'X'), (9, 'IX'), (5, 'V'), (4, 'IV'), (1, 'I')]
+        result = ""
+        for val, symbol in roman_map:
+            while n >= val:
+                result += symbol
+                n -= val
+        return result
+
     def __init__(self, topic='me', test_mode=None):
         super().__init__()
         self.topic = topic
         self.test_mode = test_mode if test_mode is not None else self.TEST_MODE
     
-    def run(self) -> Message:
+    MAX_ARTICLES_PER_PAGE = 35
+    
+    def run(self) -> list:
         """
-        生成论文报告
+        生成论文报告，支持分段推送
         
         Returns:
-            Message: 论文消息（HTML 格式）
+            list: Message 对象列表
         """
         # 获取论文数据
         today_info = self._get_data()
         
-        # 生成 HTML 内容
-        html_content = self._generate_html(today_info)
+        if today_info['articles_sum'] == 0:
+            html_content = self._generate_html(today_info)
+            title = f'光学文献{time.strftime("%m-%d", time.localtime())}'
+            return [Message(
+                title=title,
+                content=html_content,
+                type=ContentType.HTML,
+                tags=['paper', 'academic', self.topic],
+            )]
+
+    MAX_PAGE_SIZE = 19500 # 极限逼近 20k
+    
+    def _estimate_article_size(self, article):
+        """预估单条文章的 HTML 字符数"""
+        size = 150 # 基础 HTML 标签开销 (扁平化后降低)
+        size += len(article.get('title', '')) * 1.5 # 进一步降低权重
+        size += len(article.get('link', ''))
+        size += 50 # 其他字段余量
+        return size
+
+    def run(self) -> list:
+        """运行获取流程并返回消息列表"""
+        today_info = self._get_data()
+        if not today_info['paper']:
+            return []
+            
+        # 分段逻辑 - 动态长度适配
+        all_pages = []
+        current_papers = []
+        current_page_size = 500
         
-        # 构建标题
-        title = f'光学文献{time.strftime("%m-%d", time.localtime())}'
+        for feed in today_info['paper']:
+            articles = feed['data']
+            if not articles: continue
+            
+            journal_articles_to_page = []
+            for art in articles:
+                est_size = self._estimate_article_size(art)
+                
+                # 如果加上当前文章超过页限制
+                if current_page_size + est_size > self.MAX_PAGE_SIZE:
+                    # 先结算当前期刊已经在攒的文章（如果有）
+                    if journal_articles_to_page:
+                        current_papers.append({
+                            'journal': feed['journal'],
+                            'data': journal_articles_to_page,
+                            'articles_nu': len(journal_articles_to_page)
+                        })
+                        journal_articles_to_page = []
+                    
+                    # 结算当前页
+                    if current_papers:
+                        all_pages.append(current_papers)
+                        current_papers = []
+                        current_page_size = 500
+                
+                journal_articles_to_page.append(art)
+                current_page_size += est_size
+            
+            # 期刊遍历完，如果还有剩余文章，存入 current_papers
+            if journal_articles_to_page:
+                current_papers.append({
+                    'journal': feed['journal'],
+                    'data': journal_articles_to_page,
+                    'articles_nu': len(journal_articles_to_page)
+                })
+
+        # 全天处理完，手动结算最后一页
+        if current_papers:
+            all_pages.append(current_papers)
+            
+        # 生成消息列表
+        # 重写 run() 的分页循环部分
+        messages = []
+        global_idx = 1
+        journal_page_tracker = {} # j_name -> current_page_index
         
-        return Message(
-            title=title,
-            content=html_content,
-            type=ContentType.HTML,
-            tags=['paper', 'academic', self.topic],
-            metadata={'date': today_info['today'], 'count': today_info['articles_sum']}
-        )
+        # 预先计算每个期刊在总分页中出现的次数，用于决定是否显示罗马数字
+        journal_total_pages = {} # j_name -> total_occurrences
+        for pg in all_pages:
+            for f in pg:
+                journal_total_pages[f['journal']] = journal_total_pages.get(f['journal'], 0) + 1
+
+        total_pages = len(all_pages)
+        base_title = f'光学文献{time.strftime("%m-%d", time.localtime())}'
+        
+        for idx, page_papers in enumerate(all_pages):
+            is_first_page = (idx == 0)
+            
+            # 处理分页标签和全局序号
+            for f_item in page_papers:
+                j_name = f_item['journal']
+                count = journal_page_tracker.get(j_name, 0) + 1
+                journal_page_tracker[j_name] = count
+                
+                # 如果这个期刊总共会出现多次，则打上罗马数字标签
+                if journal_total_pages[j_name] > 1:
+                    f_item['page_label'] = self.to_roman_num(count)
+                else:
+                    f_item['page_label'] = ""
+                
+                # 设置全天总文章数
+                f_item['total_nu'] = next(p['articles_nu'] for p in today_info['paper'] if p['journal'] == j_name)
+                
+                # 设置中文序号 (基于原始期刊列表的顺序)
+                original_idx = next(i for i, p in enumerate(today_info['paper']) if p['journal'] == j_name) + 1
+                f_item['chinese_idx'] = self.to_chinese_num(original_idx)
+
+                for article in f_item['data']:
+                    article['global_idx'] = global_idx
+                    global_idx += 1
+            
+            # 准备渲染上下文，始终保留全天指标
+            page_info = {
+                'today': today_info['today'],
+                'is_first_page': is_first_page,
+                'total_journals': today_info['journals'],
+                'total_articles_sum': today_info['articles_sum'],
+                'paper': page_papers,
+            }
+            
+            # 渲染模板
+            html_content = self._generate_html(page_info)
+            
+            # 标题处理
+            title = base_title
+            if total_pages > 1:
+                title += f'({idx+1}/{total_pages})'
+            
+            messages.append(Message(
+                title=title,
+                content=html_content,
+                type=ContentType.HTML,
+                tags=['paper', 'academic', self.topic],
+                metadata={'date': today_info['today'], 'page': idx+1, 'total_pages': total_pages, 'count': sum(f['articles_nu'] for f in page_papers)}
+            ))
+            
+        return messages
     
     def _get_osa_past_hours(self) -> int:
         """OSA 特殊时间处理"""
@@ -140,31 +282,69 @@ class PaperSource(BaseSource):
         
         return diff < timedelta(hours=_past_hours)
     
+    def _get_target_category_id(self, client) -> int:
+        """动态获取分类 ID (优先 '科学'，次填 '期刊')"""
+        target_names = ["科学", "期刊"]
+        try:
+            categories = client.get_categories()
+            for target_name in target_names:
+                for cat in categories:
+                    if isinstance(cat, dict):
+                        name = cat.get('title')
+                        cat_id = cat.get('id')
+                    else:
+                        name = getattr(cat, 'title', None)
+                        cat_id = getattr(cat, 'id', None)
+                    
+                    if name == target_name:
+                        print(f"[Paper] Found category '{target_name}' with ID: {cat_id}")
+                        return int(cat_id)
+            
+            print(f"[Paper] Warning: Targeted categories {target_names} not found. Using default (-1 or ALL).")
+        except Exception as e:
+            print(f"[Paper] Error fetching categories: {e}")
+            
+        return -1 # -1 usually means Special/All or root
+    
     def _get_data(self) -> dict:
         """获取论文数据"""
+        try:
+            client = self._login()
+        except Exception as e:
+            print(f"[Paper] Login failed: {e}")
+            return {
+                "journals": 0, 
+                "today": datetime.now().strftime("%Y-%m-%d"), 
+                "articles_sum": 0, 
+                "journals_title": [], 
+                "paper": []
+            }
         
-        client = self._login()
-        
-        # 确定 TTRSS 分类ID
-        if self.TTRSS_CAT_ID is not None:
-            _ID = self.TTRSS_CAT_ID
-        else:
-            # 根据环境自动检测：local环境用6，vps环境用2
-            env_config = get_env_config()
-            env_name = env_config.env_name if hasattr(env_config, 'env_name') else 'local'
-            _ID = 2 if env_name == 'vps' else 6
-        
+        # 动态获取分类 ID
+        _ID = self._get_target_category_id(client)
         print(f'[Paper] Using TTRSS cat_id={_ID}')
         
-        if self.test_mode:
-            feeds = client.get_feeds(cat_id=_ID, unread_only=False)
-            feeds = [f for f in feeds if f.title in self.TEST_JOURNALS]
-            print(f'[TEST MODE] Selected {len(feeds)} journals: {", ".join([f.title for f in feeds])}')
-        else:
-            feeds = client.get_feeds(cat_id=_ID, unread_only=True)
-            print(f'Journals with articles: {", ".join([i.title for i in feeds])}')
-        
         feed_list = []
+        try:
+            feeds = client.get_feeds(cat_id=_ID, unread_only=not self.test_mode)
+            if self.test_mode:
+                # 过滤测试期刊
+                all_feeds = feeds
+                feeds = [f for f in feeds if f.title in self.TEST_JOURNALS]
+                
+                if not feeds:
+                    print(f'[TEST MODE] No journals matched TEST_JOURNALS. Available in this category: {", ".join([f.title for f in all_feeds[:10]])}')
+                    # 如果匹配不到，则取前几个作为演示
+                    feeds = all_feeds[:3]
+                else:
+                    print(f'[TEST MODE] Selected {len(feeds)} journals from TEST_JOURNALS')
+            else:
+                print(f'Journals with articles: {", ".join([i.title for i in feeds])}')
+        except Exception as e:
+            print(f"[Paper] Failed to get feeds: {e}")
+            feeds = []
+        
+        # feed_list = [] # Removed redundant decl
         
         for feed in feeds:
             print(f'Processing {feed.title}...')
@@ -195,19 +375,12 @@ class PaperSource(BaseSource):
                         'link': headline.link,
                         'datetime': full_article.updated,
                         'content': full_article.content if hasattr(full_article, 'content') else '',
-                        'author': full_article.author if hasattr(full_article, 'author') else ''
                     }
                 except Exception as e:
                     print(f'  Warning: Failed to fetch full article for "{headline.title[:50]}...": {e}')
                     continue
                 
-                # 处理作者格式: Only first author + et al.
-                if paper['author']:
-                    initial_authors = paper['author'].split(',')
-                    if len(initial_authors) > 1:
-                        paper['author'] = f"{initial_authors[0].strip()} et al."
-                    else:
-                        paper['author'] = initial_authors[0].strip()
+                pass
                 
                 # 清理标题
                 paper['title'] = paper['title'].replace(f"【{feed.title}】", '')
@@ -225,8 +398,8 @@ class PaperSource(BaseSource):
                     ino += 1
                     continue
                 
-                # 通用期刊需要关键词
-                if feed.title in self.GENERAL_JOURNALS and not paper['is_include_keyword']:
+                # 通用期刊需要关键词 (测试模式下跳过筛选)
+                if not self.test_mode and feed.title in self.GENERAL_JOURNALS and not paper['is_include_keyword']:
                     ino += 1
                     continue
                 
@@ -276,12 +449,12 @@ class PaperSource(BaseSource):
         
         # 渲染模板
         context = {
-            'today': today_info['today'],
+            'today': today_info.get('today'),
             'update_time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            'journals': today_info['journals'],
-            'articles_sum': today_info['articles_sum'],
-            'journals_title': today_info['journals_title'],
-            'paper': today_info['paper'],
+            'is_first_page': today_info.get('is_first_page', True),
+            'total_journals': today_info.get('total_journals', 0),
+            'total_articles_sum': today_info.get('total_articles_sum', 0),
+            'paper': today_info.get('paper', []),
         }
         
         return template.render(**context)

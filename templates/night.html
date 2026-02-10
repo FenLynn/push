@@ -5,89 +5,163 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>{{ title }}</title>
     <style>
-        :root{--bg:#ffffff;--c:#ffffff;--t:#333333;--m:#999999;--red:#ef4444;--green:#10b981}
-        @media(prefers-color-scheme:dark){:root{--bg:#000000;--c:#000000;--t:#f1f5f9;--m:#94a3b8;--red:#f87171;--green:#34d399}}
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--t);font-size:14px;line-height:1.4;min-height:100vh;padding:10px}
-        .header{background:var(--c);padding:12px;margin-bottom:15px}
-        .h-title{font-weight:800;font-size:16px}
-        .h-meta{font-size:12px;color:var(--m);margin-top:4px}
-        .section{background:var(--c);margin-bottom:15px;padding:10px}
-        .sec-title{font-size:14px;font-weight:700;margin-bottom:8px;color:#3b82f6}
-        table{width:100%;border-collapse:collapse;font-size:13px}
-        th{background:rgba(59,130,246,0.05);padding:6px 4px;text-align:center;font-weight:600;color:var(--t)}
-        td{padding:6px 4px;text-align:center;color:var(--t)}
-        tbody tr:nth-child(even){background:rgba(0,0,0,0.02)}
-        .green{color:var(--green)}
-        .red{color:var(--red)}
-        .ft{text-align:center;padding:20px;font-size:10px;color:var(--m)}
-        .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
-        .chart-grid img{width:100%;display:block}
+        :root {
+            --b:#fff;--t:#333;--ts:#666;--tw:#999;
+            --bc:#fff;--bd:#eee;
+            --bh:#f9fafb;--bdh:#eee;
+            --bth:#f3f4f6;--tth:#555;--br:#f0f0f0;--bre:#fafafa;
+            --bph:linear-gradient(135deg, #eff6ff 0%, #fff 100%); --bdph:#3b82f6; 
+            --tt:#1e3a8a; --td:#64748b; --tdb:#f1f5f9; --tdbd:#cbd5e1;
+            --bs:0 2px 6px rgba(59,130,246,.08);
+            --up:#ef4444; --down:#10b981; --neutral:#94a3b8; --accent:#3b82f6;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --b:#0f172a;--t:#e2e8f0;--ts:#94a3b8;--tw:#64748b;
+                --bc:#1e293b;--bd:#334155;
+                --bh:#0f172a;--bdh:#334155;
+                --bth:#1e293b;--tth:#94a3b8;--br:#334155;--bre:#1e293b;
+                --bph:#1e293b; --bdph:#3b82f6;
+                --tt:#e0f2fe; --td:#94a3b8; --tdb:#334155; --tdbd:#475569;
+                --bs:none;
+                --up:#f87171; --down:#34d399; --accent:#60a5fa;
+            }
+        }
+        body { font-size:16px; font-family: -apple-system, sans-serif; color:var(--t); background:var(--b); line-height: 1.5; margin:0; padding:0; }
+        .ct { padding:10px; max-width:600px; margin:0 auto; }
+        
+        /* Fund-style Header */
+        .hd { display:flex; justify-content:space-between; align-items:center; padding:15px; margin-bottom:15px; background:var(--bph); border-left:5px solid var(--bdph); border-radius:8px; box-shadow:var(--bs); }
+        .hd-title { font-size:22px; font-weight:900; color:var(--tt); letter-spacing:-.5px; display: flex; align-items: center; }
+        .hd-date { font-size:13px; color:var(--td); font-weight:600; background:var(--tdb); padding:4px 10px; border-radius:20px; border:1px solid var(--tdbd); }
+        
+        .summary-box { 
+            margin-bottom: 20px; 
+            padding: 16px; 
+            background: linear-gradient(135deg, #fffbeb 0%, #fff7ed 100%); 
+            border: 1px solid #fed7aa; 
+            border-left: 5px solid #f59e0b; 
+            border-radius: 8px; 
+            color: #7c2d12; 
+            font-size: 15px; 
+            line-height: 1.7; 
+            font-weight: 500; 
+            box-shadow: var(--bs);
+            position: relative;
+        }
+        @media (prefers-color-scheme: dark) {
+            .summary-box { 
+                background: linear-gradient(135deg, #451a03 0%, #2e1065 100%); 
+                border: 1px solid #7c2d12;
+                border-left: 5px solid #f59e0b;
+                color: #fbbf24; 
+            }
+        }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+        .m-card { background: var(--bc); padding: 10px; border-radius: 8px; border: 1px solid var(--bd); box-shadow: var(--bs); text-align: center; }
+        .m-label { font-size: 11px; color: var(--ts); margin-bottom: 4px; }
+        .m-price { font-size: 16px; font-weight: 800; font-family: monospace; }
+        .m-chg { font-size: 12px; font-weight: 700; margin-top: 2px; }
+
+        .up { color: var(--up); } .down { color: var(--down); }
+        .neutral { color: var(--neutral); }
+
+        .sc-hd { display: flex; align-items: center; gap: 8px; margin: 20px 0 8px; padding-left: 4px; }
+        .sc-title { font-size: 16px; font-weight: 800; color: var(--t); }
+        .sc-line { height: 2px; flex: 1; background: linear-gradient(to right, var(--bd), transparent); }
+
+        .cd { background:var(--bc); border-radius: 8px; border:1px solid var(--bd); overflow: hidden; margin-bottom: 12px; box-shadow: var(--bs); }
+        
+        table { width:100%; border-collapse:collapse; table-layout:fixed; font-size: 14px; }
+        th { background:var(--bth); padding:8px; font-size:11px; color:var(--tth); text-align:right; border-bottom: 1px solid var(--bdh); font-weight:600; text-transform: uppercase; } 
+        td { padding:10px 8px; border-bottom:1px solid var(--br); text-align:right; font-family: monospace; white-space:nowrap; color: var(--t); }
+        tr:nth-child(even) { background: var(--bre); }
+
+        .name-cell { text-align:left; width: 35%; font-weight: 700; font-family: -apple-system, sans-serif; overflow:hidden; text-overflow:ellipsis; padding-left: 12px; }
+        th:first-child { text-align:left; padding-left: 12px; }
+        
+        .bold-row { background: rgba(59, 130, 246, 0.05); }
+        .bold-row .name-cell { color: var(--accent); }
+
+        .chart-img { width: 100%; display: block; border-radius: 4px; border: 1px solid var(--bd); }
+        .ft { margin-top:25px; padding: 20px 0; border-top:1px solid var(--bd); font-size:11px; color:var(--ts); text-align:center; opacity: 0.8; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="h-title">🌙 {{ title }}</div>
-        <div class="h-meta">{{ date }}</div>
-    </div>
-
-    {% if indexes %}
-    <div class="section">
-        <div class="sec-title">📈 夜盘指数</div>
-        <table>
-            <tr>
-                <th>名称</th>
-                <th>涨跌幅</th>
-                <th>振幅</th>
-                <th>更新时间</th>
-            </tr>
-            {% for idx in indexes %}
-            <tr>
-                <td>{{ idx.name }}</td>
-                <td class="{{ 'green' if idx.change > 0 else 'red' if idx.change < 0 else '' }}">
-                    {{ idx.change }}
-                </td>
-                <td>{{ idx.amplitude }}</td>
-                <td style="font-size:11px">{{ idx.time }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-        <img src="https://image.sinajs.cn/newchart/usstock/min/IXIC.gif" style="width:100%;margin-top:10px"/>
-    </div>
-    {% endif %}
-
-    {% if stocks %}
-    <div class="section">
-        <div class="sec-title">📈 夜盘股票</div>
-        <table>
-            <tr>
-                <th>名称</th>
-                <th>涨跌幅</th>
-                <th>成交额(亿)</th>
-                <th>市盈率</th>
-                <th>市值(亿)</th>
-            </tr>
-            {% for stock in stocks %}
-            <tr>
-                <td>{{ stock.name }}</td>
-                <td class="{{ 'green' if stock.change > 0 else 'red' if stock.change < 0 else '' }}">
-                    {{ stock.change }}
-                </td>
-                <td>{{ stock.volume }}</td>
-                <td>{{ stock.pe }}</td>
-                <td>{{ stock.market_cap }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-        <div class="chart-grid">
-            <img src="https://image.sinajs.cn/newchart/usstock/min/TSLA.gif"/>
-            <img src="https://image.sinajs.cn/newchart/usstock/min/nvda.gif"/>
-            <img src="https://image.sinajs.cn/newchart/usstock/min/AAPL.gif"/>
-            <img src="https://image.sinajs.cn/newchart/usstock/min/BABA.gif"/>
+    <div class="ct">
+        <div class="hd">
+            <div class="hd-title"><span style="font-size:24px; margin-right:6px">🌙</span>{{ title }}</div>
+            <div class="hd-date">{{ date }}</div>
         </div>
-    </div>
-    {% endif %}
 
-    <div class="ft">Data via AkShare · Push Service</div>
+        {% if summary %}
+        <div class="summary-box">
+            {{ summary }}
+        </div>
+        {% endif %}
+
+        <div class="grid">
+            {% for item in macro_grid %}
+            <div class="m-card">
+                <div class="m-label">{{ item.label }}</div>
+                <div class="m-price">{{ item.price }}</div>
+                <div class="m-chg {{ item.status }}">{{ item.change }}%</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="sc-hd"><div class="sc-title">📈 纳指分时走势</div><div class="sc-line"></div></div>
+        <div class="cd"><img class="chart-img" src="https://image.sinajs.cn/newchart/usstock/min/IXIC.gif"></div>
+
+        <div class="sc-hd"><div class="sc-title">🌍 全球核心指数</div><div class="sc-line"></div></div>
+        <div class="cd">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 35%;">指数名称</th>
+                        <th style="width: 35%;">现价</th>
+                        <th style="width: 30%;">涨跌幅(%)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in indices %}
+                    <tr class="{% if item.bold %}bold-row{% endif %}">
+                        <td class="name-cell">{{ item.name }}</td>
+                        <td>{{ item.price }}</td>
+                        <td class="{% if '+' in item.change %}up{% elif '-' in item.change %}down{% else %}neutral{% endif %}">
+                            {{ item.change }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="sc-hd"><div class="sc-title">⭐ 核心个股监控</div><div class="sc-line"></div></div>
+        <div class="cd">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 28%;">个股名称</th>
+                        <th style="width: 21%;">涨跌幅(%)</th>
+                        <th style="width: 17%;">额(亿)</th>
+                        <th style="width: 14%;">PE</th>
+                        <th style="width: 20%;">市值(万亿)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in stocks %}
+                    <tr class="{% if s.bold %}bold-row{% endif %}">
+                        <td class="name-cell" style="font-size: 13px;">{{ s.name }}</td>
+                        <td class="{% if '+' in s.change %}up{% elif '-' in s.change %}down{% else %}neutral{% endif %}">{{ s.change }}</td>
+                        <td>{{ s.amount }}</td><td>{{ s.pe }}</td><td>{{ s.market_cap }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="ft">{{ version }} | Restore Legacy Indices | Transparent Metrics</div>
+    </div>
 </body>
 </html>

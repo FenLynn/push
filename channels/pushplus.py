@@ -35,7 +35,7 @@ class PushPlusChannel(ChannelInterface):
         Returns:
             bool: 是否成功
         """
-        SAFE_LENGTH = 19800  # User Requested Limit (Maximized)
+        SAFE_LENGTH = 19800  # User confirmed limit. HTML optimization required.
         
         # 检查内容长度，如果过长则分割发送
         if len(str(message.content)) > SAFE_LENGTH:

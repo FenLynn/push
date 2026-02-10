@@ -59,17 +59,24 @@ class InternationalRateIndicator(BaseIndicator):
         # 2. History (last 20 years)
         df_long = df.iloc[-500:].copy() # Since it's decision based, 500 points is a lot
         
-        c_usa = '#E74C3C' # Red
-        c_eur = '#273c75' # Blue
-        c_jpy = '#9b59b6' # Purple
+        # Color Palette - Global Central Bank Theme
+        c_usa = '#e74c3c'  # Crimson (美联储 - 全球定价基准)
+        c_eur = '#3498db'  # Dodger Blue (欧央行)
+        c_jpy = '#9b59b6'  # Amethyst (日央行)
         
         # --- Top (Recent) ---
         ax_top = axes[0]
         ax_top.step(df_short['date'], df_short['usa'], where='post', color=c_usa, linewidth=3, label='Fed (USA)')
         if 'eur' in df_short.columns:
-            ax_top.step(df_short['date'], df_short['eur'], where='post', color=c_eur, linewidth=2, label='ECB (Euro)')
+            ax_top.step(df_short['date'], df_short['eur'], where='post', color=c_eur, linewidth=2.5, label='ECB (Euro)')
         if 'jpy' in df_short.columns:
-            ax_top.step(df_short['date'], df_short['jpy'], where='post', color=c_jpy, linewidth=2, label='BOJ (Japan)')
+            ax_top.step(df_short['date'], df_short['jpy'], where='post', color=c_jpy, linewidth=2.5, label='BOJ (Japan)')
+        
+        # Draw current value line for Fed
+        self.plotter.draw_current_line(df_short.iloc[-1]['usa'], ax_top, c_usa)
+        
+        # Explicit legend
+        ax_top.legend(loc='upper right', frameon=True, framealpha=0.9, fontsize=9)
             
         self.plotter.fmt_single(fig, ax_top, title='全球视野-主要央行基准利率 (近期13月)', 
                                ylabel='利率 (%)', rotation=15, 
@@ -78,16 +85,17 @@ class InternationalRateIndicator(BaseIndicator):
         
         # --- Bottom (History) ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['usa'], color=c_usa, linewidth=1.5, label='USA')
+        ax_bot.plot(df_long['date'], df_long['usa'], color=c_usa, linewidth=1.5, alpha=0.9, label='USA')
         if 'eur' in df_long.columns:
-            ax_bot.plot(df_long['date'], df_long['eur'], color=c_eur, linewidth=1, alpha=0.7, label='Euro')
+            ax_bot.plot(df_long['date'], df_long['eur'], color=c_eur, linewidth=1.2, alpha=0.7, label='Euro')
         if 'jpy' in df_long.columns:
-            ax_bot.plot(df_long['date'], df_long['jpy'], color=c_jpy, linewidth=1, alpha=0.7, label='Japan')
+            ax_bot.plot(df_long['date'], df_long['jpy'], color=c_jpy, linewidth=1.2, alpha=0.7, label='Japan')
             
-        # Gradient Fill for USA
+        # Gradient Fill for USA (emphasize dominance)
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['usa'], color=c_usa, alpha_top=0.2)
         
-        self.plotter.fmt_single(fig, ax_bot, title='全球主要利率历史趋势', ylabel='利率 (%)', rotation=15, 
+        self.plotter.fmt_single(fig, ax_bot, title='全球主要利率历史趋势 (20年全景)', 
+                               ylabel='利率 (%)', rotation=15, 
                                data=[df_long['usa'], df_long.get('eur', [0]), df_long.get('jpy', [0])])
         self.plotter.set_no_margins(ax_bot)
         

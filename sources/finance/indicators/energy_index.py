@@ -31,7 +31,7 @@ class EnergyIndexIndicator(BaseIndicator):
         # History: show available data (starts around 2011)
         df_long = df.copy() 
         
-        color = '#273c75' # Energy blue
+        color = '#2980b9' # Belize Hole (Premium Blue)
         
         # --- Top: Recent ---
         ax_top = axes[0]

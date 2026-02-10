@@ -61,23 +61,27 @@ class GDPIndicator(BaseIndicator):
         df_long = df[df['q_start'] == 1].copy() 
         df_long = df_long.iloc[-80:] # 20 Years
         
-        c_single = '#2C3E50'      # Dark Navy
-        c_cumulative = '#E74C3C'  # Premium Red
-        c_growth = '#3498DB'      # Energy Blue
+        c_single = '#2C3E50'      # Midnight Blue (基础增量)
+        c_cumulative = '#c0392b'  # Dark Red (总量堆叠)
+        c_growth = '#2980b9'      # Belize Hole (速率曲线)
         
         # --- Top ---
         ax_top = axes[0]
         x = np.arange(len(df_short))
-        width = 0.35
+        width = 0.4
         
-        b1 = ax_top.bar(x - width/2, df_short['gdp_single'], width, label='单季度GDP', color=c_single, alpha=0.9, edgecolor='white', linewidth=0.5)
-        b2 = ax_top.bar(x + width/2, df_short['gdp_cumulative'], width, label='累计GDP', color=c_cumulative, alpha=0.8, edgecolor='white', linewidth=0.5)
+        # Stacked Bar Chart
+        b1 = ax_top.bar(x, df_short['gdp_single'], width, label='单季度GDP', color=c_single, alpha=0.85, edgecolor='none', zorder=2)
+        b2 = ax_top.bar(x, df_short['gdp_cumulative'], width, bottom=df_short['gdp_single'], label='累计GDP', color=c_cumulative, alpha=0.85, edgecolor='none', zorder=2)
         
+        # Value Labels (Optimize font and position)
         for bars in [b1, b2]:
             for bar in bars:
                 height = bar.get_height()
-                ax_top.text(bar.get_x() + bar.get_width()/2., height + 1000,
-                        f'{int(height/10000)}万亿', ha='center', va='bottom', fontsize=8, color='#636e72')
+                if height > 0:
+                    y_pos = bar.get_y() + height/2
+                    ax_top.text(bar.get_x() + bar.get_width()/2., y_pos,
+                            f'{int(height/10000)}', ha='center', va='center', fontsize=8, color='white', fontweight='bold')
         
         def get_label(row):
             q = int(row['q_end'])
@@ -85,8 +89,14 @@ class GDPIndicator(BaseIndicator):
         ax_top.set_xticks(x)
         ax_top.set_xticklabels([get_label(r) for idx, r in df_short.iterrows()])
         
+        # Growth Rate Line (Secondary Axis)
         ax_top_r = ax_top.twinx()
-        ax_top_r.plot(x, df_short['gdp_growth'], 'D-', color=c_growth, linewidth=3, markersize=8, label='同比增长(%)')
+        ax_top_r.plot(x, df_short['gdp_growth'], 'D-', color=c_growth, linewidth=2.5, markersize=6, label='同比增长(%)', zorder=3)
+        
+        # Merge legends
+        h1, l1 = ax_top.get_legend_handles_labels()
+        h2, l2 = ax_top_r.get_legend_handles_labels()
+        ax_top.legend(h1+h2, l1+l2, loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
         
         self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='宏观数据-GDP生产总值 (近期对比)', 
                              ylabel_left='亿元', ylabel_right='同比增长(%)', rotation=0,
@@ -98,7 +108,7 @@ class GDPIndicator(BaseIndicator):
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['gdp_growth'], color=c_growth)
         ax_bot.axhline(y=0, color='#636e72', linestyle='--', linewidth=0.8, alpha=0.5)
         
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='同比增长(%)', rotation=15, 
+        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年全景)', ylabel='增速(%)', rotation=15, 
                                data=df_long['gdp_growth'])
         self.plotter.set_no_margins(ax_bot)
         

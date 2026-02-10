@@ -31,7 +31,7 @@ class InsuranceIndicator(BaseIndicator):
         # History: last 20 years (240 months)
         df_long = df.iloc[-240:].copy() 
         
-        c = '#273c75' # Energy Blue
+        c = '#27ae60' # Nephritis Green (Premium)
         
         # Scale to Billion (亿元) - Assuming raw is in 10k (万元)
         # 355,568,700 -> 35,556 亿元 (3.5 Trillion)

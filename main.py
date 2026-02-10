@@ -49,7 +49,9 @@ from sources.damai import DamaiSource
 import logging
 from core.logger import setup_logger
 
-# Module Registry
+# Task Scheduler for execution tracking
+from core.task_scheduler import get_scheduler
+
 MODULES = {
     'morning': {'class': MorningSource, 'desc': '早报 (天气/金融/英语)'},
     'paper':   {'class': PaperSource,   'desc': '论文 (TTR RSS)'},
@@ -61,8 +63,29 @@ MODULES = {
     'life':    {'class': LifeSource,    'desc': '影视数据'},
     'etf':     {'class': ETFSource,     'desc': 'ETF监控'},
     'estate':  {'class': EstateSource,  'desc': '成都房产'},
-    'damai':   {'class': DamaiSource,   'desc': '大麦演出', 'args': {'city_code': 'chengdu'}}, # Default city
+    'damai':   {'class': DamaiSource,   'desc': '大麦演出', 'args': {'city_code': 'chengdu'}},
 }
+
+# Group Presets for easy push
+#   usage: python main.py run @stock
+GROUPS = {
+    'me':     ['morning', 'finance', 'paper'],      # 默认个人组
+    'stock':  ['finance', 'stock', 'etf', 'fund'],  # 股票相关
+    'paper':  ['paper'],                             # 论文类
+    'baobao': ['morning', 'game', 'life'],          # 宝宝组
+    'family': ['morning', 'estate'],                # 家庭组
+    'night':  ['night'],                             # 美股组
+    'all':    list(MODULES.keys()),                  # 所有模块
+}
+
+def list_modules():
+    """List available modules and groups"""
+    print("\n=== Available Modules ===")
+    for name, info in MODULES.items():
+        print(f"  {name:10s} - {info['desc']}")
+    print("\n=== Group Presets (use @groupname) ===")
+    for name, mods in GROUPS.items():
+        print(f"  @{name:10s} - {', '.join(mods)}")
 
 def get_engine(token=None, require_channel=True):
     engine = Engine()
@@ -124,6 +147,10 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
     engine = get_engine(token)
     success_count = 0
     
+    # Get scheduler for tracking
+    scheduler = get_scheduler()
+    scheduler.plan_day()  # Ensure today's plan exists
+    
     for name in modules_to_run:
         module_key = name
         extra_kwargs = {}
@@ -138,12 +165,21 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
         
         if module_key not in MODULES:
             continue
+        
+        # Check if should run based on scheduler
+        if not scheduler.should_run_today(module_key):
+            logger.info(f"Skipping {module_key} (condition not met today)")
+            scheduler.record_skip(module_key, "条件不满足")
+            continue
             
         info = MODULES[module_key]
         logger.info(f"Running {module_key} ({extra_kwargs if extra_kwargs else 'default'})...")
         kwargs = {'topic': topic}
         if 'args' in info: kwargs.update(info['args'])
         kwargs.update(extra_kwargs)
+        
+        # Record start
+        scheduler.record_start(module_key)
             
         try:
             # 1. 初始化源
@@ -166,8 +202,14 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
                 # 4. 推送
                 if engine.run_with_message(message, name, ['pushplus']):
                     success_count += 1
+            
+            # Record success
+            scheduler.record_success(module_key)
+            
         except Exception as e:
             logger.critical(f"Error running {name}: {e}", exc_info=True)
+            # Record failure
+            scheduler.record_failure(module_key, str(e))
             
     logger.info(f"Summary: {success_count}/{len(modules_to_run)} modules succeeded")
 
@@ -282,7 +324,20 @@ def main():
         return
     # For Run/Gen, parse modules
     if args.command in ['run', 'gen']:
-        mods = list(MODULES.keys()) if 'all' in args.modules else args.modules
+        # Expand group presets
+        mods = []
+        for m in args.modules:
+            if m.startswith('@'):
+                group_name = m[1:]
+                if group_name in GROUPS:
+                    mods.extend(GROUPS[group_name])
+                else:
+                    print(f"Unknown group: {m}")
+            elif m == 'all':
+                mods.extend(MODULES.keys())
+            else:
+                mods.append(m)
+        mods = list(dict.fromkeys(mods))  # Remove duplicates, preserve order
         
         if args.command == 'run':
             run_modules(mods, topic=args.topic, token=args.token, title=args.title)

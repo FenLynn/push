@@ -31,18 +31,28 @@ class BondIndicator(BaseIndicator):
         
         df_long = df.iloc[-5000:].copy() 
         
-        c1 = '#E74C3C' # 10Y - Red
-        c2 = '#273c75' # 2Y - Blue
-        c3 = '#7f8c8d' # Spread - Gray
+        # Color Palette - Premium Bond Theme
+        c_10y = '#e74c3c'  # Crimson (长端无风险利率)
+        c_2y = '#3498db'   # Dodger Blue (短端无风险利率)
+        c_spread = '#95a5a6'  # Silver Gray (宏观预期指标)
         
         # --- Top ---
         ax_top = axes[0]
-        ax_top.plot(df_short['date'], df_short['y10'], color=c1, linewidth=3, label='国债10Y')
-        ax_top.plot(df_short['date'], df_short['y2'], color=c2, linewidth=2.5, label='国债2Y')
+        ax_top.plot(df_short['date'], df_short['y10'], color=c_10y, linewidth=3.5, label='国债10Y', zorder=3)
+        ax_top.plot(df_short['date'], df_short['y2'], color=c_2y, linewidth=2.5, label='国债2Y', zorder=2)
         
+        # Draw current value line for 10Y
+        self.plotter.draw_current_line(df_short['y10'].iloc[-1], ax_top, c_10y)
+        
+        # Twin axis for spread
         ax_top_r = ax_top.twinx()
-        ax_top_r.fill_between(df_short['date'], df_short['spread'], color=c3, alpha=0.1, label='期限利差(BP)')
-        ax_top_r.plot(df_short['date'], df_short['spread'], color=c3, linewidth=1, linestyle='--')
+        ax_top_r.fill_between(df_short['date'], df_short['spread'], color=c_spread, alpha=0.15, label='期限利差(BP)')
+        ax_top_r.plot(df_short['date'], df_short['spread'], color=c_spread, linewidth=1.5, linestyle='--', alpha=0.7)
+        
+        # Merge legends
+        h1, l1 = ax_top.get_legend_handles_labels()
+        h2, l2 = ax_top_r.get_legend_handles_labels()
+        ax_top.legend(h1+h2, l1+l2, loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
         
         self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='债券市场-国债收益率 (近期13月)', 
                              ylabel_left='收益率(%)', ylabel_right='利差(BP)',
@@ -51,11 +61,14 @@ class BondIndicator(BaseIndicator):
         
         # --- Bottom ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['y10'], color=c1, linewidth=1.5, label='10Y')
-        ax_bot.plot(df_long['date'], df_long['y2'], color=c2, linewidth=1, alpha=0.6)
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['y10'], color=c1, alpha_top=0.2)
+        ax_bot.plot(df_long['date'], df_long['y10'], color=c_10y, linewidth=1.8, alpha=0.9, label='10Y')
+        ax_bot.plot(df_long['date'], df_long['y2'], color=c_2y, linewidth=1.2, alpha=0.7, label='2Y')
         
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势', ylabel='收益率(%)', rotation=15, 
+        # Gradient fill for 10Y (risk-free benchmark)
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['y10'], color=c_10y, alpha_top=0.25)
+        
+        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年全景)', 
+                               ylabel='收益率(%)', rotation=15, 
                                data=[df_long['y10'], df_long['y2']])
         self.plotter.set_no_margins(ax_bot)
         

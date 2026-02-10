@@ -25,7 +25,7 @@ class SOXIndicator(BaseIndicator):
         # History: show ~20 years
         df_long = df.iloc[-5000:].copy() 
         
-        color = '#8E44AD' # Deep Purple
+        color = '#8e44ad' # Wisteria Purple (Premium)
         
         # Top: Recent
         ax_top = axes[0]
