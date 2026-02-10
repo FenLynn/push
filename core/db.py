@@ -72,7 +72,7 @@ class CoreDB:
                 # 读取现有表 -> 过滤掉已存在的数据 -> append
                 
                 try:
-                    existing = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+                    existing = pd.read_sql(f'SELECT * FROM "{table_name}"', conn)
                     # 假设 unique_index 是日期列
                     # 过滤 df
                     # 这是一个简化的去重逻辑
@@ -107,7 +107,7 @@ class CoreDB:
         """获取数据"""
         conn = self.get_connection()
         try:
-            sql = f"SELECT * FROM {table_name}"
+            sql = f'SELECT * FROM "{table_name}"'
             if order_by:
                 sql += f" ORDER BY {order_by}"
             if limit:

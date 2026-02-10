@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: -apple-system, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+            margin: 0;
+            padding: 10px;
+            background-color: #ffffff;
+            color: #2c3e50;
+            line-height: 1.4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .title-group {
+            display: flex;
+            align-items: center;
+        }
+        .title-icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+        .title-text {
+            font-size: 22px;
+            font-weight: 800;
+            color: #2c3e50;
+            letter-spacing: -0.5px;
+        }
+        .update-time {
+            font-size: 13px;
+            color: #95a5a6;
+            background: #f8f9fa;
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid #eee;
+        }
+        
+        /* Stats Dashboard Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border: 1px solid #eef2f7;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        }
+        .stat-label { font-size: 12px; color: #7f8c8d; margin-bottom: 4px; }
+        .stat-value { font-size: 18px; font-weight: bold; }
+        
+        .section-header {
+            display: flex;
+            align-items: center;
+            font-size: 17px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin: 25px 0 12px 0;
+            padding-left: 10px;
+            border-left: 5px solid #3498db;
+        }
+
+        /* Table Styling */
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 14px;
+            margin-bottom: 15px;
+            border: 1px solid #f0f3f5;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th {
+            background-color: #f8f9fa;
+            color: #5d6d7e;
+            font-weight: 600;
+            padding: 10px 8px;
+            text-align: center;
+            border-bottom: 2px solid #edf2f7;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #f1f4f7;
+            text-align: center;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background-color: #fcfdfe; }
+        
+        /* Semantic Colors */
+        .up { color: #e74c3c; font-weight: 700; }
+        .down { color: #27ae60; font-weight: 700; }
+        .neutral { color: #7f8c8d; }
+        
+        .name-col { text-align: left; font-weight: 600; padding-left: 15px; }
+        .bold-row { background-color: #f0f7ff !important; }
+        .tag-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            margin-left: 5px;
+            text-transform: uppercase;
+        }
+        .pill-up { background: #fee2e2; color: #b91c1c; }
+        .pill-down { background: #dcfce7; color: #15803d; }
+        
+        /* Charts Interaction */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 15px 0;
+        }
+        .chart-card {
+            border: 1px solid #f0f3f5;
+            border-radius: 10px;
+            padding: 5px;
+            background: #fff;
+        }
+        .chart-img {
+            width: 100%;
+            display: block;
+            border-radius: 6px;
+        }
+        .chart-full { grid-column: span 2; }
+        
+        .footer {
+            margin-top: 30px;
+            padding: 20px;
+            text-align: center;
+            color: #bdc3c7;
+            font-size: 11px;
+            border-top: 1px dashed #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title-group">
+                <span class="title-icon">🌙</span>
+                <span class="title-text">美股夜盘全局监测</span>
+            </div>
+            <div class="update-time">已更新于 {{ update_time }}</div>
+        </div>
+
+        <!-- Global Summary Bar -->
+        <div class="stats-bar">
+            {% set nasdaq_change = 0 %}
+            {% for item in indices if item.name == '纳斯达克' or item.name == '纳斯达克100' %}
+                {% set nasdaq_change = item.change %}
+            {% endfor %}
+            <div class="stat-card">
+                <div class="stat-label">纳指走势</div>
+                <div class="stat-value {{ 'up' if nasdaq_change > 0 else 'down' if nasdaq_change < 0 else 'neutral' }}">
+                    {{ '+' if nasdaq_change > 0 }}{{ nasdaq_change }}%
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">恐慌指数 (VIX)</div>
+                <div class="stat-value neutral">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">美元/人民币</div>
+                <div class="stat-value neutral">--</div>
+            </div>
+        </div>
+
+        <!-- Indices Section -->
+        {% if indices %}
+        <div class="section-header">全球主要基准指数</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="name-col" style="width: 35%;">指数名称</th>
+                    <th>点位/价格</th>
+                    <th>涨跌幅</th>
+                    <th>振幅</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in indices %}
+                <tr class="{{ 'bold-row' if item.bold }}">
+                    <td class="name-col">
+                        {{ item.name }}
+                        {% if item.change > 1.5 %}<span class="tag-pill pill-up">Strong</span>{% endif %}
+                        {% if item.change < -1.5 %}<span class="tag-pill pill-down">Panic</span>{% endif %}
+                    </td>
+                    <td>{{ item.price if item.price != "--" else "监测中" }}</td>
+                    <td class="{{ 'up' if item.change > 0 else 'down' if item.change < 0 else 'neutral' }}">
+                        {{ '+' if item.change > 0 }}{{ item.change }}%
+                    </td>
+                    <td>{{ item.amplitude }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <div class="chart-grid">
+            <div class="chart-card chart-full">
+                <img class="chart-img" src="https://image.sinajs.cn/newchart/usstock/min/IXIC.gif" alt="纳指K线">
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Stocks Section -->
+        {% if stocks %}
+        <div class="section-header">美股自选个股池</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="name-col" style="width: 35%;">股票名称</th>
+                    <th>涨跌幅</th>
+                    <th>成交额(亿$)</th>
+                    <th>市值(亿$)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in stocks %}
+                <tr class="{{ 'bold-row' if item.bold }}">
+                    <td class="name-col">{{ item.name }}</td>
+                    <td class="{{ 'up' if item.change > 0 else 'down' if item.change < 0 else 'neutral' }}">
+                        {{ '+' if item.change > 0 }}{{ item.change }}%
+                    </td>
+                    <td>{{ item.amount }}</td>
+                    <td>{{ item.market_cap }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <div class="chart-grid">
+            <div class="chart-card">
+                <img class="chart-img" src="https://image.sinajs.cn/newchart/usstock/min/TSLA.gif" alt="特斯拉">
+            </div>
+            <div class="chart-card">
+                <img class="chart-img" src="https://image.sinajs.cn/newchart/usstock/min/NVDA.gif" alt="英伟达">
+            </div>
+            <div class="chart-card">
+                <img class="chart-img" src="https://image.sinajs.cn/newchart/usstock/min/AAPL.gif" alt="苹果">
+            </div>
+            <div class="chart-card">
+                <img class="chart-img" src="https://image.sinajs.cn/newchart/usstock/min/BABA.gif" alt="阿里">
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="footer">
+            数据来源：东方财富/新浪财经/AkShare • 基准对齐 2026.02<br>
+            提示：夜盘行情波动较大，请谨慎参考
+        </div>
+    </div>
+</body>
+</html>

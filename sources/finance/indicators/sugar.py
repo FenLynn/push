@@ -30,7 +30,7 @@ class SugarIndicator(BaseIndicator):
         # History: show ~10-20 years (Daily data)
         df_long = df.iloc[-5000:].copy() 
         
-        color = '#D35400' # Deep Orange
+        color = '#e67e22' # Carrot Orange (Premium)
         
         # --- Top: Recent ---
         ax_top = axes[0]

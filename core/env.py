@@ -123,7 +123,8 @@ class EnvironmentConfig:
             'PUSHPLUS_WEBHOOK': ['network', 'pushplus_webhook'],
             'GITHUB_TOKEN': ['github', 'token'],
             'HTTP_PROXY': ['network', 'http_proxy'],
-            'HTTPS_PROXY': ['network', 'https_proxy']
+            'HTTPS_PROXY': ['network', 'https_proxy'],
+            'TTRSS_URL': ['network', 'ttrss_url']  # Add explicit TTRSS URL override
         }
         
         for env_key, path in env_map.items():

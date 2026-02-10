@@ -26,23 +26,29 @@ class CommodityIndicator(BaseIndicator):
         # History: show ~20 years
         df_long = df.iloc[-5000:].copy() 
         
-        color = '#B7950B' # Gold/Brass
+        # Color Palette - Premium Gold
+        c_gold = '#f39c12'  # Orange/Gold (避险资产)
         
         # --- Top: Recent ---
         ax_top = axes[0]
-        ax_top.plot(df_short['date'], df_short['close'], color=color, linewidth=3, label='COMEX黄金')
-        self.plotter.draw_current_line(df_short['close'].iloc[-1], ax_top, color)
+        ax_top.plot(df_short['date'], df_short['close'], color=c_gold, linewidth=3, label='COMEX黄金')
+        self.plotter.draw_current_line(df_short['close'].iloc[-1], ax_top, c_gold)
         
-        self.plotter.fmt_single(fig, ax_top, title='大宗商品-黄金 (近期13月)', ylabel='美元/盎司', rotation=15, data=df_short['close'])
+        # Explicit legend
+        ax_top.legend(loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
+        
+        self.plotter.fmt_single(fig, ax_top, title='大宗商品-黄金 (近期13月)', 
+                               ylabel='美元/盎司', rotation=15, data=df_short['close'])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['close'], color=color, linewidth=1.5)
+        ax_bot.plot(df_long['date'], df_long['close'], color=c_gold, linewidth=1.5, alpha=0.9)
         # Gradient Fill
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['close'], color=color, alpha_top=0.2)
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['close'], color=c_gold, alpha_top=0.25)
         
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='美元', rotation=15, data=df_long['close'])
+        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年全景)', 
+                               ylabel='美元/盎司', rotation=15, data=df_long['close'])
         self.plotter.set_no_margins(ax_bot)
         
         path = "output/finance/commodity.png"

@@ -62,10 +62,11 @@ class BaseIndicator(ABC):
             return None
         
         # 4. Upload & Cache (metadata is latest_date here)
-        # DISABLE UPLOAD FOR TESTING as per User Request
         latest_date = metadata
-        # url = self.manager.save_plot_info(self.name, latest_date, pic_path)
-        url = "local_test_mode"
+        url = self.manager.save_plot_info(self.name, latest_date, pic_path)
+        if not url:
+            self.logger.warning(f"Image upload failed for {self.name}, using local path")
+            url = pic_path
         
         return {'url': url, 'date': latest_date, 'name': self.name, 'value': self._get_latest_value(df)}
 

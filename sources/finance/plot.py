@@ -12,7 +12,7 @@ class Plotter:
         self.ratios = [2, 1] 
         
         # Style Config
-        plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
+        plt.rcParams['font.sans-serif'] = ['Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'SimHei', 'Arial Unicode MS', 'Microsoft YaHei', 'sans-serif']
         plt.rcParams['axes.unicode_minus'] = False
         plt.rcParams['lines.linewidth'] = 2.0
         
@@ -77,25 +77,37 @@ class Plotter:
         # Remove extra whitespace at the bottom
         ax.set_axisbelow(True) # Grid behind plots
         
-        # Dynamic Y-axis scaling if data is provided
+        # Dynamic Y-axis scaling and Empty Data Safeguard
+        is_empty = True
         if data is not None:
             try:
                 import pandas as pd
                 if isinstance(data, (list, tuple)):
-                    all_data = pd.concat([pd.to_numeric(d, errors='coerce') for d in data])
+                    # Handle None elements in list
+                    data = [d for d in data if d is not None]
+                    if data:
+                        all_data = pd.concat([pd.to_numeric(d, errors='coerce') for d in data])
+                    else:
+                        all_data = pd.Series(dtype=float)
                 else:
                     all_data = pd.to_numeric(data, errors='coerce')
                 
                 valid_data = all_data.dropna()
                 if not valid_data.empty:
+                    is_empty = False
                     d_min, d_max = valid_data.min(), valid_data.max()
                     if d_max == d_min:
                         ax.set_ylim(d_min * 0.9, d_max * 1.1)
                     else:
                         diff = d_max - d_min
-                        # Use a tighter margin as requested to remove "white area"
                         ax.set_ylim(d_min - diff * 0.05, d_max + diff * 0.1)
             except: pass
+            
+        if is_empty:
+            # Add watermark for empty data
+            ax.text(0.5, 0.5, '接口数据暂时缺失 / 数据处理中\n(Data Unavailable)', 
+                    transform=ax.transAxes, fontsize=14, color='#7f8c8d', 
+                    ha='center', va='center', alpha=0.5, weight='bold')
 
     def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.3):
         """实现渐变填充效果 (通过叠加不同透明度的 fill_between)"""

@@ -27,13 +27,20 @@ class OilIndicator(BaseIndicator):
         # History: show 200 adjustments
         df_long = df.iloc[-200:].copy() 
         
-        c1 = '#E74C3C' # Red
-        c2 = '#2980B9' # Blue
+        # Color Palette - Premium Oil Theme
+        c_gasoline = '#f39c12'  # Orange (消费端)
+        c_diesel = '#3498db'    # Dodger Blue (工业端)
         
         # --- Top: Recent ---
         ax_top = axes[0]
-        ax_top.step(df_short['date'], df_short['gasoline'], where='post', color=c1, linewidth=3, label='汽油价格')
-        ax_top.step(df_short['date'], df_short['diesel'], where='post', color=c2, linewidth=3, label='柴油价格')
+        ax_top.step(df_short['date'], df_short['gasoline'], where='post', color=c_gasoline, linewidth=3.5, label='汽油价格', zorder=3)
+        ax_top.step(df_short['date'], df_short['diesel'], where='post', color=c_diesel, linewidth=3, label='柴油价格', zorder=2)
+        
+        # Draw current value line for gasoline
+        self.plotter.draw_current_line(df_short['gasoline'].iloc[-1], ax_top, c_gasoline)
+        
+        # Explicit legend
+        ax_top.legend(loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
         
         self.plotter.fmt_single(fig, ax_top, title='行业数据-中国油价变动 (近期13月)', 
                               ylabel='元/吨', rotation=15, data=[df_short['gasoline'], df_short['diesel']])
@@ -41,12 +48,14 @@ class OilIndicator(BaseIndicator):
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['gasoline'], color=c1, alpha=0.9, linewidth=1.5, label='汽油')
-        ax_bot.plot(df_long['date'], df_long['diesel'], color=c2, alpha=0.9, linewidth=1.5, label='柴油')
+        ax_bot.plot(df_long['date'], df_long['gasoline'], color=c_gasoline, alpha=0.9, linewidth=1.8, label='汽油')
+        ax_bot.plot(df_long['date'], df_long['diesel'], color=c_diesel, alpha=0.9, linewidth=1.5, label='柴油')
         
-        # Remove historical fill as requested in previous turn
+        # Gradient fill for gasoline (consumer focus)
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['gasoline'], color=c_gasoline, alpha_top=0.2)
         
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (200次调整)', ylabel='元/吨', rotation=15,
+        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (200次调整全景)', 
+                              ylabel='元/吨', rotation=15,
                               data=[df_long['gasoline'], df_long['diesel']])
         self.plotter.set_no_margins(ax_bot)
         

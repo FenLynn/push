@@ -36,7 +36,17 @@ class DataManager:
             return False, None
 
         # 1. Save to DB (Full Replace for Macro Data to ensure consistency)
-        table_name = f"finance_{name}"
+        # Use ASCII names to avoid encoding issues
+        name_map = {
+            '股债利差': 'erp',
+            '两融杠杆率': 'leverage',
+            '巴菲特指标': 'buffett',
+            '流动性画像': 'liquidity',
+            '克强指数': 'keqiang',
+            '进出口贸易': 'trade'
+        }
+        ascii_name = name_map.get(name, name)
+        table_name = f"finance_{ascii_name}"
         try:
             # 标准化日期 columns
             if 'date' not in df.columns and '日期' in df.columns:
@@ -62,28 +72,22 @@ class DataManager:
         return True, latest_date
 
     def save_plot_info(self, name: str, date_str: str, pic_path: str):
-        """上传图片并保存缓存"""
-        from cloud.image import upload_image_to_cdn, upload_image_to_github
+        """上传图片并保存缓存 - 使用统一上传系统"""
+        from core.image_upload import upload_image_with_cdn
         
-        # 1. Try SMMS (Default via config)
         try:
-            # Use CDN wrapper for faster loading
-            url = upload_image_to_cdn(pic_path, _cdn=1)
+            # Upload to SMMS with CDN (automatic rate limiting + retry)
+            url = upload_image_with_cdn(pic_path)
+            
+            if url:
+                self.tags[name] = {'date': str(date_str), 'url': url}
+                self._save_tags()
+                self.logger.info(f"✅ Saved {name}: {url}")
+                return url
+            else:
+                self.logger.error(f"❌ Failed to upload {name}")
+                return None
+                
         except Exception as e:
-            self.logger.error(f"SMMS Upload Crash: {e}")
-            url = None
-        
-        # 2. If failed, try GitHub
-        if not url:
-            self.logger.warning("SMMS Upload failed, trying GitHub...")
-            try:
-                # Assuming standard config structure for github
-                url = upload_image_to_github(pic_path)
-            except Exception as e:
-                self.logger.error(f"GitHub Upload failed: {e}")
-        
-        if url:
-            self.tags[name] = {'date': str(date_str), 'url': url}
-            self._save_tags()
-            return url
-        return None
+            self.logger.error(f"Upload exception for {name}: {e}")
+            return None

@@ -1,0 +1,26 @@
+{
+    "snapshot_date": "2026-02-07",
+    "indices": {
+        "NDX": {"name": "纳斯达克100", "price": "23031.21", "change": "+2.18%", "status": "up"},
+        "IXIC": {"name": "纳斯达克综合", "price": "23031.21", "change": "+2.18%", "status": "up"},
+        "DJIA": {"name": "道琼斯工业", "price": "42154.6", "change": "+0.15%", "status": "up"},
+        "SPX": {"name": "标普500指数", "price": "6124.9", "change": "+0.82%", "status": "up"},
+        "VIX": {"name": "VIX恐慌指数", "price": "17.76", "change": "-18.42%", "status": "down"},
+        "USDCNH": {"name": "离岸人民币", "price": "6.9299", "change": "-0.16%", "status": "down"},
+        "GC": {"name": "COMEX黄金", "price": "4988.6", "change": "+2.03%", "status": "up"},
+        "CL": {"name": "WTI原油", "price": "81.45", "change": "-1.12%", "status": "down"},
+        "US10Y": {"name": "10Y美债收益率", "price": "4.208%", "change": "+0.48%", "status": "up"}
+    },
+    "stocks": {
+        "105.AAPL": {"name": "苹果公司", "change": 2.24, "pe": 32.4, "market_cap": 35421.5},
+        "105.TSLA": {"name": "特斯拉", "change": 2.72, "pe": 68.1, "market_cap": 9845.2},
+        "105.NVDA": {"name": "英伟达", "change": -1.15, "pe": 45.2, "market_cap": 31254.8},
+        "106.BABA": {"name": "阿里巴巴", "change": 1.13, "pe": 12.4, "market_cap": 1845.6},
+        "106.PDD": {"name": "拼多多", "change": 2.15, "pe": 22.1, "market_cap": 1654.2},
+        "105.MSFT": {"name": "微软公司", "change": -2.16, "pe": 34.2, "market_cap": 32145.7},
+        "105.AMZN": {"name": "亚马逊", "change": 1.14, "pe": 54.1, "market_cap": 19842.3},
+        "105.GOOG": {"name": "谷歌A", "change": -2.26, "pe": 26.4, "market_cap": 21542.1},
+        "106.LI": {"name": "理想汽车", "change": 0.32, "pe": 18.2, "market_cap": 354.2},
+        "106.BILI": {"name": "哔哩哔哩", "change": 1.85, "pe": -12.4, "market_cap": 54.1}
+    }
+}

@@ -6,7 +6,7 @@ WORKDIR /app
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Install system dependencies
+# Install system dependencies & Cron
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libc-dev \
@@ -14,12 +14,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxslt-dev \
     libjpeg-dev \
     zlib1g-dev \
+    cron \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source (will be overridden by volume in dev)
+# Install Playwright browsers (Chromium for SPA scraping)
+RUN playwright install chromium --with-deps
+
+# Copy source
 COPY . .
 
-CMD ["tail", "-f", "/dev/null"]
+# Setup Cron
+COPY config/crontab.txt /etc/cron.d/push-cron
+RUN chmod 0644 /etc/cron.d/push-cron && crontab /etc/cron.d/push-cron
+
+# Entrypoint
+COPY scripts/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
