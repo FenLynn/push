@@ -138,9 +138,9 @@ def main():
         sys.exit(1)
     finally:
         # Cleanup local
-        # if os.path.exists(FINAL_PATH):
-        #     os.remove(FINAL_PATH)
-        pass
+        if os.path.exists(FINAL_PATH):
+            os.remove(FINAL_PATH)
+            logger.info(f"🧹 Cleaned up local file: {FINAL_PATH}")
 
 if __name__ == "__main__":
     main()
