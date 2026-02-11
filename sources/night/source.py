@@ -4,6 +4,7 @@ import re
 import requests
 import pandas as pd
 import logging
+import time
 from datetime import datetime
 
 # 路径修复
@@ -227,70 +228,152 @@ class NightSource(BaseSource):
             print(f"[Warning] Sina API failed: {e}")
             return {}
 
+    def _fetch_eastmoney(self, secids):
+        """抓取东方财富(EastMoney)全球指数"""
+        try:
+            # param fields: f12=Code, f14=Name, f2=Price, f3=ChangePct, f4=ChangeAmt
+            # secids example: 100.NDX, 100.SPX
+            url = "https://45.push2.eastmoney.com/api/qt/ulist.np/get"
+            params = {
+                'fid': 'f3', 'pi': 0, 'pz': 50, 'po': 1, 'np': 1,
+                'fields': 'f12,f14,f2,f3,f4',
+                'secids': ','.join(secids),
+                '_': int(time.time() * 1000)
+            }
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            r = requests.get(url, params=params, headers=headers, timeout=self.timeout)
+            data = r.json()
+            if not data or 'data' not in data or 'diff' not in data['data']:
+                return {}
+            
+            res = {}
+            for item in data['data']['diff']:
+                # Item keys are f12, f14, f2, f3...
+                code = item.get('f12') # e.g. NDX
+                if not code: continue
+                
+                price = item.get('f2')
+                pct = item.get('f3') # 1.23 means 1.23%
+                
+                # Handle cases where price/pct might be '-'
+                if price == '-': price = 0
+                if pct == '-': pct = 0
+                
+                res[code] = {'price': str(price), 'change_pct': float(pct)}
+            return res
+        except Exception as e:
+            self.logger.error(f"EastMoney API failed: {e}")
+            return {}
+
+    def _fetch_a50(self):
+        """抓取A50期指 (EastMoney Future)"""
+        try:
+            url = "http://futsseapi.eastmoney.com/static/104_CN00Y_qt"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            r = requests.get(url, headers=headers, timeout=self.timeout)
+            d = r.json()
+            qt = d.get('qt')
+            if not qt: return None
+            
+            return {
+                'price': qt.get('p'),
+                'change_pct': float(qt.get('zdf', 0))
+            }
+        except Exception as e:
+            self.logger.error(f"A50 API failed: {e}")
+            return None
+
     def _get_authentic_indices(self, config, bolds, exclude):
-        # 1. 定义源映射 (Tencent vs Sina)
-        # 按照 v5.7 截图顺序: 俄罗斯RTS, 日经225, 纳斯达克, 德国DAX30, BDI, 标普500, 法国CAC40, 
-        # 欧洲斯托克50, 英国富时250(使用FTSE100兜底), 越南胡志明, 道琼斯, 美元指数, 印度孟买SENSEX
+        # 1. 定义目标指数 (所有 source 转为 eastmoney, 只有 DXY/BDI 保留 Sina/Tencent 备用?)
+        # 备注: 此时我们优先使用 EastMoney, 如果没有再 fallback
         
-        target_indices = [
-            {'key': 'RTS', 'name': '俄罗斯RTS', 'source': 'sina', 'code': 'znb_IRTS'},
-            {'key': 'N225', 'name': '日经225', 'source': 'tencent', 'code': 'us.N225'},
-            {'key': 'COMP', 'name': '纳斯达克', 'source': 'tencent', 'code': 'us.IXIC'},
-            {'key': 'GDAXI', 'name': '德国DAX30', 'source': 'tencent', 'code': 'us.GDAXI'},
-            {'key': 'BDI', 'name': '波罗的海BDI', 'source': 'sina', 'code': 'gn0980250'},
-            {'key': 'SPX', 'name': '标普500', 'source': 'tencent', 'code': 'us.INX'},
-            {'key': 'FCHI', 'name': '法国CAC40', 'source': 'tencent', 'code': 'us.FCHI'},
-            {'key': 'SX5E', 'name': '欧洲斯托克50', 'source': 'sina', 'code': 'znb_SX5E'},
-            {'key': 'FTSE', 'name': '英国富时100', 'source': 'tencent', 'code': 'us.FTSE'}, 
-            {'key': 'A50', 'name': '富时A50期指', 'source': 'tencent', 'code': 'hf_CN'},
-            {'key': 'VNINDEX', 'name': '越南胡志明', 'source': 'sina', 'code': 'znb_VNINDEX'},
-            {'key': 'DJIA', 'name': '道琼斯', 'source': 'tencent', 'code': 'us.DJI'},
-            {'key': 'DXY', 'name': '美元指数', 'source': 'sina', 'code': 'DINIW'},
-            {'key': 'SENSEX', 'name': '印度孟买', 'source': 'sina', 'code': 'znb_SENSEX'}
+        # Mapping: Key -> EastMoney SecID (100.CODE)
+        # Note: SecID format is usually "100.CODE" or "105.CODE" etc.
+        # From cloud/finance.py: 100.NDX, 100.SPX, 100.DJIA ...
+        
+        targets = [
+            {'key': 'N225', 'name': '日经225', 'secid': '100.N225'},
+            {'key': 'COMP', 'name': '纳斯达克', 'secid': '100.NDX'},
+            {'key': 'GDAXI', 'name': '德国DAX30', 'secid': '100.GDAXI'},
+            {'key': 'SPX', 'name': '标普500', 'secid': '100.SPX'},
+            {'key': 'FCHI', 'name': '法国CAC40', 'secid': '100.FCHI'},
+            {'key': 'SX5E', 'name': '欧洲斯托克50', 'secid': '100.SX5E'}, # user legacy? 
+            {'key': 'FTSE', 'name': '英国富时100', 'secid': '100.FTSE'},
+            {'key': 'VNINDEX', 'name': '越南胡志明', 'secid': '100.VNINDEX'},
+            {'key': 'DJIA', 'name': '道琼斯', 'secid': '100.DJIA'},
+            {'key': 'SENSEX', 'name': '印度孟买', 'secid': '100.SENSEX'},
+            {'key': 'RTS', 'name': '俄罗斯RTS', 'secid': '100.RTS'},
+             # A50 dealt separately
         ]
+        
+        # Prepare SecIDs
+        secids = [t['secid'] for t in targets]
+        
+        # Fetch Data
+        em_data = self._fetch_eastmoney(secids)
+        a50_data = self._fetch_a50()
+        
+        # BDI/DXY fetch (Legacy Sina)
+        sina_codes = []
+        if 'BDI' not in exclude: sina_codes.append('gn0980250') # BDI
+        if 'DXY' not in exclude: sina_codes.append('DINIW') # DXY
+        sina_data = self._fetch_sina(sina_codes) if sina_codes else {}
 
-        # 2. 分离代码进行抓取
-        tencent_codes = [x['code'] for x in target_indices if x['source'] == 'tencent']
-        sina_codes = [x['code'] for x in target_indices if x['source'] == 'sina']
-
-        t_data = self._fetch_tencent(list(set(tencent_codes)))
-        s_data = self._fetch_sina(list(set(sina_codes)))
-
-        # 3. 合并与组装
         res = []
-        for item in target_indices:
-            key = item['code']
+        
+        # 1. Add A50 first (if wanted) or in order? 
+        # Original order: RTS, N225, COMP, GDAXI, BDI, SPX, FCHI, SX5E, FTSE, A50, VNINDEX, DJIA, DXY, SENSEX
+        # Let's keep a consistent list including all keys
+        
+        full_order = ['RTS', 'N225', 'COMP', 'GDAXI', 'BDI', 'SPX', 'FCHI', 'SX5E', 'FTSE', 'A50', 'VNINDEX', 'DJIA', 'DXY', 'SENSEX']
+        
+        # Map targets for easy lookup
+        tgt_map = {t['key']: t for t in targets}
+        
+        for key in full_order:
             d = None
+            item_name = key
+            is_bold = key in ['DJIA', 'COMP', 'SPX', 'N225', 'A50'] # Bold A50 too?
             
-            if item['source'] == 'tencent' and key in t_data:
-                d = t_data[key]
-            elif item['source'] == 'sina' and key in s_data:
-                d = s_data[key]
+            # Fetch Source
+            if key == 'A50':
+                d = a50_data
+                item_name = '富时A50期指'
+            elif key in ['BDI', 'DXY']:
+                # From Sina
+                code = 'gn0980250' if key == 'BDI' else 'DINIW'
+                if code in sina_data:
+                    d = sina_data[code]
+                item_name = '波罗的海BDI' if key == 'BDI' else '美元指数'
+            else:
+                # From EastMoney
+                if key in tgt_map:
+                    item_name = tgt_map[key]['name']
+                    # Code in em_data is "NDX", "SPX" etc. (without 100.)
+                    em_code = tgt_map[key]['secid'].split('.')[-1]
+                    if em_code in em_data:
+                        d = em_data[em_code]
             
-            # 回退逻辑 (Fallback)
-            if not d:
-                # 只有当数据缺失时才使用硬编码兜底，避免空行
-                # 这里可以设置一些静态值或者保留上次的缓存(如果支持)
-                # 暂时跳过或显示 N/A
-                continue
-
-            # 格式化涨跌幅颜色
-            # 计算 display properties
-            # bold 逻辑: 保留核心指数加粗
-            is_bold = item['key'] in ['DJIA', 'COMP', 'SPX', 'N225'] # v7.1: Removed RTS
+            if not d: continue
             
-            # 处理 BDI/DXY 等可能没有涨跌幅的情况
-            chg_str = f"{d['change_pct']:+.2f}"
-            if item['key'] == 'BDI' and d['change_pct'] == 0:
-                chg_str = "0.00" # BDI 经常只有点位
-
+            # Format
+            price = d['price']
+            pct = d['change_pct']
+            
+            chg_str = f"{pct:+.2f}"
+            if key == 'BDI' and pct == 0: chg_str = "0.00"
+            
             res.append({
-                'name': item['name'],
-                'price': d['price'],
+                'name': item_name,
+                'price': price,
                 'change': chg_str,
                 'bold': is_bold
             })
-
+            
         return res
 
     def _get_authentic_stocks(self, codes, bolds):
