@@ -200,7 +200,8 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
                         message.title += f" ({idx+1}/{len(results)})"
                 
                 # 4. 推送
-                if engine.run_with_message(message, name, ['pushplus']):
+                # Use None to send to all registered channels
+                if engine.run_with_message(message, name, channel_names=None):
                     success_count += 1
             
             # Record success
@@ -255,12 +256,12 @@ def send_file(file_path, title=None, token=None):
     # Using channel directly for simplicity here.
     
     # Actually, let's use engine's splitter logic just in case file is huge
-    engine.splitter.split(msg)
-    channel = engine.channels['pushplus']
-    if channel.send(msg):
-         logger.info("✅ Sent successfully")
+    # Send using Engine's broadcast capability
+    # We use a dummy source name 'manual'
+    if engine.run_with_message(msg, 'manual', channel_names=None):
+         logger.info("✅ Sent successfully to all channels")
     else:
-         logger.error("❌ Send failed")
+         logger.error("❌ Send failed (check logs)")
 
 def main():
     setup_logger('Push')
