@@ -6,54 +6,77 @@
     <meta name="format-detection" content="telephone=no">
     <title>股市推送</title>
     <style>
-        body { font-size: 16px; line-height: 1.5; font-family: -apple-system, sans-serif; color: #333; }
+        :root {
+            --bg: #fff; --text: #333; --card-bg: #fff; --card-border: #eee;
+            --header-bg: #f9fafb; --item-bg: #f3f4f6; --label-color: #666;
+            --up-color: #e11d48; --down-color: #16a34a; --gray-color: #9ca3af;
+            --th-bg: #f3f4f6; --border-color: #f0f0f0;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #000; --text: #fff; --card-bg: #111; --card-border: #333;
+                --header-bg: #1a1a1a; --item-bg: #222; --label-color: #ccc; 
+                --up-color: #ff6b6b; --down-color: #4ade80; --gray-color: #fff; 
+                --th-bg: #1a1a1a; --border-color: #333;
+            }
+        }
+
+        body { font-size: 16px; line-height: 1.5; font-family: -apple-system, sans-serif; color: var(--text); background: var(--bg); }
         .container { padding: 6px; max-width: 600px; margin: 0 auto; }
         
         /* New Header Layout */
         .header { display: flex; flex-direction: column; align-items: center; padding: 12px 0 8px; }
-        .title { font-size: 24px; font-weight: 800; color: #ef4444; margin-bottom: 2px; }
-        .subtitle { color: #888; font-size: 13px; }
+        .title { font-size: 24px; font-weight: 800; color: var(--up-color); margin-bottom: 2px; }
+        .subtitle { color: var(--label-color); font-size: 13px; }
 
-        .card { background: #fff; margin-bottom: 10px; border: 1px solid #eee; border-radius: 6px; }
-        .card-header { padding: 8px 10px; font-weight: 700; font-size: 16px; background: #f9fafb; border-bottom: 1px solid #eee; }
+        .card { background: var(--card-bg); margin-bottom: 10px; border: 1px solid var(--card-border); border-radius: 6px; }
+        .card-header { padding: 8px 10px; font-weight: 700; font-size: 16px; background: var(--header-bg); border-bottom: 1px solid var(--card-border); color: var(--text); }
         .card-body { padding: 6px; }
 
         /* Market Summary Grid */
         .market-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; margin-bottom: 6px; }
-        .m-item { background: #f3f4f6; padding: 8px 4px; border-radius: 4px; }
-        .m-label { font-size: 12px; color: #666; }
-        .m-val { font-size: 15px; font-weight: 700; }
+        .m-item { background: var(--item-bg); padding: 8px 4px; border-radius: 4px; }
+        .m-label { font-size: 12px; color: var(--label-color); }
+        .m-val { font-size: 15px; font-weight: 700; color: var(--text); }
 
         /* Horizontal Indices */
         .indices-row { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 6px; white-space: nowrap; }
-        .index-item { flex: 1; min-width: 85px; background: #f9fafb; padding: 8px 6px; text-align: center; border-radius: 4px; border: 1px solid #eee; }
-        .idx-name { font-size: 13px; color: #666; }
-        .idx-val { font-size: 15px; font-weight: 700; display: block; }
+        .index-item { flex: 1; min-width: 85px; background: var(--header-bg); padding: 8px 6px; text-align: center; border-radius: 4px; border: 1px solid var(--card-border); }
+        .idx-name { font-size: 13px; color: var(--label-color); }
+        .idx-val { font-size: 15px; font-weight: 700; display: block; color: var(--text); }
         .idx-chg { font-size: 13px; }
 
         /* Sector Split */
         .sector-cols { display: flex; gap: 10px; }
         .sector-col { flex: 1; }
-        .sec-row { display: flex; justify-content: space-between; font-size: 14px; border-bottom: 1px dashed #eee; padding: 4px 0; }
-        .sec-name { color: #333; }
+        .sec-row { display: flex; justify-content: space-between; font-size: 14px; border-bottom: 1px dashed var(--card-border); padding: 4px 0; }
+        .sec-name { color: var(--text); }
         
         /* Tables */
         table { width: 100%; border-collapse: collapse; font-size: 15px; }
-        th { background: #f3f4f6; padding: 4px; font-size: 13px; font-weight: 400; color: #666; text-align: right; }
-        td { padding: 6px 4px; border-bottom: 1px solid #f0f0f0; text-align: right; }
+        th { background: var(--th-bg); padding: 4px; font-size: 13px; font-weight: 400; color: var(--label-color); text-align: right; }
+        td { padding: 6px 4px; border-bottom: 1px solid var(--border-color); text-align: right; color: var(--text); }
         th:last-child, td:last-child { padding-right: 8px; }
         .name-cell { text-align: left; padding-left: 8px; }
-        .hl { background: #fff1f2; }
+        .hl { background: #fff1f2; } /* Keep highlighter light-ish or adjust? */
 
         /* Tag Cloud */
         .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
-        .tag { background: #f3f4f6; padding: 6px 10px; border-radius: 14px; font-size: 13px; display: flex; align-items: center; }
-        .tag-n { margin-right: 6px; color: #333; }
+        .tag { background: var(--item-bg); padding: 6px 10px; border-radius: 14px; font-size: 13px; display: flex; align-items: center; }
+        .tag-n { margin-right: 6px; color: var(--text); }
         .tag-v { font-weight: 700; }
+        
+        a { text-decoration: none; color: var(--text); }
 
-        .up { color: #e11d48; }
-        .down { color: #16a34a; }
-        .gray { color: #9ca3af; }
+        .up { color: var(--up-color); }
+        .down { color: var(--down-color); }
+        .gray { color: var(--gray-color); }
+        
+        /* New Highs Tag Special Style */
+        .tag-new { background-color: #fff1f2; border: 1px solid #fecdd3; }
+        @media (prefers-color-scheme: dark) {
+            .tag-new { background-color: #371b1b; border-color: #552b2b; }
+        }
     </style>
 </head>
 <body>
@@ -158,7 +181,7 @@
                     {% for s in stocks %}
                     <tr>
                         <td class="name-cell">
-                            <a href="{{ s.url }}" style="text-decoration:none; color:#333;">{{ s.name }}</a>
+                            <a href="{{ s.url }}">{{ s.name }}</a>
                         </td>
                         <td>{{ s.close }}</td>
                         <td class="{{ 'up' if s.growth_rate|float > 0 else 'down' if s.growth_rate|float < 0 else 'gray' }}">
@@ -187,7 +210,7 @@
                     {% for s in etfs %}
                     <tr>
                         <td class="name-cell">
-                            <a href="{{ s.url }}" style="text-decoration:none; color:#333;">{{ s.name }}</a>
+                            <a href="{{ s.url }}">{{ s.name }}</a>
                         </td>
                         <td>{{ s.close }}</td>
                         <td class="{{ 'up' if s.growth_rate|float > 0 else 'down' if s.growth_rate|float < 0 else 'gray' }}">
@@ -218,7 +241,7 @@
                 <div style="font-size:11px; color:#888; margin: 8px 0 4px;">创历史新高</div>
                 <div class="tag-cloud">
                     {% for s in new_highs %}
-                    <span class="tag" style="background:#fff1f2; border:1px solid #fecdd3;">
+                    <span class="tag tag-new">
                         <a href="{{ s.url }}" class="tag-n" style="text-decoration:none;">{{ s.name }}</a>
                         <span class="tag-v up">{{ s.growth_rate }}%</span>
                     </span>

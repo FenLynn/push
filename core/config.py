@@ -69,8 +69,28 @@ class ConfigLoader:
         Get stock ETF watchlist as [(Name, Code), ...]
         Reads [finance.stock_etf]
         """
-        section = self.get_section('finance.stock_etf')
-        return [(name, code) for code, name in section.items()]
+    def get_llm_config(self) -> Dict[str, str]:
+        """
+        Get LLM config from [llm] section or env vars
+        """
+        conf = self.get_section('llm')
+        
+        # Env vars override
+        provider = os.getenv('LLM_PROVIDER', conf.get('provider', 'zhipu'))
+        api_key = os.getenv('LLM_API_KEY', conf.get('api_key', ''))
+        base_url = os.getenv('LLM_BASE_URL', conf.get('base_url', ''))
+        model = os.getenv('LLM_MODEL', conf.get('model', ''))
+        proxy = os.getenv('LLM_PROXY', conf.get('proxy', ''))
+        
+        return {
+            'provider': provider,
+            'api_key': api_key,
+            'base_url': base_url,
+            'model': model,
+            'proxy': proxy
+        }
+
+
 
         
 # Global instance

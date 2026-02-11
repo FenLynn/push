@@ -77,8 +77,15 @@ class Engine:
         self.logger.info(f"Generating content for: {source_name}")
         
         try:
-            message = source.run()
-            return self.save_output(source_name, message)
+            results = source.run()
+            if isinstance(results, list):
+                paths = []
+                for idx, message in enumerate(results):
+                    suffix = "" if idx == 0 else f"_{idx+1}"
+                    paths.append(self.save_output(source_name, message, suffix=suffix))
+                return ", ".join(paths) if paths else None
+            else:
+                return self.save_output(source_name, results)
         except Exception as e:
             self.logger.error(f"Generation failed: {str(e)}", exc_info=True)
             return None

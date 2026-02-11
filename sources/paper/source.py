@@ -21,6 +21,8 @@ from cloud.utils.lib import *
 
 # 导入新的环境配置系统
 from core.env import get_env_config
+from core.config import config
+from core.llm_factory import LLMFactory
 
 
 class PaperSource(BaseSource):
@@ -78,6 +80,14 @@ class PaperSource(BaseSource):
         super().__init__()
         self.topic = topic
         self.test_mode = test_mode if test_mode is not None else self.TEST_MODE
+        
+        # Initialize LLM Provider
+        llm_conf = config.get_llm_config()
+        self.llm_provider = LLMFactory.create_provider(llm_conf)
+        if self.llm_provider:
+            print(f"[Paper] LLM Provider Initialized: {llm_conf.get('provider')}")
+        else:
+            print("[Paper] LLM Provider NOT initialized (check specific config)")
     
     MAX_ARTICLES_PER_PAGE = 35
     
@@ -404,6 +414,34 @@ class PaperSource(BaseSource):
                     continue
                 
                 data_list.append(paper)
+                
+                # LLM Summarization (Phase 2)
+                # Strategy: Summarize if LLM is enabled. 
+                # To save time/cost, maybe only summarize matching keywords?
+                # User request implies broad usage. Let's try summarizing ALL for valuable feeds.
+                # But for latency, let's stick to Keyword matches + Test Mode + First 5 articles?
+                # Let's just do it for 'is_include_keyword' matches OR if it's a test run.
+                
+                should_summarize = self.llm_provider and (paper['is_include_keyword'] or self.test_mode)
+                
+                if should_summarize:
+                    try:
+                        # Prepare content for LLM
+                        # Use title + content (strip HTML)
+                        raw_text = paper['content']
+                        # Simple strip tags
+                        clean_text = re.sub(r'<[^>]+>', '', raw_text).strip()
+                        # Limit length to avoid context overflow / cost
+                        txt_input = f"Title: {paper['title']}\nAbstract/Content: {clean_text[:3000]}"
+                        
+                        print(f"  [AI] Summarizing: {paper['title'][:30]}...")
+                        summary = self.llm_provider.summarize(txt_input)
+                        if summary:
+                            paper['summary'] = summary
+                            print(f"  [AI] Summary: {summary[:30]}...")
+                    except Exception as e:
+                        print(f"  [AI] Failed to summarize: {e}")
+
                 ino += 1
             
             feed_list.append({
