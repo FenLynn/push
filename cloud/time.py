@@ -15,12 +15,12 @@ def get_time_ymd_str():
 
 
 def get_str_date(s):
-    pattern_date = re.compile('\d{4}[-/]?\d{2}[-/]?\d{2}')
+    pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}')
     match=pattern_date.findall(s)[0]
     return match
     
 def get_str_time(s):
-    pattern_time = re.compile('\d{1,2}:\d{1,2}')
+    pattern_time = re.compile(r'\d{1,2}:\d{1,2}')
     match=pattern_time.findall(s)[0]
     return match
 
