@@ -109,34 +109,34 @@ services:
       ofelia.enabled: "true"
       # === Schedule: Sequential Verification (Start 14:36) ===
       # 1. Morning (14:36:00)
-      ofelia.job-exec.morning.schedule: "0 36 14 * * *"
+      ofelia.job-exec.morning.schedule: "0 00 7 * * *"
       ofelia.job-exec.morning.command: "python main.py run morning"
       # 2. Paper (14:36:30)
-      ofelia.job-exec.paper.schedule: "30 36 14 * * *"
+      ofelia.job-exec.paper.schedule: "30 02 7 * * *"
       ofelia.job-exec.paper.command: "python main.py run paper"
       # 3. Life (14:37:00)
-      ofelia.job-exec.life.schedule: "0 37 14 * * *"
+      ofelia.job-exec.life.schedule: "0 03 7 * * *"
       ofelia.job-exec.life.command: "python main.py run life"
       # 4. Damai (14:37:30)
-      ofelia.job-exec.damai.schedule: "30 37 14 * * *"
+      ofelia.job-exec.damai.schedule: "30 04 7 * * *"
       ofelia.job-exec.damai.command: "python main.py run damai"
       # 5. Game (14:38:00)
-      ofelia.job-exec.game.schedule: "0 38 14 * * *"
+      ofelia.job-exec.game.schedule: "0 05 7 * * *"
       ofelia.job-exec.game.command: "python main.py run game"
       # 6. Stock (14:38:30)
-      ofelia.job-exec.stock.schedule: "30 38 14 * * *"
+      ofelia.job-exec.stock.schedule: "30 10 7 * * *"
       ofelia.job-exec.stock.command: "python main.py run stock"
       # 7. Fund (14:39:00)
-      ofelia.job-exec.fund.schedule: "0 39 14 * * *"
+      ofelia.job-exec.fund.schedule: "0 11 7 * * *"
       ofelia.job-exec.fund.command: "python main.py run fund"
       # 8. ETF (14:39:30)
-      ofelia.job-exec.etf.schedule: "30 39 14 * * *"
+      ofelia.job-exec.etf.schedule: "30 12 7 * * *"
       ofelia.job-exec.etf.command: "python main.py run etf"
       # 9. Night (14:40:00)
-      ofelia.job-exec.night.schedule: "0 40 14 * * *"
+      ofelia.job-exec.night.schedule: "0 13 7 * * *"
       ofelia.job-exec.night.command: "python main.py run night"
       # 10. Finance (14:40:30)
-      ofelia.job-exec.finance.schedule: "30 40 14 * * *"
+      ofelia.job-exec.finance.schedule: "30 15 7 * * *"
       ofelia.job-exec.finance.command: "python main.py run finance"
 
   # 5. Ofelia Scheduler
