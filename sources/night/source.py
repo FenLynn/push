@@ -3,6 +3,7 @@ import os
 import re
 import requests
 import pandas as pd
+import logging
 from datetime import datetime
 
 # 路径修复
