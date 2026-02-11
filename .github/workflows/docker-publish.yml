@@ -2,11 +2,11 @@ name: Docker Build & Publish
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
 
 env:
   REGISTRY: ghcr.io
