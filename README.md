@@ -10,13 +10,13 @@ A unified TTRSS + Push Notification system running on Docker.
   - `postgres/`: (Currently managed by Docker Volume `db_data`)
   - `push.db`: Local application cache.
 - `scripts/`: System management scripts.
-  - `backup_webdav.sh`: **Encrypt & Backup** (to WebDAV).
-  - `restore_webdav.sh`: **Restore** (from WebDAV).
+  - `backup_r2.py`: **R2 Backup**.
+  - `cleanup.py`: **Stateless Cleanup**.
   - `docker_entrypoint.sh`: Container entrypoint.
 - `.env`: Environment variables (Secrets).
 - `docker-compose.yml`: Service definition.
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Deployment)
 
 ### 1. Start Services
 ```bash
@@ -28,29 +28,25 @@ docker compose up -d
 docker exec -it push-service python main.py run all
 ```
 
-## 🛡️ Backup & Restore (WebDAV)
+## 🔄 Git Workflow (How to Update)
 
-### Backup
-Auto-encrypts and uploads to Nutstore. (Configure `WEBDAV_*` and `BACKUP_ENV` in `.env`)
+### 1. Update Code (Routine)
+Runs on GitHub Actions, just pull locally.
 ```bash
-./scripts/backup_webdav.sh
+git pull origin main
 ```
 
-### Restore
-Interactive restoration from Test or Prod environment.
+### 2. Deployment (On VPS)
+Pull the latest image automatically built by GitHub.
 ```bash
-./scripts/restore_webdav.sh
+docker pull ghcr.io/fenlynn/push:main
+docker compose up -d
 ```
+
+## ☁️ Cloud Native Architecture
+- **Backup**: Automated to **Cloudflare R2** (`scripts/backup_r2.py`).
+- **CI/CD**: GitHub Actions auto-builds Docker images to GHCR.
+- **Stateless**: `scripts/cleanup.py` enforces 7-day retention for output/backups.
 
 ## 🧹 Maintenance
 Files in `../push.bak` are legacy backups/junk and can be deleted after verification.
-
-## ☁️ Cloud Native Architecture
-- **Backup**: Automated to **Cloudflare R2** (`scripts/backup_r2.py`).
-- **CI/CD**: GitHub Actions auto-builds Docker images to GHCR.
-- **Stateless**: `scripts/cleanup.py` enforces 7-day retention for output/backups.
-
-## ☁️ Cloud Native Architecture
-- **Backup**: Automated to **Cloudflare R2** (`scripts/backup_r2.py`).
-- **CI/CD**: GitHub Actions auto-builds Docker images to GHCR.
-- **Stateless**: `scripts/cleanup.py` enforces 7-day retention for output/backups.
