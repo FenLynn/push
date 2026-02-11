@@ -30,8 +30,10 @@ class StockSource(BaseSource):
         
         # Load watchlists from config
         self.STOCKS_WATCHLIST = config.get_stock_watchlist()
+        self.logger.info(f"Loaded {len(self.STOCKS_WATCHLIST)} stocks from config")
         
         self.ETFS_WATCHLIST = config.get_stock_etf_watchlist()
+        self.logger.info(f"Loaded {len(self.ETFS_WATCHLIST)} ETFs from config")
 
         self.logger = logging.getLogger('Push.Source.Stock')
         self.bold_stocks = bold_stock_list
