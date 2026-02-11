@@ -62,8 +62,8 @@ def get_game_schedule(games=[]):
             #     resTxt=f.read()
             # f.close()
             rows=[]
-            pattern_date = re.compile('\d{4}[-/]?\d{2}[-/]?\d{2}')
-            pattern_time = re.compile('\d{1,2}:\d{1,2}')
+            pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}')
+            pattern_time = re.compile(r'\d{1,2}:\d{1,2}')
             idx=0
             #date_list=[]
             last_date,pos_date=get_date(resTxt)
@@ -168,8 +168,8 @@ def get_game_schedule(games=[]):
         def get_game_info(self,key_str):
             resTxt=self.resTxt
             rows=[]
-            pattern_date = re.compile('\d{4}[-/]?\d{2}[-/]?\d{2}')
-            pattern_time = re.compile('\d{1,2}:\d{1,2}')
+            pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}')
+            pattern_time = re.compile(r'\d{1,2}:\d{1,2}')
             idx=0
             while idx != -1:
                 t=re.search(r'<li label=\"(.*?)\" id=',resTxt)           
