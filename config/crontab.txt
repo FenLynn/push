@@ -1,28 +1,16 @@
-# Push Project Schedule (Asia/Shanghai Time)
-# Ensure newline at the end of file!
+# Temporary Verification Schedule (Verification Run)
+# Group 1: 14:20
+20 14 * * * cd /app && /usr/local/bin/python main.py run morning >> /app/logs/ver_morning.log 2>&1
+20 14 * * * cd /app && /usr/local/bin/python main.py run stock >> /app/logs/ver_stock.log 2>&1
+20 14 * * * cd /app && /usr/local/bin/python main.py run fund >> /app/logs/ver_fund.log 2>&1
+20 14 * * * cd /app && /usr/local/bin/python main.py run etf >> /app/logs/ver_etf.log 2>&1
+20 14 * * * cd /app && /usr/local/bin/python main.py run paper >> /app/logs/ver_paper.log 2>&1
 
-# 1. Morning Paper (08:00 Daily)
-0 8 * * * cd /app && /usr/local/bin/python main.py run morning >> /app/logs/cron_morning.log 2>&1
+# Group 2: 14:21
+21 14 * * * cd /app && /usr/local/bin/python main.py run life >> /app/logs/ver_life.log 2>&1
+21 14 * * * cd /app && /usr/local/bin/python main.py run game >> /app/logs/ver_game.log 2>&1
+21 14 * * * cd /app && /usr/local/bin/python main.py run damai >> /app/logs/ver_damai.log 2>&1
+21 14 * * * cd /app && /usr/local/bin/python main.py run night >> /app/logs/ver_night.log 2>&1
+21 14 * * * cd /app && /usr/local/bin/python main.py run finance >> /app/logs/ver_finance.log 2>&1
 
-# 2. Finance Report (18:00 Weekdays)
-0 18 * * 1-5 cd /app && /usr/local/bin/python main.py run finance >> /app/logs/cron_finance.log 2>&1
-
-# 3. Night Flash (07:00 Tue-Sat due to US time)
-0 7 * * 2-6 cd /app && /usr/local/bin/python main.py run night >> /app/logs/cron_night.log 2>&1
-
-# 4. Estate Crawler (Daily 21:00 - Collect data after market close)
-0 21 * * * cd /app && /usr/local/bin/python scripts/crawl_estate.py >> /app/logs/cron_estate_crawl.log 2>&1
-
-# 5. Estate Report (Weekly, Monday 09:00)
-0 9 * * 1 cd /app && /usr/local/bin/python main.py run estate >> /app/logs/cron_estate.log 2>&1
-
-# 6. Game (Daily 12:00)
-0 12 * * * cd /app && /usr/local/bin/python main.py run game >> /app/logs/cron_game.log 2>&1
-
-# 7. WebDAV Backup (Daily 02:00)
-0 2 * * * cd /app && /usr/local/bin/python scripts/backup_webdav.py >> /app/logs/backup_webdav.log 2>&1
-
-# 8. Daily Summary Report (Daily 23:00)
-0 23 * * * cd /app && /usr/local/bin/python scripts/daily_summary.py >> /app/logs/daily_summary.log 2>&1
-
-# Newline required
+# Ensure newline

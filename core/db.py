@@ -17,8 +17,16 @@ class CoreDB:
             cls._instance = super(CoreDB, cls).__new__(cls, *args, **kwargs)
         return cls._instance
 
-    def __init__(self, db_path='push.db'):
+    def __init__(self, db_path=None):
         if not hasattr(self, 'initialized'):
+            if db_path is None:
+                # Default to data/push.db
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                data_dir = os.path.join(base_dir, 'data')
+                if not os.path.exists(data_dir):
+                    os.makedirs(data_dir)
+                db_path = os.path.join(data_dir, 'push.db')
+            
             self.db_path = os.path.abspath(db_path)
             self.logger = logging.getLogger('Push.CoreDB')
             self.initialized = True
