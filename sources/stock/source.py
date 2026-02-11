@@ -644,7 +644,7 @@ class StockSource(BaseSource):
                 
             return result
         except Exception as e:
-            self.logger.warning(f"Failed to get new highs: {e}")
+            self.logger.info(f"Failed to get new highs (non-critical): {e}")
             return []
     
     def _load_data_with_retry(self):
@@ -660,6 +660,10 @@ class StockSource(BaseSource):
                 # 检查数据是否有效
                 if df is None or df.empty:
                     raise Exception("Empty dataframe")
+                    
+                # 检查是否返回了 HTML 错误页 (Akshare 有时会把 HTML 解析成单列 DF 或者抛错，或者是空)
+                # 这里假设 akshare 已经返回了 DF。如果 Warning 说 "starting with <", 说明 akshare 内部打印了 warning。
+                # 我们尽量捕获它。
                     
                 self.logger.info(f"Loaded {len(df)} rows from Sina")
                 
@@ -702,7 +706,11 @@ class StockSource(BaseSource):
                 return df
                 
             except Exception as e:
-                self.logger.warning(f"Sina API failed (Try {i+1}): {e}")
+                msg = str(e)
+                if "Can not decode" in msg and "<" in msg:
+                     self.logger.info(f"Sina API blocked/html (Try {i+1}): {e}")
+                else:    
+                     self.logger.warning(f"Sina API failed (Try {i+1}): {e}")
                 time.sleep(2) # 休息一下再试
         
         # 2. 如果 Sina 彻底失败，尝试 EM (虽然已知被墙，但作为最后的挣扎)
