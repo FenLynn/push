@@ -259,9 +259,12 @@ class NightSource(BaseSource):
                 
                 # Handle cases where price/pct might be '-'
                 if price == '-': price = 0
-                if pct == '-': pct = 0
+                else: price = float(price) / 100
                 
-                res[code] = {'price': str(price), 'change_pct': float(pct)}
+                if pct == '-': pct = 0
+                else: pct = float(pct) / 100
+                
+                res[code] = {'price': f"{price:.2f}", 'change_pct': pct}
             return res
         except Exception as e:
             self.logger.error(f"EastMoney API failed: {e}")
