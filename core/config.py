@@ -16,11 +16,19 @@ class ConfigLoader:
 
     def load(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        config_path = os.path.join(base_dir, 'config.ini')
+        
+        # Priority 1: .private/config.ini (recommended for security)
+        private_config = os.path.join(base_dir, '.private', 'config.ini')
+        # Priority 2: config.ini (legacy, backward compatible)
+        root_config = os.path.join(base_dir, 'config.ini')
+        
+        config_path = private_config if os.path.exists(private_config) else root_config
+        
         if os.path.exists(config_path):
             self.config.read(config_path, encoding='utf-8')
+            print(f"[Config] Loaded from: {config_path}")
         else:
-            print(f"[Config] Warning: {config_path} not found.")
+            print(f"[Config] Warning: No config file found. Tried {private_config} and {root_config}")
 
     def get(self, section, key, fallback=None):
         return self.config.get(section, key, fallback=fallback)

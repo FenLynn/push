@@ -160,7 +160,6 @@ class MorningSource(BaseSource):
         # 格式: 'YYYY-MM-DD': 'status'
         SPECIAL_DAYS_2026 = {
             # 春节调休上班
-            '2026-02-11': '调休上班',
             '2026-02-28': '调休上班',
             # 春节假期
             '2026-02-14': '春节假期',

@@ -29,7 +29,7 @@ sz002078 = 太阳纸业
 sz002714 = 牧原股份
 sh600887 = 伊利股份
 sz000895 = 双汇发展
-sh600519 = 贵州开台
+sh600519 = 贵州茅台
 sh603259 = 药明康德
 sh600276 = 恒瑞医药
 sz002007 =华兰生物
@@ -54,12 +54,9 @@ targets = 159920, 510050, 510300, 513050, 512480, 512890, 159601, 159605, 159611
 
 [night]
 # Major Global Indices & Commodities (EM codes for global spot)
-# VIX, GC (Gold), CL (Oil), USDCNH are often available in global spot or specific US tables
 indices = 100.DJIA,100.SPX,100.NDX,100.VIX,100.GC,100.CL,100.USDCNH,100.N225,100.GDAXI,100.FCHI,100.FTSE,100.HSI,100.COMP
-# Indices to highlight (bold)
 bold_indices = 100.SPX,100.NDX,100.COMP,100.DJIA,100.VIX,100.GC,100.CL
 
 # US Stocks to monitor (EM code)
 stocks = 105.AAPL,105.MSFT,105.NVDA,105.AMZN,105.GOOG,105.META,105.TSLA,106.BABA,106.PDD,106.JD,106.LI,106.BILI,106.GS,106.BA
-# Bold stocks in report
 bold_stocks = 105.AAPL,105.NVDA,105.TSLA,106.BABA,106.PDD

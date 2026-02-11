@@ -1,23 +1,100 @@
 version: '3.8'
 
+networks:
+  push-network:
+    driver: bridge
+
 services:
-   # 1. Push Service (Python + Cron)
+  # 1. PostgreSQL Database (for TTRSS)
+  db:
+    image: postgres:13-alpine
+    container_name: push-postgres
+    restart: always
+    networks:
+      - push-network
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${DB_USER:-ttrss}
+      - POSTGRES_PASSWORD=${DB_PASS:-ttrss_secure_password}
+      - POSTGRES_DB=${DB_NAME:-ttrss}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ttrss}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. TTRSS Application (Using pre-pulled image)
+  ttrss:
+    image: wangqiru/ttrss:latest
+    container_name: push-ttrss-app
+    restart: always
+    networks:
+      - push-network
+    ports:
+      - "18100:80"
+    env_file:
+      - .env
+    environment:
+      - SELF_URL_PATH=http://localhost:18100/
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-ttrss}
+      - DB_USER=${DB_USER:-ttrss}
+      - DB_PASS=${DB_PASS:-ttrss_db_secure_2026}
+      - ENABLE_PLUGINS=auth_internal,fever
+      - TTRSS_ADMIN_PASSWORD=push_admin_2026
+    volumes:
+      - ./config:/opml:ro
+      - ./scripts/ttrss_auto_init.sh:/docker-entrypoint-init.d/init.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+
+  # 3. Mercury Full-Text Parser (Optional - uncomment if needed)
+  # mercury:
+  #   image: wangqiru/mercury-parser-api:latest
+  #   container_name: push-mercury
+  #   restart: always
+  #   networks:
+  #     - push-network
+  #   expose:
+  #     - "3000"
+
+  # 4. Push Service (Python Application)
   push-service:
     build: .
     image: push-service:latest
     container_name: push-service
     restart: always
+    networks:
+      - push-network
     volumes:
-      - .:/app
-      - ./data:/app/data
+      # === 代码热更新 (开发模式) ===
+      # 生产环境可注释以下代码挂载
+      - ./core:/app/core
+      - ./sources:/app/sources
+      - ./channels:/app/channels
+      - ./templates:/app/templates
+      - ./main.py:/app/main.py
+      
+      # === 数据持久化 ===
+      - ./.private:/app/.private
       - ./output:/app/output
       - ./logs:/app/logs
+      - ./data:/app/data  # Persist SQLite DBs (push.db, task_scheduler.db)
+    env_file:
+      - .env
     environment:
-      - TZ=Asia/Shanghai
-      - PUSHPLUS_TOKEN=${PUSHPLUS_TOKEN}
-      - TTRSS_USER=${TTRSS_USER}
-      - TTRSS_PASSWORD=${TTRSS_PASSWORD}
-      - TTRSS_URL=http://ttrss-web:80
+      # Docker内部网络地址
+      - TTRSS_URL=http://ttrss:80
+      # 显式注入Token (确保可靠性)
+      - PUSHPLUS_TOKEN=${PUSHPLUS_TOKEN:-bb703a31058442b3a61489b82eaf1d63}
+      - SMMS_TOKEN=${SMMS_TOKEN:-255ZlacjiLewt7ZoYsN0QIu4531PBZrx}
+    entrypoint: ["/app/scripts/docker_entrypoint.sh"]
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 60s
@@ -25,65 +102,56 @@ services:
       retries: 3
       start_period: 30s
     depends_on:
-      - ttrss-web
-      - mercury
+      ttrss:
+        condition: service_started
+    labels:
+      ofelia.enabled: "true"
+      # === Schedule: Sequential Verification (Start 14:36) ===
+      # 1. Morning (14:36:00)
+      ofelia.job-exec.morning.schedule: "0 36 14 * * *"
+      ofelia.job-exec.morning.command: "python main.py run morning"
+      # 2. Paper (14:36:30)
+      ofelia.job-exec.paper.schedule: "30 36 14 * * *"
+      ofelia.job-exec.paper.command: "python main.py run paper"
+      # 3. Life (14:37:00)
+      ofelia.job-exec.life.schedule: "0 37 14 * * *"
+      ofelia.job-exec.life.command: "python main.py run life"
+      # 4. Damai (14:37:30)
+      ofelia.job-exec.damai.schedule: "30 37 14 * * *"
+      ofelia.job-exec.damai.command: "python main.py run damai"
+      # 5. Game (14:38:00)
+      ofelia.job-exec.game.schedule: "0 38 14 * * *"
+      ofelia.job-exec.game.command: "python main.py run game"
+      # 6. Stock (14:38:30)
+      ofelia.job-exec.stock.schedule: "30 38 14 * * *"
+      ofelia.job-exec.stock.command: "python main.py run stock"
+      # 7. Fund (14:39:00)
+      ofelia.job-exec.fund.schedule: "0 39 14 * * *"
+      ofelia.job-exec.fund.command: "python main.py run fund"
+      # 8. ETF (14:39:30)
+      ofelia.job-exec.etf.schedule: "30 39 14 * * *"
+      ofelia.job-exec.etf.command: "python main.py run etf"
+      # 9. Night (14:40:00)
+      ofelia.job-exec.night.schedule: "0 40 14 * * *"
+      ofelia.job-exec.night.command: "python main.py run night"
+      # 10. Finance (14:40:30)
+      ofelia.job-exec.finance.schedule: "30 40 14 * * *"
+      ofelia.job-exec.finance.command: "python main.py run finance"
 
-  # 2. Database (Postgres for TTRSS)
-  db:
-    image: postgres:13-alpine
-    container_name: postgres-db
-    restart: always
-    environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASS}
-      - POSTGRES_DB=${DB_NAME}
-    volumes:
-      - db_data:/var/lib/postgresql/data
-
-  # 3. TTRSS App (PHP-FPM)
-  ttrss:
-    image: cthulhoo/ttrss-fpm-pgsql-static:latest
-    container_name: ttrss-app
-    restart: always
-    environment:
-      - DB_TYPE=pgsql
-      - DB_HOST=db
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASS=${DB_PASS}
-      - SELF_URL_PATH=${SELF_URL_PATH}
-    volumes:
-      - ttrss_data:/var/www/html
+  # 5. Ofelia Scheduler
+  ofelia:
+    image: mcuadros/ofelia:latest
+    container_name: push-ofelia
     depends_on:
-      - db
-
-  # 4. TTRSS Web (Nginx) - LOCALHOST ONLY for security
-  ttrss-web:
-    image: nginx:alpine
-    container_name: ttrss-web
-    restart: always
-    ports:
-      # 🔒 仅绑定到本机，公网无法直接访问
-      - "127.0.0.1:18100:80"
+      - push-service
+    command: daemon --docker
+    environment:
+      - TZ=Asia/Shanghai
     volumes:
-      - ttrss_data:/var/www/html:ro
-      - ./config/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    depends_on:
-      - ttrss
-
-  # 5. Mercury Parser (Full Text)
-  mercury:
-    image: wangqiru/mercury-parser-api:latest
-    container_name: mercury-parser
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: always
-    expose:
-      - "3000"
+
 
 volumes:
   db_data:
-  ttrss_data:
+  ttrss_feed_icons:

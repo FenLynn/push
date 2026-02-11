@@ -16,17 +16,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     cron \
     vim \
+    fonts-noto-cjk \
+    fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers (Chromium for SPA scraping)
-RUN playwright install chromium --with-deps
+# Install Playwright browsers (optional - only needed for estate/damai crawling)
+# Uncomment if you need Playwright:
+# RUN pip install playwright && playwright install chromium --with-deps
 
 # Copy source
 COPY . .
+RUN chmod +x /app/scripts/docker_entrypoint.sh
 
 # Setup Cron
 COPY config/crontab.txt /etc/cron.d/push-cron
