@@ -66,8 +66,7 @@ services:
 
   # 4. Push Service (Python Application)
   push-service:
-    build: .
-    image: push-service:latest
+    image: ghcr.io/fenlynn/push:main
     container_name: push-service
     restart: always
     networks:
