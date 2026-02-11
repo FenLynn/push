@@ -16,7 +16,7 @@ def get_time_ymd_str():
 
 def get_str_date(s):
     # 匹配 YYYY-MM-DD 或 YYYY/MM/DD
-    pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}')
+    pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}') # Fixed SyntaxWarning
     match=pattern_date.findall(s)[0]
     return match
     

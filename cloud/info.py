@@ -137,8 +137,8 @@ def get_game_schedule(games=[]):
             resTxt = res.text
             idx = resTxt.find('<li label="世界杯,')
             rows=[]
-            pattern_date = re.compile('\d{4}[-/]?\d{2}[-/]?\d{2}')
-            pattern_time = re.compile('\d{1,2}:\d{1,2}')
+            pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}')
+            pattern_time = re.compile(r'\d{1,2}:\d{1,2}')
             while idx != -1:
                 resTxt = resTxt[idx:]
                 idx = resTxt.find('</li>')
