@@ -157,6 +157,10 @@ class StockSource(BaseSource):
             if missing_stocks:
                 codes = [x[1] for x in missing_stocks]
                 tx_data = self._get_tencent_data(codes)
+                if tx_data is None: 
+                    self.logger.warning("Tencent data returned None")
+                    tx_data = {}
+                    
                 for name, code in missing_stocks:
                     if code in tx_data:
                         d = tx_data[code]
@@ -172,39 +176,36 @@ class StockSource(BaseSource):
             # Sort by Growth Rate (Desc)
             try:
                 stock_data.sort(key=lambda x: float(x['growth_rate']), reverse=True)
-            except:
-                pass # safely keep order if fail
-
+            except Exception as e:
+                self.logger.warning(f"Sort failed: {e}") 
 
             # 2. 处理 ETF (根据代码匹配)
             etf_data = []
-            # Sina 接口返回的代码通常是 sh515790 格式，需要处理
-            # 这里简单处理：假设 self.df_all 里的代码是 6 位数字
-            # 或者我们需要遍历 STOCKS_WATCHLIST 里的代码
-            
-            target_etf_codes = [x[1] for x in self.ETFS_WATCHLIST]
-            # 注意：Sina 返回的代码可能带前缀，或者不带。需要模糊匹配
-            # 假设 df_all['代码'] 是 6 位纯数字
-            df_etfs = self.df_all[self.df_all['代码'].isin(target_etf_codes)].copy()
-            
-            # 如果没匹配到，尝试用名称匹配
-            target_etf_names = [x[0] for x in self.ETFS_WATCHLIST]
-            if df_etfs.empty:
-                 df_etfs = self.df_all[self.df_all['名称'].isin(target_etf_names)].copy()
-
-            for _, row in df_etfs.iterrows():
-                item = self._format_item(row)
-                # 修正名称为用户定义的名称 (可选)
-                for name, code in self.ETFS_WATCHLIST:
-                    if code in row['代码'] or name == row['名称']:
-                         item['name'] = name # 使用短名称
-                         break
-                etf_data.append(item)
+            if self.ETFS_WATCHLIST:
+                target_etf_codes = [x[1] for x in self.ETFS_WATCHLIST]
+                # 注意：Sina 返回的代码可能带前缀，或者不带。需要模糊匹配
+                # 假设 df_all['代码'] 是 6 位纯数字
+                if self.df_all is not None and not self.df_all.empty:
+                    df_etfs = self.df_all[self.df_all['代码'].isin(target_etf_codes)].copy()
+                    
+                    # 如果没匹配到，尝试用名称匹配
+                    target_etf_names = [x[0] for x in self.ETFS_WATCHLIST]
+                    if df_etfs.empty:
+                        df_etfs = self.df_all[self.df_all['名称'].isin(target_etf_names)].copy()
+    
+                    for _, row in df_etfs.iterrows():
+                        item = self._format_item(row)
+                        # 修正名称为用户定义的名称 (可选)
+                        for name, code in self.ETFS_WATCHLIST:
+                            if code in row['代码'] or name == row['名称']:
+                                item['name'] = name # 使用短名称
+                                break
+                        etf_data.append(item)
             
             return {'stocks': stock_data, 'etfs': etf_data}
 
         except Exception as e:
-            self.logger.error(f"Error processing stock data: {e}")
+            self.logger.error(f"Error processing stock data: {e}", exc_info=True)
             return {'stocks': [], 'etfs': []}
 
     def _format_item(self, row):
