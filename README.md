@@ -49,3 +49,8 @@ Files in `../push.bak` are legacy backups/junk and can be deleted after verifica
 - **Backup**: Automated to **Cloudflare R2** (`scripts/backup_r2.py`).
 - **CI/CD**: GitHub Actions auto-builds Docker images to GHCR.
 - **Stateless**: `scripts/cleanup.py` enforces 7-day retention for output/backups.
+
+## ☁️ Cloud Native Architecture
+- **Backup**: Automated to **Cloudflare R2** (`scripts/backup_r2.py`).
+- **CI/CD**: GitHub Actions auto-builds Docker images to GHCR.
+- **Stateless**: `scripts/cleanup.py` enforces 7-day retention for output/backups.
