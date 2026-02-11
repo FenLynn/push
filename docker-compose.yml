@@ -77,6 +77,7 @@ services:
       - ./core:/app/core
       - ./sources:/app/sources
       - ./config:/app/config  # Add config volume
+      - ./cloud:/app/cloud    # Add cloud volume (Fix SyntaxWarnings)
       - ./channels:/app/channels
       - ./templates:/app/templates
       - ./main.py:/app/main.py
