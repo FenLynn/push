@@ -22,6 +22,7 @@ class NightSource(BaseSource):
         self.topic = topic
         self.config_loader = ConfigLoader()
         self.timeout = 5
+        self.logger = logging.getLogger('Push.Source.Night')
 
     def _generate_market_summary(self, indices, stocks, grid_data):
         """基于规则生成盘面总结 (AI Summary)"""
@@ -168,6 +169,7 @@ class NightSource(BaseSource):
             r = requests.get(f"http://qt.gtimg.cn/q={','.join(codes)}", timeout=self.timeout)
             if r.status_code != 200: return {}
             res = {}
+            self.logger.info(f"Tencent API returned payload size: {len(r.text)}")
             for line in r.text.strip().split(';'):
                 m = re.search(r'v_(.*?)="(.*)"', line)
                 if not m: continue
@@ -185,10 +187,15 @@ class NightSource(BaseSource):
         """抓取新浪财经数据 (hq.sinajs.cn) - 针对 BDI, RTS, 越南等特殊指数"""
         try:
             url = f"http://hq.sinajs.cn/list={','.join(codes)}"
-            headers = {'Referer': 'http://finance.sina.com.cn'}
+            headers = {
+                'Referer': 'http://finance.sina.com.cn',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
             r = requests.get(url, headers=headers, timeout=4)
             data = {}
-            for line in r.text.split(';'):
+            lines = r.text.split(';')
+            self.logger.info(f"Sina API returned {len(lines)} lines")
+            for line in lines:
                 if '="' in line:
                     code = line.split('var hq_str_')[1].split('=')[0]
                     content = line.split('="')[1].split('"')[0]

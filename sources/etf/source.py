@@ -31,6 +31,7 @@ class ETFSource(BaseSource):
             
             url = f"http://qt.gtimg.cn/q={','.join(formatted_codes)}"
             resp = requests.get(url, timeout=5)
+            resp.encoding = 'gbk' # Fix encoding for Chinese characters
             if resp.status_code == 200:
                 lines = resp.text.strip().split(';')
                 for line in lines:
