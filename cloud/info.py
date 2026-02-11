@@ -89,7 +89,7 @@ def get_game_schedule(games=[]):
         
                 if match_wzry.find(key_str) != -1:
                     #print (match_wzry)
-                    time_match_in_html=re.compile('">\d{1,2}:\d{1,2} <b>')
+                    time_match_in_html=re.compile(r'">\d{1,2}:\d{1,2} <b>')
                     time_str=time_match_in_html.findall(match)[0]
                     matchTime=pattern_time.findall(time_str)[0]
                     phase_home = match[match.find('<b>') + len('<b>') : match.find('<img src=')]

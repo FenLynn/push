@@ -16,6 +16,8 @@ class ConfigLoader:
 
     def load(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        print(f"[Debug] base_dir={base_dir}, abspath={os.path.abspath(__file__)}")
+        print(f"[Debug] base_dir={base_dir}, abspath={os.path.abspath(__file__)}")
         
         # Priority 1: .private/config.ini (recommended for security)
         private_config = os.path.join(base_dir, '.private', 'config.ini')
