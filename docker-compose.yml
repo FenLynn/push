@@ -76,6 +76,7 @@ services:
       # 生产环境可注释以下代码挂载
       - ./core:/app/core
       - ./sources:/app/sources
+      - ./config:/app/config  # Add config volume
       - ./channels:/app/channels
       - ./templates:/app/templates
       - ./main.py:/app/main.py
