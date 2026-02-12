@@ -63,7 +63,7 @@ MODULES = {
     'life':    {'class': LifeSource,    'desc': '影视数据'},
     'etf':     {'class': ETFSource,     'desc': 'ETF监控'},
     'estate':  {'class': EstateSource,  'desc': '成都房产'},
-    'damai':   {'class': DamaiSource,   'desc': '大麦演出', 'args': {'city_code': 'chengdu'}},
+    'damai':   {'class': DamaiSource,   'desc': '大麦演出'},
 }
 
 # Group Presets for easy push
