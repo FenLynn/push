@@ -12,7 +12,9 @@ from core.template import TemplateEngine
 
 # 导入原有的 cloud 库
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from cloud import *
+from core.legacy import *
+import pandas as pd
+
 
 
 class GameSource(BaseSource):

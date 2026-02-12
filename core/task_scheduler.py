@@ -8,6 +8,8 @@ Daily Task Scheduler & Execution Tracker
 3. 提供每日摘要
 """
 import json
+# Database path
+import json
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -23,9 +25,8 @@ from core.trading_calendar import (
 )
 
 # Database path
-DATA_DIR = Path(__file__).parent.parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
-DB_PATH = DATA_DIR / "task_scheduler.db"
+from core.db import db as core_db
+
 
 class TaskStatus(Enum):
     PENDING = "pending"       # 待执行
@@ -102,6 +103,36 @@ MODULE_SCHEDULE = {
         'condition': lambda: True,
         'group': 'daily'
     },
+    'archive_env': {
+        'desc': '环境存档',
+        'time': '08:00',
+        'condition': lambda: True,
+        'group': 'daily'
+    },
+    'archive_ops': {
+        'desc': '资产存档',
+        'time': '09:00',
+        'condition': lambda: True,
+        'group': 'daily'
+    },
+    'archive_tech': {
+        'desc': '科技存档',
+        'time': '10:00',
+        'condition': lambda: True,
+        'group': 'daily'
+    },
+    'archive_vps': {
+        'desc': '主机存档',
+        'time': '23:59',
+        'condition': lambda: True,
+        'group': 'daily'
+    },
+    'report_weekly': {
+        'desc': '周报总结',
+        'time': '22:00',
+        'condition': lambda: datetime.datetime.now().weekday() == 6, # Sunday
+        'group': 'weekly'
+    },
 }
 
 # Schema
@@ -127,15 +158,15 @@ CREATE INDEX IF NOT EXISTS idx_status ON task_log(status);
 class TaskScheduler:
     """每日任务调度器"""
     
-    def __init__(self, db_path: str = None):
-        self.db_path = db_path or str(DB_PATH)
+    def __init__(self):
         self._init_db()
     
     def _init_db(self):
         """初始化数据库"""
-        with sqlite3.connect(self.db_path) as conn:
+        with core_db.get_connection() as conn:
             conn.executescript(SCHEMA)
             conn.commit()
+
     
     def plan_day(self, target_date: date = None) -> Dict[str, Dict]:
         """
@@ -178,7 +209,7 @@ class TaskScheduler:
         (date, module, scheduled_time, should_run, status)
         VALUES (?, ?, ?, ?, 'pending')
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with core_db.get_connection() as conn:
             conn.execute(sql, (date_str, module, scheduled_time, int(should_run)))
             conn.commit()
     
@@ -190,7 +221,7 @@ class TaskScheduler:
         SET status = 'running', start_time = ?
         WHERE date = ? AND module = ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with core_db.get_connection() as conn:
             conn.execute(sql, (datetime.now().isoformat(), target_date.isoformat(), module))
             conn.commit()
     
@@ -202,7 +233,7 @@ class TaskScheduler:
         SET status = 'success', end_time = ?
         WHERE date = ? AND module = ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with core_db.get_connection() as conn:
             conn.execute(sql, (datetime.now().isoformat(), target_date.isoformat(), module))
             conn.commit()
     
@@ -214,7 +245,7 @@ class TaskScheduler:
         SET status = 'failed', end_time = ?, error_message = ?
         WHERE date = ? AND module = ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with core_db.get_connection() as conn:
             conn.execute(sql, (datetime.now().isoformat(), error, target_date.isoformat(), module))
             conn.commit()
     
@@ -226,7 +257,7 @@ class TaskScheduler:
         SET status = 'skipped', error_message = ?
         WHERE date = ? AND module = ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with core_db.get_connection() as conn:
             conn.execute(sql, (reason or "条件不满足", target_date.isoformat(), module))
             conn.commit()
     
@@ -235,7 +266,7 @@ class TaskScheduler:
         target_date = target_date or date.today()
         sql = "SELECT * FROM task_log WHERE date = ? ORDER BY scheduled_time"
         
-        with sqlite3.connect(self.db_path) as conn:
+        with core_db.get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(sql, (target_date.isoformat(),))
             return [dict(row) for row in cursor.fetchall()]

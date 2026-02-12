@@ -7,15 +7,28 @@ class SugarIndicator(BaseIndicator):
     def fetch_data(self) -> pd.DataFrame:
         try:
             df = ak.index_sugar_msweet()
+            # Debug: print columns if needed
+            # print(f"Sugar columns: {df.columns}")
+            
             cols = df.columns.tolist()
-            date_col = next((c for c in cols if '日期' in c or 'date' in c.lower()), cols[0])
-            val_col = next((c for c in cols if '指数' in c or '价格' in c or 'value' in c.lower() or 'price' in c.lower()), cols[1])
+            # Find date column: look for '日期', 'date', or 'time'
+            date_col = next((c for c in cols if any(x in str(c).lower() for x in ['日期', 'date', 'time'])), None)
+            
+            # Find value column: look for '指数', '价格', 'price', 'value', 'close'
+            val_col = next((c for c in cols if any(x in str(c).lower() for x in ['指数', '价格', 'price', 'value', 'close']) and c != date_col), None)
+            
+            if not date_col or not val_col:
+                # Fallback: assume 0 is date, 1 is value
+                date_col = cols[0]
+                val_col = cols[1]
+
             df = df.rename(columns={date_col: 'date', val_col: 'price'})
-            df['date'] = pd.to_datetime(df['date'])
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
             df['price'] = pd.to_numeric(df['price'], errors='coerce')
-            return df.dropna(subset=['price']).sort_values('date')
+            return df.dropna(subset=['price', 'date']).sort_values('date')
         except Exception as e:
-            self.logger.error(f"Sugar Fetch Error: {e}")
+            import traceback
+            self.logger.error(f"Sugar Fetch Error: {e}\n{traceback.format_exc()}")
             raise e
 
     def plot(self, df: pd.DataFrame) -> str:

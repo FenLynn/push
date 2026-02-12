@@ -1,6 +1,4 @@
-"""
-Finance Source Package - 财经日报
-"""
-from .source import FinanceSource
+
+from sources.finance.source import FinanceSource
 
 __all__ = ['FinanceSource']

@@ -16,10 +16,13 @@ from core import Message, ContentType
 
 # 导入原有的 cloud 库
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from cloud import *
-from cloud.utils.lib import *
+from core.legacy import *
+from core.utils.lib import *
 
-# 导入新的环境配置系统
+import concurrent.futures
+import requests
+import feedparser
+import xml.etree.ElementTree as ET
 from core.env import get_env_config
 from core.config import config
 from core.llm_factory import LLMFactory
@@ -51,9 +54,10 @@ class PaperSource(BaseSource):
                     'Journal of the Optical Society of America B',
                     'Applied Optics', 'Advances in Optics and Photonics']
     
-    MAX_ARTICLES_PER_JOURNAL = 10
+    MAX_ARTICLES_PER_JOURNAL = 15
+    MAX_PAGE_SIZE = 18000 # Safe limit for PushPlus (max 20k)
     TTRSS_CAT_ID = None
-    PAST_HOURS = 25
+    PAST_HOURS = int(os.getenv('PAPER_PAST_HOURS', 25))
     
     TEST_MODE = False
     TEST_JOURNALS = ['Optics Express', 'Optics Letters', 'Applied Optics', 'Photonics Research']
@@ -81,13 +85,25 @@ class PaperSource(BaseSource):
         self.topic = topic
         self.test_mode = test_mode if test_mode is not None else self.TEST_MODE
         
+        # Docker 环境自适应
+        self.in_docker = self._is_docker()
+        if self.in_docker:
+            print("[Paper] Running in DOCKER environment")
+        
         # Initialize LLM Provider
         llm_conf = config.get_llm_config()
         self.llm_provider = LLMFactory.create_provider(llm_conf)
         if self.llm_provider:
             print(f"[Paper] LLM Provider Initialized: {llm_conf.get('provider')}")
         else:
-            print("[Paper] LLM Provider NOT initialized (check specific config)")
+            print("[Paper] LLM Provider NOT initialized")
+
+    def _is_docker(self):
+        """判断是否在 Docker 环境中"""
+        return os.path.exists('/.dockerenv') or (
+            os.path.exists('/proc/1/cgroup') and 
+            any('docker' in line for line in open('/proc/1/cgroup'))
+        )
     
     MAX_ARTICLES_PER_PAGE = 35
     
@@ -238,6 +254,21 @@ class PaperSource(BaseSource):
                 metadata={'date': today_info['today'], 'page': idx+1, 'total_pages': total_pages, 'count': sum(f['articles_nu'] for f in page_papers)}
             ))
             
+        # 生成一份包含全天所有数据的完整 HTML 用于本地查阅 (OVERWRITE latest.html with FULL data)
+        full_info = {
+            'today': today_info['today'],
+            'total_journals': today_info['journals'],
+            'total_articles_sum': today_info['articles_sum'],
+            'paper': today_info['paper'], # ALL data
+            'is_first_page': True
+        }
+        full_html = self._generate_html(full_info)
+        out_path = os.path.join(os.path.dirname(__file__), '../../output/paper/latest.html')
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(full_html)
+        print(f"[Paper] Unified full report saved to: {out_path} ({len(full_html)} bytes)")
+
         return messages
     
     def _get_osa_past_hours(self) -> int:
@@ -250,18 +281,94 @@ class PaperSource(BaseSource):
         total_hours = int(_diff.total_seconds() / 3600) + 25
         return total_hours
     
-    def _login(self):
-        """登录 TTR RSS - 使用环境配置"""
-        env_config = get_env_config()
+    def _load_feeds_from_ini(self):
+        """从 default.ini 配置文件加载订阅列表"""
+        from core.config import config as core_config
         
-        url = env_config.get('network', 'ttrss_url')
-        username = env_config.get('network', 'ttrss_username')
-        password = env_config.get('network', 'ttrss_password', default=ttrss_password)
+        journals = core_config.get_section('paper.journals') or {}
+        researchers = core_config.get_section('paper.researchers') or {}
         
-        print(f"[Paper] Connecting to TTR RSS: {url}")
-        client = TTRClient(url, username, password, auto_login=True)
-        client.login()
-        return client
+        feeds = []
+        for title, url in journals.items():
+            feeds.append({'title': title, 'url': url, 'type': 'journal'})
+        for title, url in researchers.items():
+            feeds.append({'title': title, 'url': url, 'type': 'researcher'})
+            
+        print(f"[Paper] Loaded {len(journals)} journals and {len(researchers)} researchers from INI")
+        return feeds
+
+    def _fetch_feed(self, feed_info):
+        """抓取单个 RSS 源 (High Availability Mode)"""
+        title = feed_info['title']
+        url = feed_info['url']
+        f_type = feed_info['type']
+        
+        max_retries = 3
+        timeout = 30 # 放宽到 30s
+        
+        for attempt in range(max_retries):
+            try:
+                # 简单请求
+                resp = requests.get(url, timeout=timeout, headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                })
+                
+                if resp.status_code == 200:
+                    try:
+                        parsed = feedparser.parse(resp.content)
+                        # double check parsing success
+                        if not parsed.entries and parsed.bozo:
+                            # 可能是解析错误，但如果是 200 OK 且无内容，也许多试几次没用，但在 unstable 网络下值得一试
+                            # Log warning but don't fail immediately unless it's last attempt
+                            if attempt == max_retries - 1:
+                                print(f"[Paper] Warning: Empty/Invalid feed from {title} (Bozo: {parsed.bozo_exception})")
+                            continue
+                            
+                        articles = []
+                        for entry in parsed.entries:
+                            # 转换时间 - 优先 published, 次之 updated
+                            dt = None
+                            if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                                dt = datetime(*entry.published_parsed[:6])
+                            elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                                dt = datetime(*entry.updated_parsed[:6])
+                            
+                            if not dt:
+                                # STRICT MODE: If no date is found, do NOT assume it is new.
+                                # Default to a very old date so it gets filtered out.
+                                dt = datetime.min
+                                # We could log this if needed, but for now we just want to suppress noise.
+                                # print(f"[Paper] Warning: No date for '{entry.title[:20]}...', assuming old.")
+                            
+                            content = ""
+                            if hasattr(entry, 'description'): content = entry.description
+                            if hasattr(entry, 'summary'): content = entry.summary
+                            if hasattr(entry, 'content'): content = entry.content[0].value
+                            
+                            articles.append({
+                                'title': entry.title,
+                                'link': entry.link,
+                                'datetime': dt,
+                                'content': content
+                            })
+                        
+                        # Success!
+                        return {'journal': title, 'articles': articles, 'type': f_type}
+                    
+                    except Exception as e:
+                        print(f"[Paper] Parse error for {title}: {e}")
+                else:
+                    print(f"[Paper] HTTP {resp.status_code} for {title}")
+            
+            except Exception as e:
+                print(f"[Paper] Fetch error for {title} (Attempt {attempt+1}/{max_retries}): {e}")
+            
+            # Backoff before retry
+            if attempt < max_retries - 1:
+                time.sleep(2 * (attempt + 1))
+        
+        print(f"[Paper] Failed to fetch {title} after {max_retries} attempts.")
+        return None
     
     def _include_keywords(self, paper) -> tuple:
         """检查论文是否包含关键词"""
@@ -281,14 +388,13 @@ class PaperSource(BaseSource):
         return has_keyword, found_unique
     
     def _filter_date(self, paper, journal_title) -> bool:
-        """根据时间过滤论文"""
+        """根据时间过滤论文 - 严格 25 小时"""
         _today = datetime.now()
         _dtime = paper['datetime']
         diff = _today - _dtime
         
-        _past_hours = (self._get_osa_past_hours()
-                       if journal_title in self.OSA_JOURNALS
-                       else self.PAST_HOURS)
+        # 统一使用 25 小时，不再为 OSA 提供额外容差
+        _past_hours = self.PAST_HOURS
         
         return diff < timedelta(hours=_past_hours)
     
@@ -317,162 +423,163 @@ class PaperSource(BaseSource):
         return -1 # -1 usually means Special/All or root
     
     def _get_data(self) -> dict:
-        """获取论文数据"""
-        try:
-            client = self._login()
-        except Exception as e:
-            print(f"[Paper] Login failed: {e}")
-            return {
-                "journals": 0, 
-                "today": datetime.now().strftime("%Y-%m-%d"), 
-                "articles_sum": 0, 
-                "journals_title": [], 
-                "paper": []
-            }
-        
-        # 动态获取分类 ID
-        _ID = self._get_target_category_id(client)
-        print(f'[Paper] Using TTRSS cat_id={_ID}')
-        
-        feed_list = []
-        try:
-            feeds = client.get_feeds(cat_id=_ID, unread_only=not self.test_mode)
-            if self.test_mode:
-                # 过滤测试期刊
-                all_feeds = feeds
-                feeds = [f for f in feeds if f.title in self.TEST_JOURNALS]
-                
-                if not feeds:
-                    print(f'[TEST MODE] No journals matched TEST_JOURNALS. Available in this category: {", ".join([f.title for f in all_feeds[:10]])}')
-                    # 如果匹配不到，则取前几个作为演示
-                    feeds = all_feeds[:3]
-                else:
-                    print(f'[TEST MODE] Selected {len(feeds)} journals from TEST_JOURNALS')
+        """获取论文数据 (Dispatcher)"""
+        mode = os.getenv('PAPER_SOURCE_MODE', 'rss').lower()
+        if mode == 'd1':
+            print("[Paper] Fetching data from Cloudflare D1...")
+            return self._get_data_from_d1()
+        else:
+            return self._get_data_from_rss()
+
+    def _get_data_from_d1(self) -> dict:
+        """从 D1 数据库获取数据"""
+        from core.d1_client import D1Client
+        d1 = D1Client()
+        if not d1.enabled:
+            print("[Paper] D1 is disabled. Falling back to RSS.")
+            return self._get_data_from_rss()
+            
+        sql = f"SELECT * FROM articles WHERE published_at > datetime('now', '-{self.PAST_HOURS} hours') ORDER BY published_at DESC"
+        res = d1.query(sql)
+        if not res.get('success'):
+            print(f"[Paper] D1 Query failed: {res.get('error')}")
+            return self._get_data_from_rss()
+            
+        rows = res.get('data', [])
+        real_rows = []
+        if rows and isinstance(rows, list) and len(rows) > 0:
+            if 'results' in rows[0]:
+                real_rows = rows[0]['results']
             else:
-                print(f'Journals with articles: {", ".join([i.title for i in feeds])}')
-        except Exception as e:
-            print(f"[Paper] Failed to get feeds: {e}")
-            feeds = []
+                real_rows = rows
         
-        # feed_list = [] # Removed redundant decl
-        
-        for feed in feeds:
-            print(f'Processing {feed.title}...')
-            data_list = []
-            ino = 1
-            
-            headlines = list(feed.headlines())
-            
-            if self.test_mode:
-                headlines = headlines[:self.TEST_ARTICLES_PER_JOURNAL]
-                print(f'  [TEST] Processing {len(headlines)} articles')
-            
-            for headline in headlines:
-                if not self.test_mode and not headline.unread:
-                    continue
+        print(f"[Paper] D1 returned {len(real_rows)} raw articles.")
+        if not real_rows:
+            return {"journals": 0, "today": datetime.now().strftime("%Y-%m-%d"), 
+                    "articles_sum": 0, "journals_title": [], "paper": []}
+
+        grouped = {} 
+        for row in real_rows:
+            j_name = row.get('source_name', 'Unknown')
+            j_type = row.get('source_type', 'journal')
+            if j_name not in grouped: grouped[j_name] = {'type': j_type, 'data': []}
                 
-                article_id = headline.id
-                if not self.test_mode and not self.TEST_SKIP_MARK_READ:
-                    client.toggle_unread([article_id])
-
-
-                # 获取完整文章（用于摘要和时间）
+            art = {
+                'title': row.get('title'),
+                'link': row.get('link'),
+                'datetime': datetime.strptime(row.get('published_at'), '%Y-%m-%d %H:%M:%S') if row.get('published_at') else datetime.now(),
+                'content': row.get('content', ''),
+                'id': row.get('id')
+            }
+            
+            art['is_include_keyword'], art['keywords'] = self._include_keywords(art)
+            if j_type == 'journal' and j_name in self.GENERAL_JOURNALS and not art['is_include_keyword']:
+                continue
+            
+            if self.llm_provider and (art['is_include_keyword'] or self.test_mode):
                 try:
-                    full_article = headline.full_article()
-                    paper = {
-                        'id': ino,
-                        'title': headline.title,
-                        'link': headline.link,
-                        'datetime': full_article.updated,
-                        'content': full_article.content if hasattr(full_article, 'content') else '',
-                    }
-                except Exception as e:
-                    print(f'  Warning: Failed to fetch full article for "{headline.title[:50]}...": {e}')
-                    continue
-                
-                pass
-                
-                # 清理标题
-                paper['title'] = paper['title'].replace(f"【{feed.title}】", '')
-                if feed.title in self.MDPI_JOURNALS:
-                    pat = f'^{feed.title}, Vol. [0-9]*, Pages [0-9]*: '
-                    matchResult = re.findall(pat, paper['title'])
-                    if matchResult:
-                        paper['title'] = paper['title'].replace(matchResult[0], '')
-                
-                # 关键词检测
-                paper['is_include_keyword'], paper['keywords'] = self._include_keywords(paper)
-                
-                # 时间过滤（测试模式跳过）
-                if not self.test_mode and not self._filter_date(paper, feed.title):
-                    ino += 1
-                    continue
-                
-                # 通用期刊需要关键词 (测试模式下跳过筛选)
-                if not self.test_mode and feed.title in self.GENERAL_JOURNALS and not paper['is_include_keyword']:
-                    ino += 1
-                    continue
-                
-                data_list.append(paper)
-                
-                # LLM Summarization (Phase 2)
-                # Strategy: Summarize if LLM is enabled. 
-                # To save time/cost, maybe only summarize matching keywords?
-                # User request implies broad usage. Let's try summarizing ALL for valuable feeds.
-                # But for latency, let's stick to Keyword matches + Test Mode + First 5 articles?
-                # Let's just do it for 'is_include_keyword' matches OR if it's a test run.
-                
-                should_summarize = self.llm_provider and (paper['is_include_keyword'] or self.test_mode)
-                
-                if should_summarize:
-                    try:
-                        # Prepare content for LLM
-                        # Use title + content (strip HTML)
-                        raw_text = paper['content']
-                        # Simple strip tags
-                        clean_text = re.sub(r'<[^>]+>', '', raw_text).strip()
-                        # Limit length to avoid context overflow / cost
-                        txt_input = f"Title: {paper['title']}\nAbstract/Content: {clean_text[:3000]}"
-                        
-                        print(f"  [AI] Summarizing: {paper['title'][:30]}...")
-                        summary = self.llm_provider.summarize(txt_input)
-                        if summary:
-                            paper['summary'] = summary
-                            print(f"  [AI] Summary: {summary[:30]}...")
-                    except Exception as e:
-                        print(f"  [AI] Failed to summarize: {e}")
-
-                ino += 1
+                    clean_text = re.sub(r'<[^>]+>', '', art['content']).strip()
+                    txt_input = f"Title: {art['title']}\\nAbstract: {clean_text[:2000]}"
+                    art['summary'] = self.llm_provider.summarize(txt_input)
+                except: pass
             
-            feed_list.append({
-                "journal": feed.title,
-                "data": data_list,
-                "articles_nu": len(data_list)
+            grouped[j_name]['data'].append(art)
+            
+        final_paper_data = []
+        total_articles_sum = 0
+        for j_name, info in grouped.items():
+            if not info['data']: continue
+            top_n = info['data'][:self.MAX_ARTICLES_PER_JOURNAL]
+            final_paper_data.append({
+                "journal": j_name, "data": top_n,
+                "articles_nu": len(top_n), "type": info['type']
             })
-            print(f'{feed.title}: {len(data_list)} 篇')
-        
-        # 统计信息
-        today_info = {
-            "journals": 0,
-            "today": datetime.now().date().strftime("%Y-%m-%d"),
-            "articles_sum": 0,
-            "journals_title": [],
-            "paper": feed_list
+            total_articles_sum += len(top_n)
+
+        final_paper_data.sort(key=lambda x: (0 if x['type'] == 'researcher' else 1, x['journal']))
+        return {
+            "journals": len(final_paper_data),
+            "today": datetime.now().strftime("%Y-%m-%d"),
+            "articles_sum": total_articles_sum,
+            "journals_title": [p['journal'] for p in final_paper_data],
+            "paper": final_paper_data
         }
+
+    def _get_data_from_rss(self) -> dict:
+        """获取论文数据 - INI 抓取版"""
+        feeds_info = self._load_feeds_from_ini()
+        if not feeds_info:
+            return {"journals": 0, "today": datetime.now().strftime("%Y-%m-%d"), 
+                    "articles_sum": 0, "journals_title": [], "paper": []}
+
+        # 并行抓取加速
+        print(f"[Paper] Starting parallel fetch for {len(feeds_info)} feeds...")
+        final_paper_data = []
+        total_articles_sum = 0
         
-        for feed_data in feed_list:
-            today_info["articles_sum"] += feed_data["articles_nu"]
-            if feed_data["articles_nu"] > 0:
-                today_info["journals_title"].append(feed_data["journal"])
-                today_info["journals"] += 1
-        
-        return today_info
-    
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_feed = {executor.submit(self._fetch_feed, f): f for f in feeds_info}
+            for future in concurrent.futures.as_completed(future_to_feed):
+                res = future.result()
+                if not res: continue
+                
+                journal_title = res['journal']
+                raw_articles = res['articles']
+                f_type = res.get('type', 'journal')
+                
+                # 限流：每个期刊超过最大数量则截断
+                raw_articles = raw_articles[:self.MAX_ARTICLES_PER_JOURNAL]
+                
+                # 过滤逻辑
+                filtered_list = []
+                ino = 1
+                for art in raw_articles:
+                    # 1. 时间过滤
+                    if not self._filter_date(art, journal_title):
+                        continue
+                    
+                    # 2. 关键词检测
+                    art['is_include_keyword'], art['keywords'] = self._include_keywords(art)
+                    
+                    # 3. 期刊筛选逻辑 (通用期刊必须包含关键词)
+                    # 研究人员订阅 (researcher) 通常不强制要求关键词
+                    if f_type == 'journal' and journal_title in self.GENERAL_JOURNALS and not art['is_include_keyword']:
+                        continue
+                    
+                    # 4. LLM 摘要 (如果有)
+                    if self.llm_provider and (art['is_include_keyword'] or self.test_mode):
+                        try:
+                            clean_text = re.sub(r'<[^>]+>', '', art['content']).strip()
+                            txt_input = f"Title: {art['title']}\nAbstract: {clean_text[:2000]}"
+                            art['summary'] = self.llm_provider.summarize(txt_input)
+                        except: pass
+                    
+                    art['id'] = ino
+                    filtered_list.append(art)
+                    ino += 1
+                
+                if filtered_list:
+                    final_paper_data.append({
+                        "journal": journal_title,
+                        "data": filtered_list,
+                        "articles_nu": len(filtered_list),
+                        "type": f_type
+                    })
+                    total_articles_sum += len(filtered_list)
+
+        # 排序：研究人员在前，期刊在后
+        final_paper_data.sort(key=lambda x: (0 if x['type'] == 'researcher' else 1, x['journal']))
+
+        return {
+            "journals": len(final_paper_data),
+            "today": datetime.now().strftime("%Y-%m-%d"),
+            "articles_sum": total_articles_sum,
+            "journals_title": [p['journal'] for p in final_paper_data],
+            "paper": final_paper_data
+        }
+
     def _generate_html(self, today_info) -> str:
-        """
-        使用 Jinja2 模板生成 HTML 内容
-        """
-        import time
+        """使用 Jinja2 模板生成 HTML 内容"""
         from jinja2 import Environment, FileSystemLoader
         
         # 加载模板
@@ -482,73 +589,25 @@ class PaperSource(BaseSource):
         try:
             template = env.get_template('paper.html')
         except Exception as e:
-            self.logger.warning(f"Cannot load paper.html template: {e}, using legacy format")
+            print(f"[Paper] Warning: Cannot load paper.html template: {e}")
             return self._generate_html_legacy(today_info)
         
-        # 渲染模板
+        # 准备渲染内容
         context = {
             'today': today_info.get('today'),
-            'update_time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            'update_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'is_first_page': today_info.get('is_first_page', True),
-            'total_journals': today_info.get('total_journals', 0),
-            'total_articles_sum': today_info.get('total_articles_sum', 0),
+            'total_journals': today_info.get('total_journals') or today_info.get('journals', 0),
+            'total_articles_sum': today_info.get('total_articles_sum') or today_info.get('articles_sum', 0),
             'paper': today_info.get('paper', []),
+            'in_docker': self.in_docker
         }
         
         return template.render(**context)
-    
-    def _generate_html_legacy(self, today_info) -> str:
-        """
-        旧版 HTML 生成（备用）
-        """
-        head_html = """<html><head><style>
-table th {font-weight: bold; text-align: center !important; background: rgba(158,188,226,0.2); white-space: wrap;}
-table tbody tr:nth-child(2n) { background-color: #f2f2f2;}
-table{font-family: Arial, sans-serif; font-size: 12px;}
-html{font-family:sans-serif;}
-table{border-collapse:collapse;}
-td,th{border:1px solid rgb(190,190,190);padding:1px 2px;line-height:1.3em;}
-</style><meta charset="utf-8"></head>"""
-        
-        # 无更新情况
-        if today_info["articles_sum"] <= 0:
-            return f'{head_html}<font size="3">🕔今天{today_info["today"]}, 无光学文章更新.</font></html>'
-        
-        # 有更新
-        content = head_html
-        content += f'🕔更新时间:{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())} \n'
-        content += f'⏺ 共<font color="cadetblue"><b>{today_info["journals"]}</b></font>本期刊, '
-        content += f'<font color="cadetblue"><b>{today_info["articles_sum"]}</b></font>篇文章更新.</font></br>'
-        
-        table_template = '<table><tr align=center><th style="min-width:25px">序</th><th style="min-width:270px">文章标题</th><th style="min-width:50px">关键词</th></tr>${CONTENT}</table>'
-        
-        ino = 1
-        for feed_data in today_info["paper"]:
-            if len(feed_data["data"]) == 0:
-                continue
-            
-            content += f' <font size="2" color="cadetblue"><b>{feed_data["journal"]}</b></font> '
-            content += f'<font size="2"><b>  {feed_data["articles_nu"]}</b>篇</font></br>'
-            
-            rows = ""
-            for paper in feed_data["data"]:
-                if paper["is_include_keyword"]:
-                    align = 'left' if len(",".join(paper['keywords'])) > 9 else 'center'
-                    rows += f'<tr style="color: indianred;"><td align="center">{ino}</td>'
-                    rows += f'<td align="left"><a href="{paper["link"]}" target="_blank"><font color="indianred">{paper["title"]}</font></a></td>'
-                    rows += f'<td align={align}>{" ".join(paper["keywords"])}</td></tr>'
-                else:
-                    rows += f'<tr style="color: gray;"><td align="center">{ino}</td>'
-                    rows += f'<td align="left"><a href="{paper["link"]}" target="_blank"><font color="gray">{paper["title"]}</font></a></td>'
-                    rows += f'<td align="center">无</td></tr>'
-                ino += 1
-            
-            table_html = Template(table_template).safe_substitute({'CONTENT': rows})
-            content += table_html + '</br>'
-        
-        content += '</html>'
-        return content
 
+    def _generate_html_legacy(self, today_info) -> str:
+        """简易版 HTML 生成（备用）"""
+        return f"<h3>Paper Report - {today_info.get('today')}</h3><p>Total: {today_info.get('articles_sum')} articles.</p>"
 
 
 if __name__ == '__main__':

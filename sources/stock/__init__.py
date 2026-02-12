@@ -1,6 +1,4 @@
-"""
-Stock Source Package - 股票行情推送
-"""
-from .source import StockSource
+
+from sources.stock.source import StockSource
 
 __all__ = ['StockSource']

@@ -16,7 +16,8 @@ from .indicators import (
     MacroDigestIndicator, StockShareholderIndicator,
     ERPIndicator, MarketLeverageIndicator, BuffettIndicator,
     KeqiangIndicator, LiquidityPortraitIndicator,
-    M1M2GapIndicator, MarketPEIndicator, CrossBorderIndicator, RealInterestRateIndicator
+    M1M2GapIndicator, MarketPEIndicator, CrossBorderIndicator, RealInterestRateIndicator,
+    ChengduRealEstateIndicator, XianRealEstateIndicator
 )
 from datetime import datetime
 import logging
@@ -74,6 +75,9 @@ class FinanceSource(BaseSource):
             MarketPEIndicator(self.manager, self.plotter),
             CrossBorderIndicator(self.manager, self.plotter),
             RealInterestRateIndicator(self.manager, self.plotter),
+            # Phase 9: Estate Daily Trend (Split)
+            ChengduRealEstateIndicator(self.manager, self.plotter),
+            XianRealEstateIndicator(self.manager, self.plotter),
         ]
         self.logger = logging.getLogger("Push.Source.Finance")
 
@@ -112,6 +116,8 @@ class FinanceSource(BaseSource):
             'bond': '利率与债市 (Interest Rate & Bond)',
             
             'real_estate': '行业与板块 (Industry & Sector)',
+            'chengdu_real_estate': '行业与板块 (Industry & Sector)',
+            'xian_real_estate': '行业与板块 (Industry & Sector)',
             'nev_sale': '行业与板块 (Industry & Sector)',
             'oil': '行业与板块 (Industry & Sector)',
             'sox': '行业与板块 (Industry & Sector)',
@@ -169,6 +175,8 @@ class FinanceSource(BaseSource):
                         'lpr': 'LPR 贷款报价利率',
                         'bond': '国债收益率 (10Y/2Y)',
                         'real_estate': '国房景气指数',
+                        'chengdu_real_estate': '成都楼市成交 (Transaction)',
+                        'xian_real_estate': '西安二手挂牌 (Inventory)',
                         'nev_sale': '新能源车销量',
                         'oil': '成品油价格 (Gas/Diesel)',
                         'sox': '费城半导体指数 (SOX)',

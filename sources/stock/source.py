@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import requests
 import akshare as ak
+import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -16,8 +17,8 @@ from core.config import config
 
 # 导入原有的 cloud 库
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from cloud import *
-from cloud.utils.lib import *
+from core.legacy import *
+from core.utils.lib import *
 from core.config import config
 
 
@@ -34,6 +35,8 @@ class StockSource(BaseSource):
         
         self.ETFS_WATCHLIST = config.get_stock_etf_watchlist()
         self.logger.info(f"Loaded {len(self.ETFS_WATCHLIST)} ETFs from config")
+        
+        self.hk_stock_list = config.get_hk_stock_list()
 
         self.logger = logging.getLogger('Push.Source.Stock')
         self.bold_stocks = bold_stock_list
@@ -60,10 +63,18 @@ class StockSource(BaseSource):
             is_trade_day = weekday < 5
             self.logger.info(f"Using fallback trade day detection: {is_trade_day}")
         
-        # 准备数据
+        # 准备数据 (初始化所有字段，防止渲染报错)
         data = {
             'trade_status': is_trade_day,
-            'update_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            'update_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+            'stocks': [], 'etfs': [], 'indexes': [], 
+            'summary': {
+                'up_sum': '-', 'down_sum': '-', 'long_10': '-', 'short_10': '-',
+                'mean': '0.00', 'median': '0.00', 'total_money': '-', 
+                'money_change': '-', 'volume_ratio': '-', 'style': '数据收集失败'
+            },
+            'sectors': {'leaders': [], 'losers': []},
+            'turnover_ranking': [], 'hot_stocks': [], 'new_highs': []
         }
         
         if not is_trade_day:
@@ -96,7 +107,7 @@ class StockSource(BaseSource):
             # 继续使用已收集的部分数据
         # 渲染 HTML
         # 渲染 HTML (智能裁剪防分页)
-        MAX_LEN = 14000 # PushPlus limit is ~15KB usually.
+        MAX_LEN = 18500 # PushPlus limit is ~20KB, slightly safer at 18.5KB
         
         html = self.render_template('stock.html', data)
         # Minify (Simple): remove newlines and extra spaces
@@ -172,7 +183,8 @@ class StockSource(BaseSource):
                             'close': d['close'],
                             'growth_rate': d['growth_rate'],
                             'turnover_billion': d.get('turnover', '-'),
-                            'url': f"http://quote.eastmoney.com/{code[2:] if code.startswith(('sh','sz')) else code}.html"
+                            'url': f"http://quote.eastmoney.com/{code[2:] if code.startswith(('sh','sz')) else code}.html",
+                            'is_bold': name in self.bold_stocks
                         })
 
             # Sort by Growth Rate (Desc)
@@ -225,7 +237,8 @@ class StockSource(BaseSource):
             'close': f"{close:.2f}",
             'growth_rate': f"{grow:.2f}",
             'turnover_billion': f"{turn:.2f}",
-            'url': self._get_url(row['代码'])
+            'url': self._get_url(row['代码']),
+            'is_bold': row['名称'] in self.bold_stocks
         }
     
     def _get_hk_stock(self) -> List[Dict]:
@@ -255,59 +268,127 @@ class StockSource(BaseSource):
     
     
     def _get_market_summary(self, index_data: List[Dict]) -> Dict:
-        """获取市场概况"""
-        # V9: Robustness check (80 rows is not enough)
-        if self.df_all is None or self.df_all.empty or len(self.df_all) < 1000:
-            return {
-                'up_sum': '-', 'down_sum': '-', 
-                'long_10': '-', 'short_10': '-',
-                'mean': '-', 'median': '-', 
-                'total_money': '-', 'volume_ratio': '-',
-                'style': '-'
-            }
-        
-        df = self.df_all.iloc[:, :]
-        
-        # 计算统计数据
-        up_sum = (pd.to_numeric(df['涨跌幅'], errors='coerce') > 0).sum()
-        down_sum = (pd.to_numeric(df['涨跌幅'], errors='coerce') < 0).sum()
-        long_10 = (pd.to_numeric(df['涨跌幅'], errors='coerce') >= 9.8).sum()
-        short_10 = (pd.to_numeric(df['涨跌幅'], errors='coerce') <= -9.8).sum()
-        mean_val = pd.to_numeric(df['涨跌幅'], errors='coerce').mean()
-        median_val = pd.to_numeric(df['涨跌幅'], errors='coerce').median()
-        
-        # 计算总成交额 (Sina 单位是元)
-        turnover_col = '成交额' if '成交额' in df.columns else None
-        total_money = 0
-        if turnover_col:
-             total_money = pd.to_numeric(df[turnover_col], errors='coerce').sum()
-             total_money = round(total_money / 100_000_000, 0) # 亿
-        
-        # 获取大盘量比 (基于上证指数历史成交额)
-        volume_ratio = self._get_market_volume_ratio(total_money)
-        
-        # 估算大小盘分化：用上证指数 vs 创业板指
-        style_diff = "均衡"
-        sh_rate = 0
-        cy_rate = 0
-        for idx in index_data:
-            if '上证指数' in idx['name']: sh_rate = float(idx['growth_rate'])
-            if '创业板' in idx['name']: cy_rate = float(idx['growth_rate'])
-        
-        if sh_rate - cy_rate > 0.5: style_diff = "大盘强"
-        elif cy_rate - sh_rate > 0.5: style_diff = "小盘强"
-        
-        return {
-            'up_sum': int(up_sum),
-            'down_sum': int(down_sum),
-            'long_10': int(long_10),
-            'short_10': int(short_10),
-            'mean': round(mean_val, 2),
-            'median': round(median_val, 2),
-            'total_money': total_money,
-            'volume_ratio': volume_ratio,
-            'style': style_diff
+        """获取市场概况（深度对齐同花顺口径）"""
+        summary = {
+            'up_sum': '-', 'down_sum': '-', 
+            'long_10': '-', 'short_10': '-',
+            'mean': '-', 'median': '-', 
+            'total_money': '-', 'money_change': '-', 'money_change_raw': 0,
+            'volume_ratio': '-',
+            'style': '-'
         }
+        
+        if self.df_all is not None and len(self.df_all) > 1000:
+            df = self.df_all.copy()
+            try:
+                # 转换数值
+                df['pct'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
+                df['amt'] = pd.to_numeric(df['成交额'], errors='coerce')
+                df['code_str'] = df['代码'].astype(str)
+                
+                # 1. 极其严格的涨跌停统计 (对齐收盘封死口径)
+                def is_limit_up(row):
+                    p, c, name = row['pct'], row['code_str'], row['名称']
+                    # 规则：必须极其接近理论上限（考虑到尾数取舍）
+                    if 'ST' in name: limit = 4.97
+                    elif c.startswith(('688', '300')): limit = 19.96
+                    elif c.startswith(('8', '4')): limit = 29.95
+                    else: limit = 9.95 # 普通主板封死通常 > 9.95%
+                    return p >= limit
+
+                def is_limit_down(row):
+                    p, c, name = row['pct'], row['code_str'], row['名称']
+                    if 'ST' in name: limit = -4.97
+                    elif c.startswith(('688', '300')): limit = -19.96
+                    elif c.startswith(('8', '4')): limit = -29.95
+                    else: limit = -9.95
+                    return p <= limit
+
+                up_count = (df['pct'] > 0).sum()
+                down_count = (df['pct'] < 0).sum()
+                limit_up = df.apply(is_limit_up, axis=1).sum()
+                limit_down = df.apply(is_limit_down, axis=1).sum()
+                
+                total_money = df['amt'].sum() / 100_000_000 # 亿
+                
+                summary.update({
+                    'up_sum': int(up_count),
+                    'down_sum': int(down_count),
+                    'long_10': int(limit_up),
+                    'short_10': int(limit_down),
+                    'mean': f"{df['pct'].mean():.2f}",
+                    'median': f"{df['pct'].median():.2f}",
+                    'total_money': round(total_money, 0)
+                })
+            except Exception as e: 
+                self.logger.error(f"Stat refinement error: {e}")
+
+        # 2. 获取成交增量 (对标同花顺：两市今日额 - 两市昨日额)
+        try:
+            import os
+            os.environ['no_proxy'] = '*'
+            # Retry logic for flakiness
+            import json
+            STATE_FILE = "/tmp/stock_state.json"
+            
+            for attempt in range(2):
+                try:
+                    df_sh_hist = ak.stock_zh_index_daily_em(symbol="sh000001")
+                    df_sz_hist = ak.stock_zh_index_daily_em(symbol="sz399001")
+                    if len(df_sh_hist) >= 2 and len(df_sz_hist) >= 2:
+                        t_sh = float(df_sh_hist.iloc[-1]['amount']) / 100_000_000
+                        y_sh = float(df_sh_hist.iloc[-2]['amount']) / 100_000_000
+                        t_sz = float(df_sz_hist.iloc[-1]['amount']) / 100_000_000
+                        y_sz = float(df_sz_hist.iloc[-2]['amount']) / 100_000_000
+                        
+                        today_total = t_sh + t_sz
+                        yes_total = y_sh + y_sz
+                        diff = today_total - yes_total
+                        
+                        summary['total_money'] = round(today_total, 0)
+                        summary['money_change'] = f"{diff:+.0f}"
+                        summary['money_change_raw'] = diff
+                        summary['volume_ratio'] = f"{today_total / yes_total:.2f}"
+                        
+                        # Save to state for next attempt fallback
+                        with open(STATE_FILE, 'w') as f:
+                            json.dump({'last_total': today_total, 'date': str(df_sh_hist.iloc[-1]['date'])}, f)
+                        break
+                except:
+                    if attempt == 0: time.sleep(1)
+                    continue
+            else:
+                # FALLBACK: Try reading from local state file if API fails
+                try:
+                    with open(STATE_FILE, 'r') as f:
+                        state = json.load(f)
+                        last_total = state['last_total']
+                        # Use total from df_all if indexes failed
+                        if summary['total_money'] == '-' and self.df_all is not None:
+                             df_amt = pd.to_numeric(self.df_all['成交额'], errors='coerce')
+                             curr_total = df_amt.sum() / 100_000_000
+                             summary['total_money'] = round(curr_total, 0)
+                             diff = curr_total - last_total
+                             summary['money_change'] = f"{diff:+.0f}"
+                             summary['money_change_raw'] = diff
+                             summary['volume_ratio'] = f"{curr_total/last_total:.2f}"
+                except:
+                    self.logger.warning("All turnover increment methods failed")
+            del os.environ['no_proxy']
+        except Exception as e:
+            self.logger.warning(f"Turnover calculation error: {e}")
+
+        # 3. 估算风格
+        sh_rate, cy_rate = 0, 0
+        for idx in index_data:
+            if '上证' in idx['name']: sh_rate = float(idx['growth_rate'])
+            if '创业' in idx['name']: cy_rate = float(idx['growth_rate'])
+        
+        if sh_rate - cy_rate > 0.5: summary['style'] = "权重领涨"
+        elif cy_rate - sh_rate > 0.5: summary['style'] = "赛道核心活跃"
+        else: summary['style'] = "个股分化/均衡"
+
+        return summary
 
     def _get_market_volume_ratio(self, current_money: float) -> str:
         """获取大盘量比 (今天 / 昨天)"""
@@ -412,18 +493,23 @@ class StockSource(BaseSource):
 
     def _get_index_data(self) -> List[Dict]:
         """获取主要指数：上证、创业、同花顺全A(代理)、恒生"""
-        # Sina 接口代码映射
-        target_indices = [
+        # Row 1 indices
+        r1 = [
             ('上证指数', 'sh000001'),
+            ('深证成指', 'sz399001'),
             ('创业板指', 'sz399006'),
-            ('上证50', 'sh000016'),
+            ('科创50', 'sh000688'),
         ]
-        
+        # Row 2 indices
+        r2 = [
+            ('上证50', 'sh000016'),
+            ('沪深300', 'sh000300'),
+            ('中证2000', 'sz399303'), # Using 国证2000 as it handles better in various APIs
+            ('恒生指数', 'hkHSI'),
+        ]
+        target_indices = r1 + r2
+        tx_codes = [x[1] for x in target_indices]
         result = []
-        
-        # 1. 尝试使用腾讯接口获取核心指数 + HSI
-        # Tencent codes: sh000001, sz399006, sh000016, hkHSI
-        tx_codes = ['sh000001', 'sz399006', 'sh000016', 'hkHSI']
         tx_data = self._get_tencent_data(tx_codes)
         
         # Helper to format index item
@@ -450,19 +536,12 @@ class StockSource(BaseSource):
                 }
             return None
 
-        # Process main indices
         for name, code in target_indices:
             item = make_item(name, code, tx_data)
             if item:
                 result.append(item)
             else:
-                # Fallback to Sina if Tencent missing (unlikely if successful)
-                pass # logic could be added here
-        
-        # Process HSI
-        hsi_item = make_item('恒生指数', 'hkHSI', tx_data)
-        if hsi_item:
-            result.append(hsi_item)
+                pass
             
         # If result is empty (Tencent failed), fallback to Sina
         if not result:
@@ -653,75 +732,44 @@ class StockSource(BaseSource):
         """加载数据：优先使用 Sina 接口，带重试和列名映射"""
         import time
         
+        # 禁用系统代理干扰
+        proxies = {"http": None, "https": None}
+        
         # 1. 尝试 Sina 接口 (直连)
         for i in range(3):
             try:
                 self.logger.info(f"Attempting to load data from Sina API (Try {i+1}/3)...")
-                df = ak.stock_zh_a_spot()
-                
-                # 检查数据是否有效
-                if df is None or df.empty:
-                    raise Exception("Empty dataframe")
-                    
-                # 检查是否返回了 HTML 错误页 (Akshare 有时会把 HTML 解析成单列 DF 或者抛错，或者是空)
-                # 这里假设 akshare 已经返回了 DF。如果 Warning 说 "starting with <", 说明 akshare 内部打印了 warning。
-                # 我们尽量捕获它。
-                    
-                self.logger.info(f"Loaded {len(df)} rows from Sina")
-                
-                # Sina 列名映射
-                # 常见列名: 代码,名称,最新价,涨跌额,涨跌幅,买入,卖出,昨收,今开,最高,最低,成交量,成交额,时间...
-                # 目标列名: 代码, 名称, 最新价, 涨跌幅, 成交额, 换手率
-                
-                rename_map = {
-                    '最新价': '最新价', 
-                    '涨跌幅': '涨跌幅', 
-                    '成交额': '成交额',
-                    '换手率': '换手率'
-                }
-                
-                # 检查 '成交额' 列
-                if '成交额' not in df.columns:
-                    # 有些接口可能叫 '成交额(元)' 或其他
-                    for col in df.columns:
-                        if '成交额' in col:
-                            rename_map[col] = '成交额'
-                            break
-                
-                # 检查 '换手率' 列
-                if '换手率' not in df.columns:
-                    # Sina 可能没有换手率，或者叫 '换手'
-                    for col in df.columns:
-                        if '换手' in col:
-                            rename_map[col] = '换手率'
-                            break
-                            
-                df.rename(columns=rename_map, inplace=True)
-                
-                # 补充缺失列 (Sina 如果没有换手率，就填0)
-                if '换手率' not in df.columns:
-                    df['换手率'] = 0
-                
-                if '成交额' not in df.columns:
-                    df['成交额'] = 0
-                    
-                return df
-                
+                # 使用 requests 直连探测
+                import requests
+                reg = requests.get("http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page=1&num=10&node=hs_a", timeout=5, proxies=proxies)
+                if reg.status_code == 200 and not reg.text.startswith("<"):
+                    df = ak.stock_zh_a_spot()
+                    if df is not None and not df.empty:
+                        self.logger.info(f"Loaded {len(df)} rows from Sina")
+                        df.rename(columns={'成交额': '成交额', '涨跌幅': '涨跌幅', '最新价': '最新价'}, inplace=True)
+                        return df
+                else:
+                    self.logger.warning(f"Sina API blocked (Try {i+1})")
             except Exception as e:
-                msg = str(e)
-                if "Can not decode" in msg and "<" in msg:
-                     self.logger.info(f"Sina API blocked/html (Try {i+1}): {e}")
-                else:    
-                     self.logger.warning(f"Sina API failed (Try {i+1}): {e}")
-                time.sleep(2) # 休息一下再试
-        
-        # 2. 如果 Sina 彻底失败，尝试 EM (虽然已知被墙，但作为最后的挣扎)
+                self.logger.warning(f"Sina API error (Try {i+1}): {e}")
+            time.sleep(1)
+
+        # 2. 如果 Sina 失败，尝试 EM (使用直连)
         try:
-            self.logger.info("Attempting to load data from EM API (Last resort)...")
+            self.logger.info("Attempting to load data from EM API (No Proxy)...")
+            # Akshare 内部使用 requests，我们可以临时通过环境变量控制
+            os.environ['no_proxy'] = '*' 
             df = ak.stock_zh_a_spot_em()
-            return df
+            if df is not None and not df.empty:
+                 # EM 字段映射
+                 mapping = {'代码': '代码', '名称': '名称', '最新价': '最新价', '涨跌幅': '涨跌幅', '成交额': '成交额'}
+                 df = df.rename(columns=mapping)
+                 self.logger.info(f"Loaded {len(df)} rows from EM")
+                 return df
         except Exception as e:
             self.logger.error(f"EM API failed: {e}")
+        finally:
+            if 'no_proxy' in os.environ: del os.environ['no_proxy']
         
         return None
 

@@ -13,8 +13,12 @@ import time
 import requests
 import threading
 import logging
+import base64
+import random
 from pathlib import Path
 from typing import Optional
+from core.config import config
+import datetime
 
 logger = logging.getLogger('Push.ImageUpload')
 
@@ -77,8 +81,26 @@ class ImageUploader:
                 
                 with open(image_path, 'rb') as f:
                     files = {'smfile': f}
+                    files = {'smfile': f}
                     response = requests.post(url, files=files, headers=headers, timeout=30)
-                    result = response.json()
+                    try:
+                        result = response.json()
+                    except Exception as e:
+                        logger.error(f"SMMS Response Error: {e}, Content: {response.text[:200]}...")
+                        # If simple JSON parsing fails, maybe try to fix "Extra data"? 
+                        # Sometimes SMMS returns multiple JSONs. We can try to take the first one.
+                        try:
+                             import json
+                             # Naive approach: split by '}{' if stuck
+                             if '}{' in response.text:
+                                 logger.info("Attempting to fix double JSON response")
+                                 fixed_text = response.text.split('}{')[0] + '}'
+                                 result = json.loads(fixed_text)
+                             else:
+                                 raise e
+                        except:
+                             raise e
+
                 
                 # Success
                 if result.get('success'):
@@ -144,6 +166,73 @@ class ImageUploader:
         except Exception as e:
             logger.warning(f"CDN exception ({e}), using original URL")
             return smms_url
+
+    def upload_to_github(self, image_path: str, repo_config: dict = None) -> Optional[str]:
+        """
+        Upload image to GitHub (Fallback)
+        """
+        if not os.path.exists(image_path):
+            return None
+            
+        # Default config from core/config.py or env
+        # ConfigLoader in core/config.py doesn't expose raw GitHub dict yet, 
+        # so we might need to rely on env vars or getters.
+        # User legacy code used: global_config.get('GITHUB','TOKEN') etc.
+        
+        token = repo_config.get('token') if repo_config else os.getenv('GITHUB_TOKEN')
+        owner = repo_config.get('owner') if repo_config else config.get('GITHUB', 'OWNER')
+        repo = repo_config.get('repo') if repo_config else config.get('GITHUB', 'REPO')
+        branch = repo_config.get('branch') if repo_config else config.get('GITHUB', 'BRANCH')
+        cdn_domains = config.get('GITHUB', 'CDN', fallback='cdn.jsdelivr.net').split(',')
+        
+        if not token or not owner or not repo:
+            logger.warning("GitHub config missing")
+            return None
+            
+        try:
+            with open(image_path, "rb") as f:
+                encoded_image = base64.b64encode(f.read()).decode('utf-8')
+            
+            ext = image_path.split(".")[-1]
+            filename = f"pic/{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
+            
+            api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{filename}"
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            data = {
+                "message": "auto upload",
+                "content": encoded_image,
+                "branch": branch or 'main'
+            }
+            
+            # Simple retry logic
+            for i in range(2):
+                try:
+                    resp = requests.put(api_url, json=data, headers=headers, timeout=15)
+                    if resp.status_code == 201:
+                        # Success
+                        cdn_domain = random.choice(cdn_domains)
+                        # jsDelivr format: https://cdn.jsdelivr.net/gh/user/repo@version/file
+                        cdn_url = f"https://{cdn_domain}/gh/{owner}/{repo}@{branch}/{filename}"
+                        logger.info(f"✅ GitHub Upload Success: {cdn_url}")
+                        return cdn_url
+                    else:
+                        logger.warning(f"GitHub API Error: {resp.status_code} {resp.text}")
+                except Exception as e:
+                    logger.warning(f"GitHub Attempt {i+1} failed: {e}")
+                time.sleep(2)
+                
+            return None
+
+        except Exception as e:
+            logger.error(f"GitHub Upload Exception: {e}")
+            return None
+                
+        except Exception as e:
+            logger.warning(f"CDN exception ({e}), using original URL")
+            return smms_url
     
     def upload(self, image_path: str, use_cdn: bool = True) -> Optional[str]:
         """
@@ -178,17 +267,24 @@ def get_uploader() -> ImageUploader:
         _uploader = ImageUploader()
     return _uploader
 
+def upload_image_to_github(image_path: str) -> Optional[str]:
+    """Legacy-compatible wrapper for GitHub upload"""
+    uploader = get_uploader()
+    return uploader.upload_to_github(image_path)
+
 def upload_image_with_cdn(image_path: str) -> Optional[str]:
     """
-    Convenience function: Upload image to SMMS with CDN
-    
-    This is the recommended function to use throughout the project.
-    
-    Args:
-        image_path: Path to image file
-        
-    Returns:
-        CDN URL if successful, None otherwise
+    Convenience function: Upload image to SMMS with CDN (with GitHub fallback)
     """
     uploader = get_uploader()
-    return uploader.upload(image_path, use_cdn=True)
+    # Try SMMS first
+    url = uploader.upload(image_path, use_cdn=True)
+    if url:
+        return url
+        
+    # Fallback to GitHub
+    logger.info("Falling back to GitHub upload...")
+    return uploader.upload_to_github(image_path)
+
+# Compatibility Alias
+upload_image_to_cdn = upload_image_with_cdn

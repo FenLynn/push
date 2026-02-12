@@ -8,9 +8,29 @@ class ElectricityIndicator(BaseIndicator):
         try:
             # Note: This API can be slow. We use a fallback if needed.
             df = ak.macro_china_society_electricity()
-            df = df.rename(columns={'月份': 'date', '全社会用电量': 'value'})
-            df['date'] = pd.to_datetime(df['date'].str.replace('年', '-').str.replace('月份', '-01'))
-            return df.sort_values('date').dropna()
+            
+            # Robust column renaming
+            cols = df.columns.tolist()
+            date_col = next((c for c in cols if any(x in str(c) for x in ['月份', '日期', 'date', 'time'])), None)
+            val_col = next((c for c in cols if any(x in str(c) for x in ['用电量', 'value']) and c != date_col), None)
+            
+            if not date_col or not val_col:
+                 # Fallback by index
+                 if len(cols) >= 2:
+                     date_col, val_col = cols[0], cols[1]
+            
+            if date_col and val_col:
+                df = df.rename(columns={date_col: 'date', val_col: 'value'})
+                # If date is like '2023年6月份' or just '2023.6'
+                # Clean up date string
+                if df['date'].dtype == object:
+                    df['date'] = df['date'].astype(str).str.replace('年', '-').str.replace('月份', '-01').str.replace('月', '-01')
+                
+                df['date'] = pd.to_datetime(df['date'], errors='coerce')
+                return df.sort_values('date').dropna()
+            else:
+                raise ValueError(f"Could not identify columns from {cols}")
+
         except Exception as e:
             self.logger.error(f"Electricity Fetch Error: {e}")
             # Fallback

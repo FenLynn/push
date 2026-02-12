@@ -11,6 +11,10 @@ import sys
 import os
 import argparse
 import time
+import warnings
+
+# Suppress py_mini_racer UserWarning from akshare
+warnings.filterwarnings("ignore", category=UserWarning, module='py_mini_racer')
 
 # Ensure project root is in path
 # Ensure project root is in path
@@ -46,6 +50,12 @@ from sources.etf import ETFSource
 from sources.estate import EstateSource
 from sources.damai import DamaiSource
 
+from sources.archive.env import ArchiveEnvSource
+from sources.archive.ops import ArchiveOpsSource
+from sources.archive.tech import ArchiveTechSource
+from sources.archive.vps import ArchiveVPSSource
+from sources.report.weekly import WeeklyReportSource
+
 import logging
 from core.logger import setup_logger
 
@@ -64,6 +74,11 @@ MODULES = {
     'etf':     {'class': ETFSource,     'desc': 'ETF监控'},
     'estate':  {'class': EstateSource,  'desc': '成都房产'},
     'damai':   {'class': DamaiSource,   'desc': '大麦演出'},
+    'archive_env': {'class': ArchiveEnvSource, 'desc': '环境存档 (天气/AQI)'},
+    'archive_ops': {'class': ArchiveOpsSource, 'desc': '资产存档 (域名/SSL)'},
+    'archive_tech': {'class': ArchiveTechSource, 'desc': '科技存档 (HackerNews)'},
+    'archive_vps': {'class': ArchiveVPSSource, 'desc': '主机存档 (性能监控)'},
+    'report_weekly': {'class': WeeklyReportSource, 'desc': '周报总结 (Weekly Museum)'},
 }
 
 # Group Presets for easy push
@@ -75,6 +90,7 @@ GROUPS = {
     'baobao': ['morning', 'game', 'life'],          # 宝宝组
     'family': ['morning', 'estate'],                # 家庭组
     'night':  ['night'],                             # 美股组
+    'archive': ['archive_env', 'archive_ops', 'archive_tech', 'archive_vps'], # 存档组
     'all':    list(MODULES.keys()),                  # 所有模块
 }
 
