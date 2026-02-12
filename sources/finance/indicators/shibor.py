@@ -15,7 +15,9 @@ class ShiborIndicator(BaseIndicator):
                 dfs.append(d)
             
             df = pd.concat(dfs, axis=1).sort_index().reset_index()
-            df = df.fillna(method='ffill')
+            df = pd.concat(dfs, axis=1).sort_index().reset_index()
+            df = df.ffill()
+            return df
             return df
         except Exception as e:
             self.logger.error(f"Shibor Fetch Error: {e}")

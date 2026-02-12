@@ -37,3 +37,5 @@ from .m1_m2_gap import M1M2GapIndicator
 from .market_pe import MarketPEIndicator
 from .cross_border import CrossBorderIndicator
 from .real_yield import RealInterestRateIndicator
+from .chengdu_real_estate import ChengduRealEstateIndicator
+from .xian_real_estate import XianRealEstateIndicator

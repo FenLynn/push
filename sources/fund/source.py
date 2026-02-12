@@ -8,8 +8,8 @@ from core import Message, ContentType
 from core.template import TemplateEngine
 from core.db import db
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from cloud import *
-from cloud.utils.lib import *
+from core.legacy import *
+from core.utils.lib import *
 
 class FundSource(BaseSource):
     """基金估值数据源"""
@@ -17,8 +17,8 @@ class FundSource(BaseSource):
         super().__init__()
         self.topic = topic
         self.template = TemplateEngine()
-        if is_use_proxy:
-            use_proxy()
+        self.template = TemplateEngine()
+        # Proxy is handled by environment variables (core.env)
     
     # User requested to keep ALL data. Logic: High limit to avoid local truncation.
     # If PushPlus splits it, so be it, but data won't be lost.

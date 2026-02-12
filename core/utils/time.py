@@ -1,5 +1,8 @@
-from .config import *
-from .utils.lib import *
+
+from datetime import datetime, date, timedelta
+import re
+import time
+from chinese_calendar import is_workday, is_holiday, is_in_lieu, get_holiday_detail
 
 def get_time_ymdhms_str():
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -13,31 +16,26 @@ def get_time_ymd_str():
     current_time = datetime.now().strftime("%Y%m%d")
     return current_time
 
-
 def get_str_date(s):
-    # 匹配 YYYY-MM-DD 或 YYYY/MM/DD
-    pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}') # Fixed SyntaxWarning
+    # Match YYYY-MM-DD or YYYY/MM/DD
+    pattern_date = re.compile(r'\d{4}[-/]?\d{2}[-/]?\d{2}') 
     match=pattern_date.findall(s)[0]
     return match
     
 def get_str_time(s):
-    # 匹配 HH:MM
-    # 考虑到有些时间可能是 H:MM (如 9:05)
+    # Match HH:MM
     pattern_time = re.compile(r'\d{1,2}:\d{1,2}')
     match=pattern_time.findall(s)[0]
     return match
 
 def is_work_day():
-    april_last = date(2023, 4, 5)   # datetime.date
-    print(is_workday(april_last))     # True
-    print(is_holiday(april_last))     # False
-    print(april_last.weekday())       # 5-星期六
+    april_last = date(2023, 4, 5)   
+    print(is_workday(april_last))     
+    print(is_holiday(april_last))     
+    print(april_last.weekday())       
 
-# 当前日期N天前的证券交易日
 def get_trade_day(n=0):
     dt = date.today()
-    #dt = date(2023,4,4)
-    #trade_day = '20201026'
     if n < 0:
         t = -n
     else:
@@ -48,13 +46,11 @@ def get_trade_day(n=0):
         else:
             delta_day = timedelta(days=i)
         trade_day = dt-delta_day
-        if is_workday(trade_day) and trade_day.weekday()<5:       # 工作日并且不是周末
+        if is_workday(trade_day) and trade_day.weekday()<5:       
             if t ==0:
                 break
             t = t -1
-    #print(trade_day.strftime('%Y-%m-%d'))
     return trade_day.strftime('%Y-%m-%d')
-
 
 def get_today_trade_status():
     dt = date.today()
@@ -67,11 +63,10 @@ def get_today_trade_status():
 def get_today_status():
     def get_weekdays():
         week_list = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-        local_time = time.localtime(time.time())   # 获取当前时间的时间元组        
-        week_index = local_time.tm_wday  # 获取时间元组内的tm_wday值
+        local_time = time.localtime(time.time())   
+        week_index = local_time.tm_wday  
         week = week_list[week_index]
         return week 
-    
     
     last_trade_day=get_trade_day(1)
     current_trade_day=get_trade_day(0)
@@ -79,11 +74,9 @@ def get_today_status():
     _workday=is_workday(dt)
     _holiday=is_holiday(dt)
     _OnHoliday, _HolidayName = get_holiday_detail(dt)
-
     
     _status=''
     _trade_status=False 
-    
     
     if _workday:
         if get_weekdays() in ["星期一", "星期二", "星期三", "星期四", "星期五"]:
@@ -118,4 +111,4 @@ def timer_decorator(func):
     return wrapper
 
 def is_today_trade():
-    import akshare as ak
+    pass # akshare removed

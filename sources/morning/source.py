@@ -18,7 +18,8 @@ from core import Message, ContentType
 from zhdate import ZhDate
 
 # 导入原有辅助函数
-from legacy.morning.main import (
+# 导入原有辅助函数
+from .utils import (
     get_quota_info, get_index, get_oil_price,
     get_game, get_hot_search, get_news_url, get_lsjt,
     get_daily_english
@@ -314,7 +315,13 @@ class MorningSource(BaseSource):
         # 金价
         try:
             url = 'https://api.lolimi.cn/API/huangj/api.php'
-            r = requests.get(url, timeout=10).json()
+            resp = requests.get(url, timeout=10)
+            try:
+                r = resp.json()
+            except Exception as e:
+                self.logger.warning(f"Gold API JSON Error: {e}. Content: {resp.text[:200]}...")
+                r = {}
+            
             if r.get('code') == 200:
                 # 国内金价
                 for item in r.get('国内黄金', []):

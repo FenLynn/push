@@ -7,8 +7,8 @@ from sources.base import BaseSource
 from core import Message, ContentType
 from core.template import TemplateEngine
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from cloud import *
-from cloud.utils.lib import *
+from core.legacy import *
+from core.utils.lib import *
 
 class LifeSource(BaseSource):
     """娱乐数据源 (电影/电视剧/综艺)"""

@@ -28,34 +28,39 @@
         
         /* Header */
         .hd { display:flex; justify-content:space-between; align-items:center; padding:12px 10px; border-bottom:1px solid var(--border-card); }
-        .greeting { font-size:24px; font-weight:800; background:linear-gradient(135deg,#22d3ee,#3b82f6); -webkit-background-clip:text; color:transparent; }
+        .greeting { font-size:24px; font-weight:800; background:linear-gradient(135deg,#22d3ee,#3b82f6); -webkit-background-clip:text; background-clip:text; color:transparent; }
         .date { font-size:12px; color:var(--text-sub); font-weight:500; }
 
         /* Card */
-        .cd { background:var(--bg-card); margin-bottom:16px; border-bottom:1px solid var(--border-card); }
-        .ch { padding:6px 10px; font-weight:700; font-size:14px; background:var(--bg-header); color:var(--text-header); display:flex; align-items:center; border-bottom:1px dashed var(--border-header); }
+        .cd { background:var(--bg-card); margin-bottom:8px; border-bottom:1px solid var(--border-card); }
+        .ch { padding:4px 10px; font-weight:700; font-size:13px; background:var(--bg-header); color:var(--text-header); display:flex; align-items:center; border-bottom:1px dashed var(--border-header); }
         .cb { padding:0; }
 
         /* Table */
-        table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
-        th { padding:4px 2px; font-size:11px; color:var(--text-th); text-align:left; background:var(--bg-th); white-space:nowrap; font-weight:400; } /* Normal weight */
-        td { padding:4px 2px; border-bottom:1px solid var(--border-row); color:var(--text-main); vertical-align:middle; } /* Auto height */
+        table { width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed; }
+        th { padding:2px; font-size:11px; color:var(--text-th); text-align:left; background:var(--bg-th); white-space:nowrap; font-weight:400; } /* Normal weight */
+        td { padding:2px; border-bottom:1px solid var(--border-row); color:var(--text-main); vertical-align:middle; } /* Auto height */
         
         /* Columns - Layout Adjusted */
-        .tm { width:48px; font-family:monospace; font-weight:500; color:var(--text-sub); text-align:center; white-space:nowrap; }
+        .tm { width:42px; font-family:monospace; font-weight:500; color:var(--text-sub); text-align:center; white-space:nowrap; }
         .tp { width:32px; text-align:center; }
-        .lg { width:32%; font-size:12px; color:var(--text-sub); font-weight:400; white-space:normal; line-height:1.3; } /* Wrapping enabled */
-        .vs { width:auto; font-weight:600; white-space:normal; } /* Wrapping enabled */
+        .lg { width:22%; font-size:11px; color:var(--text-sub); font-weight:400; white-space:normal; line-height:1.2; } /* League column narrower */
+        .vs { width:auto; font-weight:600; white-space:normal; } /* Teams column wider */
         
-        .match-box { display:flex; align-items:center; flex-wrap:wrap; font-size:13px; gap:2px; } /* Wrap enabled */
+        .match-box { display:flex; align-items:center; flex-wrap:wrap; font-size:12px; gap:2px; line-height: 1.1; } /* Tighter line height for wrapped rows */
         .team { white-space:normal; word-break:break-word; } /* Wrap enabled */
-        .vs-tag { color:var(--text-sub); font-size:10px; margin:0 2px; font-weight:400; }
+        .vs-tag { color:var(--text-sub); font-size:9px; margin:0 1px; font-weight:400; }
         
         /* Game Pill */
-        .g-pill { display:inline-block; padding:1px 3px; border-radius:3px; font-size:9px; font-weight:700; transform:scale(0.85); white-space:nowrap; }
+        .g-pill { display:inline-block; padding:1px 4px; border-radius:3px; font-size:10px; font-weight:700; white-space:nowrap; } /* Bigger text but less scaling */
         .lol { background:#dbeafe; color:#1e40af; }
         .kpl { background:#fae8ff; color:#86198f; }
+        .王者 { background:#fae8ff; color:#86198f; }
         .dota { background:#fee2e2; color:#991b1b; }
+        .dota2 { background:#fee2e2; color:#991b1b; }
+        .乒乓 { background:#fef3c7; color:#92400e; }
+        .足球 { background:#dcfce7; color:#166534; }
+        .篮球 { background:#ffedd5; color:#9a3412; }
         
         /* Highlights */
         .hl-row { background-color:var(--hl-bg); }
@@ -78,9 +83,9 @@
             font-size: 60px; font-weight: 900; color: rgba(255,255,255,0.05); font-style: italic; pointer-events: none;
         }
         .hero-tag { background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; vertical-align: text-bottom; margin-right: 6px; }
-        .hero-title { font-size: 12px; color: #94a3b8; margin-bottom: 6px; display: flex; justify-content: space-between; }
-        .hero-teams { font-size: 18px; font-weight: 800; display: flex; align-items: center; justify-content: space-between; margin: 8px 0; }
-        .hero-vs { font-size: 14px; color: #64748b; margin: 0 10px; font-style: italic; }
+        .hero-title { font-size: 12px; color: #fff; margin-bottom: 6px; display: flex; justify-content: space-between; font-weight: 500; }
+        .hero-teams { font-size: 18px; font-weight: 800; display: flex; align-items: center; justify-content: space-between; margin: 8px 0; color: #fff; }
+        .hero-vs { font-size: 14px; color: #94a3b8; margin: 0 10px; font-style: italic; }
         .hero-tm { background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px; font-size: 13px; font-family: monospace; color: #fff; font-weight: 500; }
 
         .ft { margin-top:10px; padding-top:10px; border-top:1px dashed var(--border-header); font-size:10px; color:var(--text-sub); text-align:center; }
@@ -131,12 +136,8 @@
                             <tr class="{% if match.highlight %}hl-row{% endif %}">
                                 <td class="tm">{{ match.time }}</td>
                                 <td class="tp">
-                                    {% if '王者' in match.type or 'KPL' in match.type %}
-                                    <span class="g-pill kpl">KPL</span>
-                                    {% elif '英雄' in match.type or 'LOL' in match.type or 'LPL' in match.type or 'LCK' in match.type %}
-                                    <span class="g-pill lol">LOL</span>
-                                    {% elif 'DOTA' in match.type or '刀塔' in match.type %}
-                                    <span class="g-pill dota">Dota</span>
+                                    {% if match.type in ['王者', 'LOL', 'Dota2', '乒乓', '足球', '篮球', '网球'] %}
+                                    <span class="g-pill {{ match.type }}">{{ match.type }}</span>
                                     {% else %}
                                     <span class="g-pill" style="background:#f1f5f9;color:#475569">{{ match.type[:2] }}</span>
                                     {% endif %}

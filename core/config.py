@@ -14,24 +14,24 @@ class ConfigLoader:
         return cls._instance
 
     def load(self):
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        # Priority 1: config/*.ini (Git tracked modular configs)
-        config_dir = os.path.join(base_dir, 'config')
-        if os.path.exists(config_dir):
-            for filename in sorted(os.listdir(config_dir)):
-                if filename.endswith('.ini'):
-                    self.config.read(os.path.join(config_dir, filename), encoding='utf-8')
+        # 1. Load Default Config (Source of Truth)
+        default_config = os.path.join(self.base_dir, 'config', 'default.ini')
+        if os.path.exists(default_config):
+            self.config.read(default_config, encoding='utf-8')
+        else:
+            # Fallback for development if default.ini moved
+            pass
 
-        # Priority 2: config.ini (Legacy/Public Root)
-        root_config = os.path.join(base_dir, 'config.ini')
-        if os.path.exists(root_config):
-            self.config.read(root_config, encoding='utf-8')
-
-        # Priority 3: .private/config.ini (Private Override)
-        private_config = os.path.join(base_dir, '.private', 'config.ini')
-        if os.path.exists(private_config):
-            self.config.read(private_config, encoding='utf-8')
+        # 2. Load Personal Override (Optional)
+        personal_config = os.path.join(self.base_dir, '.private', 'personal.ini')
+        if os.path.exists(personal_config):
+            self.config.read(personal_config, encoding='utf-8')
+            
+    @property
+    def root_path(self) -> str:
+        return self.base_dir
 
     def get(self, section, key, fallback=None):
         return self.config.get(section, key, fallback=fallback)
@@ -66,6 +66,14 @@ class ConfigLoader:
         section = self.get_section('finance.stock_etf')
         return [(name, code) for code, name in section.items()]
 
+    def get_bold_stocks(self) -> List[str]:
+        val = self.get('FINANCE', 'BOLD_STOCK', fallback='')
+        return [s.strip() for s in val.split(',') if s.strip()]
+
+    def get_hk_stock_list(self) -> List[str]:
+        val = self.get('FINANCE', 'HK_STOCK_ID', fallback='')
+        return [s.strip() for s in val.split(',') if s.strip()]
+
     def get_llm_config(self) -> Dict[str, str]:
         conf = self.get_section('llm')
         return {
@@ -75,5 +83,15 @@ class ConfigLoader:
             'model': os.getenv('LLM_MODEL', conf.get('model', '')),
             'proxy': os.getenv('LLM_PROXY', conf.get('proxy', ''))
         }
+
+    @property
+    def ops_domains(self) -> List[str]:
+        domains = self.get('OPS', 'DOMAINS', fallback='')
+        return [d.strip() for d in domains.split(',') if d.strip()]
+
+    @property
+    def ops_domains(self) -> List[str]:
+        domains = self.get('OPS', 'DOMAINS', fallback='')
+        return [d.strip() for d in domains.split(',') if d.strip()]
 
 config = ConfigLoader()

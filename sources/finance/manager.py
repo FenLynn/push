@@ -3,7 +3,7 @@ import json
 import os
 import logging
 from core.db import db
-from cloud.image import upload_image_to_cdn
+from core.image_upload import upload_image_to_cdn
 
 class DataManager:
     def __init__(self):
