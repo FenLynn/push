@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import datetime
 import hashlib
+import concurrent.futures
 
 # Add project root to sys.path to import core modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,7 +18,7 @@ try:
     # Load .env explicitly for local run
     load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 except ImportError:
-    print("Missing dependencies. Please run: pip install feedparser requests")
+    print("Missing dependencies. Please run: pip install feedparser requests python-dotenv")
     sys.exit(1)
 
 # Configuration from env or default
@@ -26,13 +27,9 @@ D1_TABLE = "articles"
 def get_feeds():
     """
     Get feeds list. 
-    Ideally this comes from a shared config (feeds.json) or parsed from default.ini.
-    For this script, we will load from 'feeds.json' which should be committed to the repo.
     """
     feeds_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'feeds.json')
     if not os.path.exists(feeds_path):
-        # Fallback: try to parse default.ini if feeds.json missing? 
-        # For Cloud Native, explicit feeds.json is better.
         print(f"Error: {feeds_path} not found.")
         return []
     
@@ -47,13 +44,76 @@ def fetch_feed(feed_url, max_retries=3):
                 'User-Agent': 'Mozilla/5.0 (GitHub Actions; Cloud Native Fetcher)'
             })
             if resp.status_code == 200:
-                return feedparser.parse(resp.content)
+                parsed = feedparser.parse(resp.content)
+                if not parsed.entries and parsed.bozo:
+                    # Retry on Bozo error if maybe intermittent?
+                    if attempt < max_retries - 1: continue
+                return parsed
         except Exception as e:
-            print(f"Error fetching {feed_url}: {e}")
+            # print(f"Error fetching {feed_url}: {e}") # Reduce noise
             if attempt < max_retries - 1:
                 import time
                 time.sleep(2)
     return None
+
+def process_feed_and_insert(feed, d1_client):
+    """Fetch specific feed and insert directly to minimize memory usage"""
+    # Note: d1_client instance sharing across threads? 
+    # d1_client uses requests.post, which is thread-safe? Yes usually.
+    # But let's instantiate local client if needed? Or just pass it.
+    
+    print(f"Processing {feed['title']}...")
+    parsed = fetch_feed(feed['url'])
+    if not parsed:
+        print(f"Failed to fetch {feed['title']}")
+        return 0
+        
+    count = 0
+    for entry in parsed.entries:
+        try:
+            # Parse Date
+            dt = datetime.now()
+            if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                dt = datetime(*entry.published_parsed[:6])
+            elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                dt = datetime(*entry.updated_parsed[:6])
+            
+            # Generate ID (Hash of link)
+            link = entry.link
+            aid = hashlib.md5(link.encode('utf-8')).hexdigest()
+            title = entry.title
+            
+            content = ""
+            if hasattr(entry, 'summary'): content = entry.summary
+            if hasattr(entry, 'content'): content = entry.content[0].value
+            
+            # Insert into D1 (Upsert logic: OR IGNORE)
+            sql = """
+            INSERT OR IGNORE INTO articles (id, title, link, published_at, source_name, source_type, content, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            params = [
+                aid, 
+                title, 
+                link, 
+                dt.strftime('%Y-%m-%d %H:%M:%S'), 
+                feed['title'], 
+                feed.get('type', 'journal'), 
+                content[:5000], 
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ]
+            
+            res = d1_client.query(sql, params)
+            if res.get('success'):
+                count += 1
+            else:
+                # print(f"Error inserting {title}: {res.get('error')}")
+                pass
+        except Exception as e:
+            print(f"Error processing entry {title}: {e}")
+            
+    return count
 
 def main():
     # 1. Initialize D1
@@ -62,7 +122,7 @@ def main():
         print("D1 Client not enabled. Check CLOUDFLARE_D1_* env vars.")
         sys.exit(1)
 
-    # 2. Ensure Table Exists
+    # 2. Ensure Table Exists (Fast check)
     schema = """
     CREATE TABLE IF NOT EXISTS articles (
         id TEXT PRIMARY KEY,
@@ -78,65 +138,28 @@ def main():
     """
     d1.ensure_table(D1_TABLE, schema)
     
-    # 3. Fetch Feeds
+    # 3. Fetch Feeds (Parallel)
     feeds = get_feeds()
-    print(f"Fetching {len(feeds)} feeds...")
+    print(f"Fetching {len(feeds)} feeds in parallel...")
     
-    new_count = 0
-    total_articles = 0
+    total_new = 0
     
-    for feed in feeds:
-        print(f"Processing {feed['title']}...")
-        parsed = fetch_feed(feed['url'])
-        if not parsed:
-            print(f"Failed to fetch {feed['title']}")
-            continue
-            
-        for entry in parsed.entries:
-            # Parse Date
-            dt = datetime.now()
-            if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                dt = datetime(*entry.published_parsed[:6])
-            elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                dt = datetime(*entry.updated_parsed[:6])
-            
-            # Generate ID (Hash of link)
-            link = entry.link
-            aid = hashlib.md5(link.encode('utf-8')).hexdigest()
-            
-            # Prepare Data
-            title = entry.title
-            content = ""
-            if hasattr(entry, 'summary'): content = entry.summary
-            if hasattr(entry, 'content'): content = entry.content[0].value
-            
-            # Insert into D1 (Upsert logic: OR IGNORE)
-            # D1 doesn't support "INSERT OR IGNORE" in standard SQLite via HTTP API sometimes? 
-            # Actually standard SQLite supports it. Let's try.
-            
-            sql = """
-            INSERT OR IGNORE INTO articles (id, title, link, published_at, source_name, source_type, content, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            
-            params = [
-                aid, 
-                title, 
-                link, 
-                dt.strftime('%Y-%m-%d %H:%M:%S'), 
-                feed['title'], 
-                feed.get('type', 'journal'), 
-                content[:5000],  # Truncate content to save D1 space usage? Or maybe full? 
-                                # D1 limits: 100MB total for free. 5000 chars is safe.
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            ]
-            
-            res = d1.query(sql, params)
-            if res.get('success'):
-                # Check if it was actually inserted? D1 API doesn't always return rows affected easily in 'meta'.
-                pass
-            else:
-                print(f"Error inserting {title}: {res.get('error')}")
+    # Use ThreadPoolExecutor for I/O bound tasks
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Submit tasks
+        future_to_feed = {executor.submit(process_feed_and_insert, feed, d1): feed for feed in feeds}
+        
+        for future in concurrent.futures.as_completed(future_to_feed):
+            feed = future_to_feed[future]
+            try:
+                cnt = future.result()
+                total_new += cnt
+                if cnt > 0:
+                    print(f"[{feed['title']}] Inserted {cnt} articles.")
+            except Exception as exc:
+                print(f"[{feed['title']}] Generated an exception: {exc}")
+
+    print(f"Total articles inserted/checked: {total_new}")
 
     # 4. Cleanup Old Data (Retention: 7 days)
     print("Cleaning up old articles...")

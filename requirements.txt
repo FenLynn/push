@@ -16,7 +16,8 @@ ttrss-python>=0.2.6
 # playwright>=1.40.0  # 仅crawl_xian.py和crawl_chengdu.py脚本使用
 # webdavclient3>=3.14.6  # 仅backup/restore webdav脚本使用
 # pytz>=2024.0  # 未在代码中找到使用
-# feedparser>=6.0.10  # 未在代码中找到使用
+feedparser>=6.0.10
+python-dotenv>=1.0.0
 jieba
 wordcloud
 zhdate
