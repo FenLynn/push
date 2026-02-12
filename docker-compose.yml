@@ -19,7 +19,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASS:-ttrss_secure_password}
       - POSTGRES_DB=${DB_NAME:-ttrss}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - ./data/db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ttrss}"]
       interval: 10s
