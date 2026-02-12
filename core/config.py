@@ -46,16 +46,13 @@ class ConfigLoader:
         matches = self.get_section(section)
         return [{'id': vid, 'name': name} for vid, name in matches.items()]
 
-    def get_damai_cities(self) -> Dict[str, List[Dict[str, str]]]:
-        """Get all configured cities and their venues"""
-        res = {}
-        for section in self.config.sections():
-            if section.startswith('damai.places.'):
-                city = section.split('.')[-1]
-                venues = self.get_damai_venues(city)
-                if venues:
-                    res[city] = venues
-        return res
+    def get_damai_cities(self) -> Dict[str, str]:
+        """Get configured cities and their codes"""
+        # New mode: [damai.cities] name = code
+        section = 'damai.cities'
+        if self.config.has_section(section):
+            return dict(self.config.items(section))
+        return {}
     
     def get_etf_list(self) -> List[str]:
         targets = self.get('finance.etf', 'targets', fallback='')

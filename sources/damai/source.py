@@ -21,51 +21,103 @@ class DamaiSource(BaseSource):
         self.city_code_filter = city_code
         self.city_name_map = {'chengdu': '成都', 'xian': '西安', 'beijing': '北京', 'shanghai': '上海'}
         
-        # Load from Config (All cities)
-        self.cities = config.get_damai_cities()
+        # Load from Config (Cities Map: name -> code)
+        # e.g. {'chengdu': '28', 'xian': '29'}
+        self.cities_config = config.get_damai_cities()
         
         # Filter if specific city requested via CLI
         if city_code:
-            if city_code in self.cities:
-                self.cities = {city_code: self.cities[city_code]}
+            if city_code in self.cities_config:
+                self.cities_config = {city_code: self.cities_config[city_code]}
             else:
                 self.logger = logging.getLogger('Push.Source.Damai')
                 self.logger.warning(f"Requested city '{city_code}' not found in config.")
-                self.cities = {}
+                # Try to use it anyway if it looks like a code? No, stick to config.
+                self.cities_config = {}
 
         self.logger = logging.getLogger('Push.Source.Damai')
         self.template_engine = TemplateEngine()
 
-    def _process_city(self, city_code, venues):
-        """Process a single city and return a list of Message objects (pages)"""
-        city_name = self.city_name_map.get(city_code, city_code.capitalize())
-        all_events = []
+    def _fetch_city_events(self, city_name, city_code):
+        """Fetch events for a whole city using City Code"""
+        url = f"https://www.showstart.com/event/list?cityCode={city_code}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
         
-        # 1. Scrape Venues
-        print(f"[Damai] Scraping {len(venues)} venues in {city_name} (ShowStart)...")
-        for v in venues:
-            evts = self._get_venue_events(v)
-            all_events.extend(evts)
+        events = []
+        try:
+            print(f"[Damai] Fetching {city_name} (Code: {city_code})...")
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.encoding = 'utf-8'
+            
+            if resp.status_code != 200:
+                self.logger.warning(f"Failed to fetch {city_name}: {resp.status_code}")
+                return []
+
+            # Regex for City List Page (Nuxt Dump)
+            # Confirmed regex: id:(\d+),title:"(.*?)",poster:"(.*?)".*?price:(.*?),showTime:"(.*?)"
+            regex = r'id:(\d+),title:"(.*?)",poster:"(.*?)".*?price:(.*?),showTime:"(.*?)"'
+            
+            raw_matches = re.findall(regex, resp.text)
+            
+            for m in raw_matches:
+                eid, title, poster, price_raw, show_time = m
+                
+                # Clean up unicode
+                def unescape_func(match):
+                    return chr(int(match.group(1), 16))
+                
+                if '\\u' in title:
+                    title = re.sub(r'\\u([0-9a-fA-F]{4})', unescape_func, title)
+                
+                # Clean Price
+                price = price_raw.strip('"')
+                if not price or price == 'ad': 
+                    # fallback if regex captured 'ad' or junk
+                    price = "点击查看" 
+                
+                poster = poster.replace(r'\u002F', '/') 
+                show_time = show_time.replace(r'\u002F', '/')
+
+                # Construct Event
+                evt = {
+                    'title': title,
+                    'time': show_time,
+                    'is_today': False,
+                    'price': price,
+                    'venue': city_name, # City list doesn't easily give venue name in this regex, use City for now
+                    'img': poster if poster.startswith('http') else 'https:' + poster,
+                    'link': f"https://www.showstart.com/event/{eid}",
+                    'raw_time': show_time
+                }
+                
+                events.append(evt)
+                
+        except Exception as e:
+            self.logger.error(f"Error parsing city {city_name}: {e}")
+            
+        return events
+
+    def _process_city(self, city_key, city_code):
+        """Process a single city and return a list of Message objects"""
+        city_name = self.city_name_map.get(city_key, city_key.capitalize())
         
-        # 2. Deduplicate
-        unique_events = {}
-        for e in all_events:
-            if e['link'] not in unique_events:
-                unique_events[e['link']] = e
-        events_list = list(unique_events.values())
+        # 1. Fetch
+        all_events = self._fetch_city_events(city_name, city_code)
         
-        # 3. Sort
+        # 2. Sort
         def parse_time(t_str):
             try:
                 return time.strptime(t_str, "%Y/%m/%d %H:%M")
             except:
                 return time.localtime()
-        events_list.sort(key=lambda x: parse_time(x['raw_time']))
+        all_events.sort(key=lambda x: parse_time(x['raw_time']))
         
-        # 4. Filter Past
+        # 3. Filter Past
         now_ts = time.time()
         future_events = []
-        for e in events_list:
+        for e in all_events:
              try:
                  ts = time.mktime(parse_time(e['raw_time']))
                  if ts >= now_ts - 86400: # Include today
@@ -76,7 +128,7 @@ class DamaiSource(BaseSource):
         if not future_events:
             return []
 
-        # 5. Pagination
+        # 4. Pagination
         MAX_CHARS = 19800
         pages = []
         remaining = future_events[:]
@@ -121,7 +173,7 @@ class DamaiSource(BaseSource):
                 title=f'{city_name}演出({time.strftime("%m-%d")}){title_suffix}',
                 content=last_valid_html,
                 type=ContentType.HTML,
-                tags=['damai', city_code]
+                tags=['damai', city_key]
             ))
             
             remaining = remaining[len(current_page_events):]
@@ -133,21 +185,17 @@ class DamaiSource(BaseSource):
     def run(self):
         final_results = []
         
-        # If no config, try default Fallback?
-        if not self.cities:
-             # If config is totally empty, maybe we should warn logic?
-             # For now, return empty message for 'Chengdu' default
+        if not self.cities_config:
              return self._create_empty_msg('chengdu')
 
-        for city, venues in self.cities.items():
-            msgs = self._process_city(city, venues)
+        for city_key, city_code in self.cities_config.items():
+            msgs = self._process_city(city_key, city_code)
             if msgs:
                 final_results.extend(msgs)
         
         # Logic: If NO events in ANY city -> Send one "No events" msg
         if not final_results:
-            # Picks the first configured city to show "No events"
-            first_city = list(self.cities.keys())[0] if self.cities else 'chengdu'
+            first_city = list(self.cities_config.keys())[0] if self.cities_config else 'chengdu'
             return self._create_empty_msg(first_city)
             
         return final_results
