@@ -439,7 +439,9 @@ class PaperSource(BaseSource):
             print("[Paper] D1 is disabled. Falling back to RSS.")
             return self._get_data_from_rss()
             
-        sql = f"SELECT * FROM articles WHERE published_at > datetime('now', '-{self.PAST_HOURS} hours') ORDER BY published_at DESC"
+        limit = int(os.getenv('PAPER_ARTICLE_LIMIT', 0))
+        limit_clause = f" LIMIT {limit}" if limit > 0 else ""
+        sql = f"SELECT * FROM articles WHERE created_at > datetime('now', '-{self.PAST_HOURS} hours') ORDER BY created_at DESC{limit_clause}"
         res = d1.query(sql)
         if not res.get('success'):
             print(f"[Paper] D1 Query failed: {res.get('error')}")
@@ -453,14 +455,39 @@ class PaperSource(BaseSource):
             else:
                 real_rows = rows
         
-        print(f"[Paper] D1 returned {len(real_rows)} raw articles.")
+        print(f"[Paper] D1 returned {len(real_rows)} raw articles (based on created_at).")
         if not real_rows:
             return {"journals": 0, "today": datetime.now().strftime("%Y-%m-%d"), 
                     "articles_sum": 0, "journals_title": [], "paper": []}
 
         grouped = {} 
+        
+        def smart_title(s):
+            """Smart Title Case: IEEE, OSA, and small words."""
+            if not s: return ""
+            # Special acronyms to force uppercase
+            uppers = {'ieee', 'osa', 'usa', 'led', 'uv'}
+            # Small words to keep lowercase (unless first/last)
+            smalls = {'a', 'an', 'the', 'and', 'but', 'or', 'for', 'nor', 'on', 'at', 'to', 'from', 'by', 'with', 'of', 'in'}
+            
+            words = s.split()
+            new_words = []
+            for i, w in enumerate(words):
+                clean_w = w.lower()
+                # Remove common punctuation for check (e.g., "Co.,") - Keep simple for now
+                if clean_w in uppers:
+                    new_words.append(clean_w.upper())
+                elif i > 0 and i < len(words) - 1 and clean_w in smalls:
+                    new_words.append(clean_w)
+                else:
+                    new_words.append(w.capitalize())
+            return " ".join(new_words)
+
         for row in real_rows:
-            j_name = row.get('source_name', 'Unknown')
+            # Format Journal Name
+            raw_j_name = row.get('source_name', 'Unknown')
+            j_name = smart_title(raw_j_name)
+            
             j_type = row.get('source_type', 'journal')
             if j_name not in grouped: grouped[j_name] = {'type': j_type, 'data': []}
                 
