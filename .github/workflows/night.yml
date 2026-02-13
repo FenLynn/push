@@ -29,6 +29,7 @@ jobs:
         
       - name: Run Night
         env:
+          TZ: Asia/Shanghai
           RUN_MODE: cloud
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           SMMS_TOKEN: ${{ secrets.SMMS_TOKEN }}
