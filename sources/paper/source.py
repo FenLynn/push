@@ -199,6 +199,7 @@ class PaperSource(BaseSource):
             for f in pg:
                 journal_total_pages[f['journal']] = journal_total_pages.get(f['journal'], 0) + 1
 
+        total_pages = len(all_pages)
         for idx, page_papers in enumerate(all_pages):
             is_first_page = (idx == 0)
             
