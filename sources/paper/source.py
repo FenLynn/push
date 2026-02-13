@@ -108,7 +108,16 @@ class PaperSource(BaseSource):
     MAX_ARTICLES_PER_PAGE = 35
     
 
-    def run(self) -> list:
+    def _estimate_article_size(self, article: dict) -> int:
+        """估算单篇文章的 HTML 字符大小"""
+        # 统计标题、作者、摘要和链接的字符数
+        size = len(article.get('title', '')) + len(article.get('author', ''))
+        size += len(article.get('description', '')) or len(article.get('summary', '')) or 0
+        size += len(article.get('link', ''))
+        return size + 300  # 加上 HTML 标签的开销
+
+    MAX_PAGE_SIZE = 19500 # 极限逼近 20k
+
         """运行获取流程并返回消息列表"""
         today_info = self._get_data()
         if not today_info['paper']:

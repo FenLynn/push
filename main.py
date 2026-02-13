@@ -161,6 +161,7 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
     logger.info(f"=== Push Run ({time.strftime('%Y-%m-%d %H:%M:%S')}) ===")
     
     engine = get_engine(token, topic=topic)
+    failed_modules = []
     success_count = 0
     
     # Get scheduler for tracking
@@ -207,6 +208,7 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
             if not isinstance(results, list):
                 results = [results]
             
+            module_msg_success = 0
             for idx, message in enumerate(results):
                 # 3. Handle delay for multiple messages (e.g. Paper)
                 if idx > 0:
@@ -223,17 +225,22 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
                 # 4. 推送
                 # Use None to send to all registered channels
                 if engine.run_with_message(message, name, channel_names=None):
-                    success_count += 1
+                    module_msg_success += 1
             
-            # Record success
+            # Record success (even if some messages failed to send via channel, the module itself "ran")
+            # But for CI/CD, we might want to know if everything was sent.
+            # Let's consider the module successful if it ran without exception.
             scheduler.record_success(module_key)
+            success_count += 1
             
         except Exception as e:
             logger.critical(f"Error running {name}: {e}", exc_info=True)
+            failed_modules.append(name)
             # Record failure
             scheduler.record_failure(module_key, str(e))
             
-    logger.info(f"Summary: {success_count}/{len(modules_to_run)} modules succeeded")
+    logger.info(f"Summary: {success_count}/{success_count + len(failed_modules)} modules succeeded")
+    return len(failed_modules) == 0
 
 def send_file(file_path, topic='me', title=None, token=None):
     """Send content from an existing file"""
@@ -362,7 +369,10 @@ def main():
         mods = list(dict.fromkeys(mods))  # Remove duplicates, preserve order
         
         if args.command == 'run':
-            run_modules(mods, topic=args.topic, token=args.token, title=args.title)
+            if not run_modules(mods, topic=args.topic, token=args.token, title=args.title):
+                import sys
+                logger.error("Some modules failed to run.")
+                sys.exit(1)
         else:
             gen_modules(mods, topic=args.topic, token=args.token)
     else:
