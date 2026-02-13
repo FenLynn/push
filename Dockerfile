@@ -37,7 +37,6 @@ COPY config/crontab.txt /etc/cron.d/push-cron
 RUN chmod 0644 /etc/cron.d/push-cron && crontab /etc/cron.d/push-cron
 
 # Entrypoint
-COPY scripts/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+# Entrypoint
+# scripts/docker_entrypoint.sh is already copied in COPY . .
+ENTRYPOINT ["/app/scripts/docker_entrypoint.sh"]

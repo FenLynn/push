@@ -5,66 +5,7 @@ networks:
     driver: bridge
 
 services:
-  # 1. PostgreSQL Database (for TTRSS)
-  db:
-    image: postgres:13-alpine
-    container_name: push-postgres
-    restart: always
-    networks:
-      - push-network
-    env_file:
-      - .env
-    environment:
-      - POSTGRES_USER=${DB_USER:-ttrss}
-      - POSTGRES_PASSWORD=${DB_PASS:-ttrss_secure_password}
-      - POSTGRES_DB=${DB_NAME:-ttrss}
-    volumes:
-      - ./data/db:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ttrss}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # 2. TTRSS Application (Using pre-pulled image)
-  ttrss:
-    image: wangqiru/ttrss:latest
-    container_name: push-ttrss-app
-    restart: always
-    networks:
-      - push-network
-    ports:
-      - "18100:80"
-    env_file:
-      - .env
-    environment:
-      - SELF_URL_PATH=http://localhost:18100/
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-ttrss}
-      - DB_USER=${DB_USER:-ttrss}
-      - DB_PASS=${DB_PASS:-ttrss_db_secure_2026}
-      - ENABLE_PLUGINS=auth_internal,fever
-      - TTRSS_ADMIN_PASSWORD=push_admin_2026
-    volumes:
-      - ./config:/opml:ro
-      - ./scripts/ttrss_auto_init.sh:/docker-entrypoint-init.d/init.sh:ro
-    depends_on:
-      db:
-        condition: service_healthy
-
-
-  # 3. Mercury Full-Text Parser (Optional - uncomment if needed)
-  # mercury:
-  #   image: wangqiru/mercury-parser-api:latest
-  #   container_name: push-mercury
-  #   restart: always
-  #   networks:
-  #     - push-network
-  #   expose:
-  #     - "3000"
-
-  # 4. Push Service (Python Application)
+  # 1. Push Service (Python Application)
   push-service:
     image: ghcr.io/fenlynn/push:main
     container_name: push-service
@@ -72,29 +13,27 @@ services:
     networks:
       - push-network
     volumes:
-      # === 代码热更新 (开发模式) ===
-      # 生产环境可注释以下代码挂载
+      # --- 代码挂载 (用于开发与热更新) ---
       - ./core:/app/core
       - ./sources:/app/sources
-      - ./config:/app/config  # Add config volume
-      - ./cloud:/app/cloud    # Add cloud volume (Fix SyntaxWarnings)
+      - ./config:/app/config  # 这里的配置映射到容器内
+      - ./cloud:/app/cloud
       - ./channels:/app/channels
       - ./templates:/app/templates
       - ./main.py:/app/main.py
       
-      # === 数据持久化 ===
-      - ./.private:/app/.private
-      - ./output:/app/output
-      - ./logs:/app/logs
-      - ./data:/app/data  # Persist SQLite DBs (push.db, task_scheduler.db)
+      # --- 数据持久化挂载 ---
+      - ./.private:/app/.private # 存放私密配置/密钥
+      - ./output:/app/output      # 存放生成的 HTML 报告
+      - ./logs:/app/logs          # 存放运行日志
+      - ./data:/app/data          # 存放 SQLite 数据库 (任务记录/D1缓存)
     env_file:
       - .env
     environment:
-      # Docker内部网络地址
-      - TTRSS_URL=http://ttrss:80
-      # 显式注入Token (确保可靠性)
+      # 显式注入关键 Token (作为环境变量的备选方案)
       - PUSHPLUS_TOKEN=${PUSHPLUS_TOKEN:-bb703a31058442b3a61489b82eaf1d63}
-      - SMMS_TOKEN=${SMMS_TOKEN:-255ZlacjiLewt7ZoYsN0QIu4531PBZrx}
+      - SMMS_TOKEN=${SMMS_TOKEN:-6269a699-a12a-bfb5-56d3-998806293288}
+      - SEE_TOKEN=${SEE_TOKEN:-6269a699-a12a-bfb5-56d3-998806293288}
     entrypoint: ["/app/scripts/docker_entrypoint.sh"]
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
@@ -102,44 +41,65 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    depends_on:
-      ttrss:
-        condition: service_started
+    # --- 容器标签 (Ofelia 定时任务配置) ---
     labels:
       ofelia.enabled: "true"
-      # === Schedule: Sequential Verification (Start 14:36) ===
-      # 1. Morning (14:36:00)
+      
+      # [1] 基础每日任务 (Daily Modules)
+      # 早上 7:00 推送个人日报 (天气/财金/英语) 到默认通道
       ofelia.job-exec.morning.schedule: "0 00 7 * * *"
       ofelia.job-exec.morning.command: "python main.py run morning"
-      # 2. Paper (14:36:30)
-      ofelia.job-exec.paper.schedule: "30 02 7 * * *"
-      ofelia.job-exec.paper.command: "python main.py run paper"
-      # 3. Life (14:37:00)
-      ofelia.job-exec.life.schedule: "0 03 7 * * *"
-      ofelia.job-exec.life.command: "python main.py run life"
-      # 4. Damai (14:37:30)
-      ofelia.job-exec.damai.schedule: "30 04 7 * * *"
-      ofelia.job-exec.damai.command: "python main.py run damai"
-      # 5. Game (14:38:00)
-      ofelia.job-exec.game.schedule: "0 05 7 * * *"
-      ofelia.job-exec.game.command: "python main.py run game"
-      # 6. Stock (14:38:30)
-      ofelia.job-exec.stock.schedule: "30 10 7 * * *"
-      ofelia.job-exec.stock.command: "python main.py run stock"
-      # 7. Fund (14:39:00)
-      ofelia.job-exec.fund.schedule: "0 11 7 * * *"
-      ofelia.job-exec.fund.command: "python main.py run fund"
-      # 8. ETF (14:39:30)
-      ofelia.job-exec.etf.schedule: "30 12 7 * * *"
-      ofelia.job-exec.etf.command: "python main.py run etf"
-      # 9. Night (14:40:00)
-      ofelia.job-exec.night.schedule: "0 13 7 * * *"
-      ofelia.job-exec.night.command: "python main.py run night"
-      # 10. Finance (14:40:30)
-      ofelia.job-exec.finance.schedule: "30 15 7 * * *"
-      ofelia.job-exec.finance.command: "python main.py run finance"
+      
+      # 晚上 19:30 推送论文、科研研报到 paper 频道
+      ofelia.job-exec.paper.schedule: "0 30 19 * * *"
+      ofelia.job-exec.paper.command: "python main.py run paper --topic paper"
+      
+      # 晚上 20:00 推送当日影视数据到 baobao 频道
+      ofelia.job-exec.life.schedule: "0 00 20 * * *"
+      ofelia.job-exec.life.command: "python main.py run life --topic baobao"
+      
+      # 早上 7:10 检查大麦网演出信息到 baobao 频道
+      ofelia.job-exec.damai.schedule: "0 10 7 * * *"
+      ofelia.job-exec.damai.command: "python main.py run damai --topic baobao"
+      
+      # 中午 13:00 午间休息查看游戏赛程到 stock 频道
+      ofelia.job-exec.game.schedule: "0 00 13 * * *"
+      ofelia.job-exec.game.command: "python main.py run game --topic stock"
 
-  # 5. Ofelia Scheduler
+      # [2] 金融交易任务 (Market Focused)
+      # --- 早盘收盘后 (11:35) ---
+      # A股早盘总结
+      ofelia.job-exec.stock_am.schedule: "0 35 11 * * *"
+      ofelia.job-exec.stock_am.command: "python main.py run stock --topic stock"
+      
+      # ETF/指数量能监控
+      ofelia.job-exec.etf_am.schedule: "0 35 11 * * *"
+      ofelia.job-exec.etf_am.command: "python main.py run etf --topic stock"
+      
+      # --- 全天收盘后 (15:05) ---
+      # A股全天行情分析
+      ofelia.job-exec.stock_pm.schedule: "0 05 15 * * *"
+      ofelia.job-exec.stock_pm.command: "python main.py run stock --topic stock"
+      
+      # ETF/指数全天量能监控
+      ofelia.job-exec.etf_pm.schedule: "0 05 15 * * *"
+      ofelia.job-exec.etf_pm.command: "python main.py run etf --topic stock"
+      
+      # --- 晚间总结 (20:30) ---
+      # 基金净值与估值更新
+      ofelia.job-exec.fund.schedule: "0 30 20 * * *"
+      ofelia.job-exec.fund.command: "python main.py run fund --topic stock"
+      
+      # 财经日报/宏观消息汇总
+      ofelia.job-exec.finance.schedule: "0 30 20 * * *"
+      ofelia.job-exec.finance.command: "python main.py run finance"
+      
+      # --- 美股交易次日 (06:00) ---
+      # 美股隔夜收盘报告
+      ofelia.job-exec.night.schedule: "0 00 6 * * *"
+      ofelia.job-exec.night.command: "python main.py run night --topic stock"
+
+  # 2. Ofelia Scheduler
   ofelia:
     image: mcuadros/ofelia:latest
     container_name: push-ofelia
@@ -153,6 +113,3 @@ services:
     restart: always
 
 
-volumes:
-  db_data:
-  ttrss_feed_icons:

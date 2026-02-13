@@ -90,40 +90,7 @@ fi
 echo "📦 Extracting..."
 tar -xzf $TARGET_FILE
 
-echo "💾 Restoring Database..."
-DB_DUMP="backups/ttrss_db.sql"
-
-if [ -f "$DB_DUMP" ]; then
-    # Ensure Container Running
-    # If not running, start it
-    if ! sudo docker ps | grep -q push-postgres; then
-         echo "🚀 Starting services..."
-         sudo docker compose up -d db
-         echo "⏳ Waiting for DB to be ready..."
-         sleep 10
-    fi
-    
-    # Drop and Create DB
-    echo "🔥 Resetting Database..."
-    # Terminate connections first?
-    sudo docker exec push-postgres psql -U ttrss -d template1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'ttrss';"
-    sudo docker exec push-postgres psql -U ttrss -d template1 -c "DROP DATABASE IF EXISTS ttrss;"
-    sudo docker exec push-postgres psql -U ttrss -d template1 -c "CREATE DATABASE ttrss;"
-    
-    # Import
-    echo "📥 Importing Data..."
-    cat $DB_DUMP | sudo docker exec -i push-postgres psql -U ttrss ttrss
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Database restore complete!"
-    else
-        echo "❌ Database restore failed!"
-    fi
-    
-    rm $DB_DUMP
-else
-    echo "⚠️  No database dump found in archive."
-fi
+echo "💾 Restoring Database... (Skipped - TTRSS Removed)"
 
 # Restart all to ensure clean state
 echo "🔄 Restarting all services..."

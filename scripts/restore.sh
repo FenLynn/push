@@ -30,16 +30,7 @@ cp "$TEMP_DIR/push.db" .
 echo "   - Restoring Output..."
 cp -r "$TEMP_DIR/output" .
 
-# 4. Restore Postgres
-echo "   - Restoring Postgres Database..."
-# Ensure DB container is running
-if [ ! "$(docker ps -q -f name=postgres-db)" ]; then
-    echo "   * Starting DB container first..."
-    docker-compose up -d db
-    sleep 10
-fi
-
-cat "$TEMP_DIR/ttrss_db.sql" | docker exec -i postgres-db psql -U ttrss
+# 4. Restore Postgres (Skipped - TTRSS Removed)
 
 # Cleanup
 rm -rf "$TEMP_DIR"

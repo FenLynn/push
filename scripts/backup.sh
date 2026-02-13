@@ -12,9 +12,8 @@ mkdir -p "$TEMP_DIR"
 
 echo "📦 Starting Backup: ${FILENAME}..."
 
-# 1. Backup Postgres (TTRSS)
-echo "   - Dumping Postgres Database..."
-docker exec -t postgres-db pg_dumpall -c -U ttrss > "$TEMP_DIR/ttrss_db.sql"
+# 1. Backup Postgres (TTRSS Removed)
+# echo "   - Dumping Postgres Database..."
 
 # 2. Backup SQLite (Push History)
 echo "   - Copying Push DB..."

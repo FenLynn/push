@@ -1,60 +1,34 @@
-# Dependencies Audit Report
+# Dependencies Audit Report (Updated)
 
 ## 检查时间
-2026-02-10 22:52
+2026-02-13 04:05
 
-## 原 requirements.txt (16个包)
-```
-akshare>=1.17.0
-beautifulsoup4>=4.12.0
-chinese-calendar>=1.9.0
-feedparser>=6.0.10
-jinja2>=3.1.0
-lxml>=5.0.0
-matplotlib>=3.7.0
-numpy>=1.24.0
-pandas>=2.0.0
-pillow>=10.0.0
-playwright>=1.40.0
-pyyaml>=6.0
-requests>=2.31.0
-pytz>=2024.0
-webdavclient3>=3.14.6
-ttrss-python>=0.2.6
-```
+## 核心依赖 (requirements.txt)
+我们对依赖进行了精简，移除了不再需要的 TTRSS 相关包，并添加了云原生架构所需的包。
 
-## 清理结果
+### ✅ 保留与新增的核心依赖
+| 包名 | 最新要求 | 作用 |
+|------|-----------|---------|
+| akshare | >=1.18.0 | 金融、影视数据源 |
+| beautifulsoup4 | >=4.12.0 | HTML 解析 (通用) |
+| chinese-calendar | >=1.11.0 | 中国节假日判定 |
+| jinja2 | >=3.1.0 | HTML 模板渲染 |
+| lxml | >=6.0.0 | XML/HTML 高速解析 |
+| matplotlib | >=3.10.0 | 报表绘图 |
+| pandas | >=3.0.0 | 数据处理中心 |
+| requests | >=2.32.0 | 网络请求 |
+| feedparser | >=6.0.10 | **必需**：用于 Github Actions 抓取 RSS |
+| python-dotenv | >=1.0.0 | **必需**：用于加载环境变量 |
 
-### ✅ 保留的核心依赖 (12个)
-| 包名 | 原版本要求 | 最新安装版本 | 使用位置 |
-|------|-----------|------------|---------|
-| akshare | >=1.17.0 | 1.18.22 | sources/finance, sources/life, sources/etf (金融数据) |
-| beautifulsoup4 | >=4.12.0 | 4.14.3 | cloud/utils, sources/finance (HTML解析) |
-| chinese-calendar | >=1.9.0 | 1.11.0 | cloud/utils (中国节假日) |
-| jinja2 | >=3.1.0 | 3.1.6 | core/template, sources/paper (模板渲染) |
-| lxml | >=5.0.0 | 6.0.2 | cloud/utils (XML解析) |
-| matplotlib | >=3.7.0 | 3.10.8 | cloud/utils, sources/finance (绘图) |
-| numpy | >=1.24.0 | 2.4.2 | cloud/utils, cloud/image (数值计算) |
-| pandas | >=2.0.0 | 3.0.0 | 多处使用 (数据处理) |
-| pillow | >=10.0.0 | 12.1.0 | cloud/utils (图像处理) |
-| pyyaml | >=6.0 | 6.0.3 | core/env (配置文件) |
-| requests | >=2.31.0 | 2.32.5 | 多处使用 (HTTP请求) |
-| ttrss-python | >=0.2.6 | 0.5 | cloud/utils (RSS订阅) |
-
-### ❌ 移除的包 (4个)
+### ❌ 移除的包
 | 包名 | 原因 |
 |------|------|
-| feedparser | ❌ 未在代码中找到任何使用 |
-| pytz | ❌ 未在代码中找到任何使用 |
-| playwright | ⚠️ 仅在 scripts/crawl_*.py 使用，已标注为可选依赖 |
-| webdavclient3 | ⚠️ 仅在 scripts/backup_webdav.py 使用，已标注为可选依赖 |
+| **ttrss-python** | 🚀 **彻底移除**：项目已迁移至云原生，不再需要 TTRSS 后端。 |
+| pytz | ❌ 无需单独安装，已集成或非必需。 |
 
-## 升级幅度
-- **重大升级 (Major)**: pandas 2.0 → 3.0, numpy 1.24 → 2.4, matplotlib 3.7 → 3.10
-- **次要升级**: 其他包均为小版本升级
-- **兼容性风险**: Pandas 3.0 可能存在 API 变更，需测试
+### ⚠️ 可选安装 (Conditional)
+- **playwright**: 仅在执行 `scripts/push_damai.py` 或特定爬虫时需要。
+- **boto3**: 仅在执行 `scripts/backup_r2.py` 时需要。
 
-## 建议
-1. 立即测试 push 核心功能 (`python main.py list`, `python main.py gen morning`)
-2. 如需使用 crawler scripts，手动安装: `pip install playwright && playwright install chromium`
-3. 如需 WebDAV 备份，手动安装: `pip install webdavclient3`
+## 升级风险提示
+- **Numpy/Pandas**: 版本较新，注意旧代码中的 API 兼容性。目前 `Engine` 运行正常。

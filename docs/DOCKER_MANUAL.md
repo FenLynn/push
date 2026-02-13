@@ -1,87 +1,74 @@
-# Docker 部署架构详解 (Docker Architecture Explained)
+# Docker 部署架构详解 (Simplified Architecture)
 
-本文档详细解释了本项目 (Push Project) 的容器化部署方案。该方案旨在实现**一键部署、环境隔离、自动调度与数据安全**。
+本文档详细解释了本项目 (Push Project) 简化后的容器化部署方案。该方案旨在实现**轻量级、零数据库维护、云端协同**。
 
-## 1. 核心架构：为什么需要 5 个容器？
+## 1. 核心架构：化繁为简
 
-我们使用了 Docker Compose 来编排 5 个协同工作的容器。你可以把它们想象成 5 个独立的“虚拟服务器”，通过内部网络连接。
+随着 Paper 模块向云原生架构 (Cloudflare D1) 迁移，我们大幅简化了本地部署。现在，你不再需要维护笨重的 TTRSS 及其关联的数据库。
 
 ### 🧩 容器清单
 
 | 容器名称 | 角色 | 作用 | 
 | :--- | :--- | :--- |
-| **push-service** | 🧠 **大脑 (核心业务)** | 运行 Python 脚本 (早报/研报/行情)。**核心特点：内置了 Cron 定时任务**，负责按时触发 `main.py`。 |
-| **ttrss** | 📖 **阅读器 (后端)** | Tiny Tiny RSS 的后端程序，负责抓取和管理 RSS 订阅源（如 arxiv, 财新等）。 |
-| **db** | 💾 **记忆 (数据库)** | PostgreSQL 数据库。专门存储 TTRSS 的所有订阅数据、文章内容和用户设置。 |
-| **ttrss-web** | 🌐 **门面 (前端)** | Nginx 服务器。提供 TTRSS 的网页访问接口 (端口 18100)，让你能登录管理订阅。 |
-| **mercury** | 🔍 **解析器 (工具)** | 全文解析服务。TTRSS 使用它来提取网页的正文内容（去除广告和侧边栏）。 |
+| **push-service** | 🧠 **大脑 (核心业务)** | 运行 Python 脚本 (早报/周报/研报)。现在直接从 API 或 D1 抓取数据，不再依赖本地数据库。 |
+| **push-ofelia** | ⏰ **时钟 (调度器)** | Ofelia 容器。作为一个轻量级的 Docker 原生调度器，它通过 labels 控制 `push-service` 按时运行各种模块。 |
+
+> **注：** 我们已彻底移除 `ttrss` (阅读器)、`db` (Postgres) 和 `mercury` (解析器)，服务器内存占用降低了约 70%。
 
 ---
 
-## 2. 自动化调度：告别宿主机 Crontab
+## 2. 自动化调度：Docker 原生
 
-在传统的部署中，你需要在 VPS 的操作系统里设置 `crontab -e`。这很难管理，迁移服务器时也容易忘记。
+我们采用 **Ofelia** 替代了内部 Cron，这样你可以直接在 `docker-compose.yml` 中可视化管理所有计划任务。
 
-**我们的方案：容器内调度 (Internal Cron)**
-
-- 我们在 `push-service` 容器内部安装了 `cron` 服务。
-- 定时任务列表定义在 `config/crontab.txt` 文件中。
-- **优势**：
-    1. **环境一致性**: 无论你在 Ubuntu, CentOS 还是群晖上运行，定时任务都保证能跑通。
-    2. **一键迁移**: 只要拷贝整个项目文件夹，定时任务就自动带走了，无需去新服务器重新配置。
+**优势**：
+1. **透明化**: 直接运行 `docker logs push-ofelia` 即可看到所有调度记录。
+2. **免维护**: 不需要进入容器修改 crontab 文件。
+3. **弹性调整**: 修改 `docker-compose.yml` 里的 labels 即可调整推送时间。
 
 ---
 
-## 3. 数据安全：不怕删容器
+## 3. 数据持久化：轻装上阵
 
-Docker 的容器是“易失”的（删了容器数据就没了），所以我们使用了 **挂载卷 (Volumes)** 将数据保存在你的硬盘上。
+现在只有必须要保存的数据才会被保留在宿主机。
 
 ### 📂 关键数据存储位置
 
 | 数据类型 | 本地路径 (VPS) | 容器内路径 | 说明 |
 | :--- | :--- | :--- | :--- |
-| **TTRSS 数据库** | `docker volume (db_data)` | `/var/lib/postgresql/data` | 最重要！存储了你的 RSS 订阅列表。 |
-| **Push 历史库** | `./push.db` | `/app/push.db` | 存储了 Push 发送过的历史记录 (去重用)。 |
+| **Push 历史库** | `./data/` | `/app/data/` | 存储 SQLite 数据库（如 `push.db`），用于记录已发送的消息以防重复。 |
 | **生成的文件** | `./output/` | `/app/output/` | 每天生成的 HTML 和 Markdown 报告。 |
-| **日志文件** | `./logs/` | `/app/logs/` | 定时任务的运行日志，方便排错。 |
-| **配置文件** | `.env` | (环境变量) | 存储了 Token 和 密码。 |
+| **日志文件** | `./logs/` | `/app/logs/` | 应用运行日志，方便排错。 |
+| **配置文件** | `.env` | (环境变量) | 存储核心 Token 和 密钥。 |
 
 ---
 
-## 4. 备份与恢复：一键“后悔药”
+## 4. 备份与恢复
 
-为了防止 VPS 故障或误操作，我们提供了傻瓜式的备份脚本。
+虽然去掉了 Postgres，但备份依然重要。
 
-### 🛡️ 备份脚本 (`scripts/backup.sh`)
-运行 `./scripts/backup.sh`，它会自动做以下事情：
-1.用于 `pg_dump` 命令将 Postgres 数据库导出为 SQL 文件。
-2.打包 `push.db` 和 `output` 目录。
-3.打包 `.env` 和配置文件。
-4.生成一个 `push_backup_日期.tar.gz` 压缩包。
-
-**建议**: 你可以将这个压缩包下载到本地，或者上传到网盘。
-
-### 🏥 恢复脚本 (`scripts/restore.sh`)
-在新服务器上，只需运行 `./scripts/restore.sh <备份包>`，系统就会瞬间恢复到备份时的状态。
+### 🛡️ 备份脚本 (`scripts/backup_r2.py`)
+我们现在推荐使用 R2 或 WebDAV 备份脚本。它会：
+1. 打包 `./data` (SQLite 数据库)。
+2. 打包 `.env` 和 `config/` 目录。
+3. 加密并上传到云端 (Cloudflare R2 或 坚果云)。
 
 ---
 
-## 5. 部署流程 (Quick Start)
+## 5. 快速开始 (Quick Start)
 
-1.  **上传代码**: 将 `push` 文件夹上传到 VPS。
-2.  **配置环境**: 
+1.  **配置环境**: 
     ```bash
     cp .env.example .env
-    nano .env  # 填入你的 Token 和 密码
+    nano .env  # 填写各项 Token
     ```
-3.  **启动服务**:
+2.  **启动服务**:
     ```bash
-    ./start.sh
-    # 或者 docker-compose up -d
+    docker-compose up -d
     ```
-4.  **初始化 TTRSS** (仅首次):
-    - 访问 `http://<VPS_IP>:18100`。
-    - 登录 (默认账号 admin / password)。
-    - **导入 OPML**: 在设置中导入你之前的 RSS 订阅文件。
+3.  **手动测试**:
+    ```bash
+    docker exec -it push-service python main.py run paper
+    ```
 
-🎉 **完成！系统现在会自动运行，并每天推送日报。**
+🎉 **系统现在进入了极简运行模式。所有 RSS 抓取逻辑已托管至 GitHub Actions，本地仅负责报告生成与推送。**
