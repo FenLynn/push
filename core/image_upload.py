@@ -97,52 +97,6 @@ class R2Uploader:
             return None
 
 
-    print(f"[R2] Bucket: {self.bucket_name}, Endpoint: {self.endpoint_url}")
-        
-    def upload_file(self, file_path: str, object_name: str = None) -> Optional[str]:
-        """
-        Upload a file to R2
-        Args:
-            file_path: Local file path
-            object_name: S3 object key (default: timestamp + filename)
-        """
-        if not self.s3:
-            return None
-            
-        file_path = Path(file_path)
-        if not file_path.exists():
-            logger.error(f"File not found: {file_path}")
-            return None
-            
-        # Default object name: YYYY/MM/DD/filename (facilitates lifecycle rules)
-        if object_name is None:
-            today = datetime.datetime.now().strftime('%Y/%m/%d')
-            object_name = f"{today}/{file_path.name}"
-            
-        try:
-            # Detect content type
-            content_type = 'application/octet-stream'
-            if file_path.suffix.lower() in ['.jpg', '.jpeg']: content_type = 'image/jpeg'
-            elif file_path.suffix.lower() == '.png': content_type = 'image/png'
-            elif file_path.suffix.lower() == '.html': content_type = 'text/html; charset=utf-8'
-            
-            self.s3.upload_file(
-                str(file_path), 
-                self.bucket_name, 
-                object_name,
-                ExtraArgs={'ContentType': content_type}
-            )
-            
-            # Construct public URL assuming custom domain
-            # If CUSTOM_DOMAIN is set, use it. Otherwise use R2.dev URL (often public access disabled)
-            domain = os.getenv('CLOUDFLARE_R2_DOMAIN')
-            if domain:
-                return f"https://{domain}/{object_name}"
-            return f"{self.endpoint_url}/{self.bucket_name}/{object_name}"
-            
-        except Exception as e:
-            logger.error(f"R2 Upload Failed: {e}")
-            return None
 
 class ImageUploader:
     def __init__(self, min_interval: float = 1.0):
