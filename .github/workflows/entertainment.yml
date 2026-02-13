@@ -55,11 +55,16 @@ jobs:
         HOUR=$(date -u +%H)
         echo "Current UTC Hour: $HOUR"
         
-        # Note: Github Actions might have slight delay, so we check range or exact hour
-        # 23:10 UTC -> 23
-        # 05:00 UTC -> 05
-        # 12:00 UTC -> 12
+        # Check if manually triggered
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual Trigger Detected. Running ALL modules..."
+            python main.py run damai --topic baobao
+            python main.py run game --topic stock
+            python main.py run life --topic baobao
+            exit 0
+        fi
         
+        # Scheduled Logic
         if [ "$HOUR" -eq "23" ]; then
             echo "Running Damai..."
             python main.py run damai --topic baobao
