@@ -32,9 +32,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN chmod +x /app/scripts/docker_entrypoint.sh
 
-# Setup Cron
-COPY config/crontab.txt /etc/cron.d/push-cron
-RUN chmod 0644 /etc/cron.d/push-cron && crontab /etc/cron.d/push-cron
+# Cron is now managed by Ofelia labels in docker-compose.yml
+# No need to copy crontab.txt here
 
 # Entrypoint
 # Entrypoint
