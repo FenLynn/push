@@ -2,8 +2,9 @@ name: RSS Fetch to Cloudflare D1
 
 on:
   schedule:
-    # Run every hour
-    - cron: '0 * * * *'
+    # Run every 6 hours (05, 11, 17, 23 UTC)
+    # 11:00 UTC = 19:00 CST (One hour before Paper module)
+    - cron: '0 5,11,17,23 * * *'
   workflow_dispatch:
     # Allow manual trigger
 
