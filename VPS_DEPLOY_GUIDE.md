@@ -1,6 +1,12 @@
-# VPS 部署指南 (Docker + Ofelia)
+# VPS 部署指南 (Standby Mode / Disaster Recovery)
 
-既然 GitHub Actions 构建已通过，您的镜像已经成功推送到 `ghcr.io/fenlynn/push:main`。以下是将其部署到 VPS 的步骤。
+> ⚠️ **注意**: 本项目主运行环境已迁移至 **GitHub Actions + Cloudflare (Serverless)**。
+> 此文档仅用于 **灾难恢复 (Disaster Recovery)** 或 **本地调试 (Local Debugging)**，即当 GitHub Actions 不可用时，作为冷备方案启动。
+
+## 0. 架构说明
+
+- **Primary (主)**: GitHub Actions 定时运行 -> Cloudflare D1 (日志) -> Cloudflare R2 (报表)。
+- **Standby (备)**: VPS docker-compose 运行 -> 本地文件日志 -> 本地文件报表。
 
 ## 1. 克隆代码仓库
 
