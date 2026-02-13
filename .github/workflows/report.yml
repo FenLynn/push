@@ -51,4 +51,13 @@ jobs:
         LLM_MODEL: ${{ secrets.LLM_MODEL }}
         
       run: |
+        # Check if manually triggered
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual Trigger Detected. Running ALL modules..."
+            python main.py run finance
+            python main.py run fund --topic stock
+            exit 0
+        fi
+
         python main.py run finance
+        python main.py run fund --topic stock
