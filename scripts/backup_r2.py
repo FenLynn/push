@@ -61,21 +61,14 @@ def main():
     ARCHIVE_NAME = f"push_backup_{BACKUP_ENV}_{TIME_STR}.tar.gz"
     ARCHIVE_PATH = os.path.join(BACKUP_DIR, ARCHIVE_NAME)
     
-    # 1. Dump Database
-    logger.info("💾 Dumping Database...")
-    DB_DUMP = os.path.join(BACKUP_DIR, "ttrss_db.sql")
-    # Check if we are in Docker or Host
-    # Assuming Host script calling Docker
-    cmd_dump = f"sudo docker exec push-postgres pg_dump -U ttrss ttrss > {DB_DUMP}"
-    if not run_command(cmd_dump):
-        logger.error("❌ Database dump failed. Is container running?")
-        sys.exit(1)
+    # 1. Dump Database (Skipped - TTRSS Removed)
+    # logger.info("💾 Dumping Database...")
         
     # 2. Create Tarball
     logger.info("📦 Creating Archive...")
     
     # Build file list
-    files_to_backup = ["backups/ttrss_db.sql", ".env", ".private", "config", "data/push.db"]
+    files_to_backup = [".env", ".private", "config", "data/push.db"]
     if os.path.exists(os.path.join(BASE_DIR, "data/task_scheduler.db")):
         files_to_backup.append("data/task_scheduler.db")
         
@@ -88,10 +81,6 @@ def main():
     )
     if not run_command(cmd_tar):
         sys.exit(1)
-        
-    # Cleanup Dump
-    if os.path.exists(DB_DUMP):
-        os.remove(DB_DUMP)
         
     # 3. Encrypt
     FINAL_PATH = ARCHIVE_PATH

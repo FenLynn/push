@@ -64,7 +64,7 @@ from core.task_scheduler import get_scheduler
 
 MODULES = {
     'morning': {'class': MorningSource, 'desc': '早报 (天气/金融/英语)'},
-    'paper':   {'class': PaperSource,   'desc': '论文 (TTR RSS)'},
+    'paper':   {'class': PaperSource,   'desc': '论文 (D1/RSS)'},
     'finance': {'class': FinanceSource, 'desc': '财经日报 (宏观/市场)'},
     'game':    {'class': GameSource,    'desc': '游戏赛程'},
     'stock':   {'class': StockSource,   'desc': '股票行情'},

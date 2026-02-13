@@ -28,32 +28,16 @@ mkdir -p backups
 BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="push_backup_${ENV_TYPE}_${BACKUP_DATE}.tar.gz"
 BACKUP_PATH="backups/$BACKUP_NAME"
-DB_DUMP="backups/ttrss_db.sql"
+# DB_DUMP="backups/ttrss_db.sql"
 
-# 4. Dump Database (Crucial Step for Named Volumes)
-echo "💾 Dumping TTRSS Database..."
-if sudo docker ps | grep -q push-postgres; then
-    sudo docker exec push-postgres pg_dump -U ttrss ttrss > $DB_DUMP
-    if [ $? -ne 0 ]; then
-        echo "❌ Database dump failed!"
-        exit 1
-    fi
-else
-    echo "⚠️  Postgres container not running. Skipping DB dump (or failing?)"
-    # If not running, maybe we can't backup DB unless we start it.
-    # Assuming running for now.
-    echo "❌ Error: push-postgres container is not running. Start stack first."
-    exit 1
-fi
+# 4. Dump Database (Skipped - TTRSS Removed)
+# echo "💾 Dumping TTRSS Database..."
 
-# 5. Create Tarball (DB Dump + Config + Data)
+# 5. Create Tarball (Config + Data)
 echo "📦 Packing data..."
 # Exclude existing backups and system folders
-# Note: we include the SQL dump which is in backups/ folder temporarily? No, it's better to put it in root or handle path.
-# Let's use specific file list.
 tar --exclude='backups/*.tar.gz*' --exclude='__pycache__' \
     -czf $BACKUP_PATH \
-    $DB_DUMP \
     .env \
     .private \
     config \
@@ -61,7 +45,7 @@ tar --exclude='backups/*.tar.gz*' --exclude='__pycache__' \
     data/task_scheduler.db
 
 # Clean up raw dump
-rm $DB_DUMP
+# rm $DB_DUMP
 
 # 6. Encrypt (Optional but Recommended)
 FINAL_FILE=$BACKUP_PATH

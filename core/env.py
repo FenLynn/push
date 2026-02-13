@@ -118,13 +118,11 @@ class EnvironmentConfig:
         """从环境变量注入敏感配置"""
         env_map = {
             'PUSHPLUS_TOKEN': ['network', 'pushplus_token'],
-            'TTRSS_PASSWORD': ['network', 'ttrss_password'],
             'SMMS_TOKEN': ['network', 'smms_token'],
             'PUSHPLUS_WEBHOOK': ['network', 'pushplus_webhook'],
             'GITHUB_TOKEN': ['github', 'token'],
             'HTTP_PROXY': ['network', 'http_proxy'],
-            'HTTPS_PROXY': ['network', 'https_proxy'],
-            'TTRSS_URL': ['network', 'ttrss_url']  # Add explicit TTRSS URL override
+            'HTTPS_PROXY': ['network', 'https_proxy']
         }
         
         for env_key, path in env_map.items():
@@ -144,7 +142,7 @@ class EnvironmentConfig:
         获取配置值
         
         Examples:
-            config.get('network', 'ttrss_url')
+            config.get('network', 'pushplus_token')
             config.get('github', 'owner')
         """
         try:
@@ -180,6 +178,4 @@ if __name__ == '__main__':
     # 测试
     config = get_env_config()
     print(f"Environment: {config.env}")
-    print(f"TTR RSS URL: {config.get('network', 'ttrss_url')}")
-    print(f"TTR RSS Username: {config.get('network', 'ttrss_username')}")
     print(f"PushPlus Token: {config.get('network', 'pushplus_token', default='Not Set')}")

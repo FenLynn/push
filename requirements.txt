@@ -10,7 +10,6 @@ pandas>=2.0.0
 pillow>=10.0.0
 pyyaml>=6.0
 requests>=2.31.0
-ttrss-python>=0.2.6
 
 # 可选依赖 (非核心功能)
 # playwright>=1.40.0  # 仅crawl_xian.py和crawl_chengdu.py脚本使用

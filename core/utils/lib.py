@@ -32,7 +32,6 @@ import base64
 
 ### paper module
 from datetime import datetime, timezone, timedelta
-from ttrss.client import TTRClient
 
 
 
