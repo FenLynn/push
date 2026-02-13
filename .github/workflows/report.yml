@@ -2,7 +2,9 @@ name: "Daily Finance Report"
 
 on:
   schedule:
-    # 12:30 UTC = 20:30 CST
+    # 12:00 UTC = 20:00 CST -> Estate (Chengdu)
+    - cron: '0 12 * * *'
+    # 12:30 UTC = 20:30 CST -> Finance/Fund
     - cron: '30 12 * * *'
   workflow_dispatch:
 
@@ -51,13 +53,32 @@ jobs:
         LLM_MODEL: ${{ secrets.LLM_MODEL }}
         
       run: |
-        # Check if manually triggered
+        # Get Current UTC time (HHMM)
+        TIME=$(date -u +%H%M)
+        echo "Current UTC Time: $TIME"
+
+        # Manual Trigger
         if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "Manual Trigger Detected. Running ALL modules..."
+            echo "Manual Trigger: Running Estate, Finance, and Fund..."
+            python main.py run estate --topic family
             python main.py run finance
             python main.py run fund --topic stock
             exit 0
         fi
 
-        python main.py run finance
-        python main.py run fund --topic stock
+        # Scheduled Logic
+        if [ "$TIME" == "1200" ]; then
+            echo "Running Estate..."
+            python main.py run estate --topic family
+        elif [ "$TIME" == "1230" ]; then
+            echo "Running Finance and Fund..."
+            python main.py run finance
+            python main.py run fund --topic stock
+        else
+            echo "No module scheduled for time $TIME"
+            # Fallback for small GHA delays
+            if [[ "$TIME" > "1230" && "$TIME" < "1235" ]]; then
+                 python main.py run finance
+                 python main.py run fund --topic stock
+            fi
+        fi
