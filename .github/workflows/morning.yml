@@ -1,0 +1,52 @@
+name: "Daily Morning Push"
+
+on:
+  schedule:
+    # 23:00 UTC = 07:00 CST (Beijing Time)
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-morning:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        
+    - name: Run Morning Module
+      env:
+        RUN_MODE: cloud
+        # Tokens
+        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        SMMS_TOKEN: ${{ secrets.SMMS_TOKEN }}
+        # LLM
+        LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+        LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        # Cloudflare D1
+        CLOUDFLARE_D1_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_D1_ACCOUNT_ID }}
+        CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        CLOUDFLARE_D1_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
+        # Cloudflare R2
+        CLOUDFLARE_AccountId: ${{ secrets.CLOUDFLARE_D1_ACCOUNT_ID }} # Same account usually
+        CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+        CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+        CLOUDFLARE_R2_BUCKET_NAME: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+        CLOUDFLARE_R2_DOMAIN: ${{ secrets.CLOUDFLARE_R2_DOMAIN }}
+        # Others
+        AMAP_KEY: ${{ secrets.AMAP_KEY }}
+        QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}
+        
+      run: |
+        python main.py run morning --topic family

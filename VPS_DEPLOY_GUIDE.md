@@ -90,3 +90,39 @@ docker-compose logs -f push-service
 - **代码挂载**: `docker-compose.yml` 中默认开启了代码挂载 (`./core:/app/core` 等)。如果您在 VPS 上不打算放置源代码，请注释掉 `volumes` 下对应的代码行，直接使用镜像内自带的源码。
 - **定时任务**: 定时任务由 `push-ofelia` 容器管理，它会根据 `push-service` 的 `labels` 自动触发任务。您可以通过 `docker logs push-ofelia` 查看调度情况。
 - **环境变量**: 确保 VPS 上的 `.env` 文件包含了所有必要的 Key (如 `PUSHPLUS_TOKEN`, `CLOUDFLARE_D1_*`)。
+
+## 5. 高级用法 (Advanced Usage)
+
+### 5.1 手动触发特定任务
+如果您想立即运行某个模块（例如测试或补发），可以使用 `docker exec`：
+
+```bash
+# 格式：docker exec -it push-service python main.py run <模块名> --topic <组名>
+
+# 示例 1: 给【家庭组】发送早报
+docker exec -it push-service python main.py run morning --topic family
+
+# 示例 2: 给【理财组】发送 ETF 和 股票数据
+docker exec -it push-service python main.py run etf stock --topic stock
+
+# 示例 3: 给【自己】发送论文日报
+docker exec -it push-service python main.py run paper --topic me
+```
+
+**可用组名 (Topic):**
+- `me`: 默认个人订阅
+- `family`: 家庭组 (天气/早报)
+- `baobao`: 宝宝组 (影视/游戏)
+- `stock`: 理财组 (股票/基金)
+- `paper`: 论文组 (RSS)
+
+### 5.2 查看定时任务计划与日志
+Ofelia 容器负责调度，您可以查看其日志来确认任务是否按计划执行：
+
+```bash
+# 查看调度计划和最近的执行日志
+docker logs push-ofelia
+
+# 实时追踪执行日志
+docker logs -f push-ofelia
+```

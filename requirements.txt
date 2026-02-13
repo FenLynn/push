@@ -21,6 +21,6 @@ zhdate==0.1
 opencv-python-headless==4.13.0.92
 seaborn==0.13.2
 
-# boto3 # Not found in local py312 env, commented out
+boto3==1.34.0
 # playwright # Not found
 # webdavclient3 # Not found
