@@ -208,7 +208,12 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
                 results = [results]
             
             for idx, message in enumerate(results):
-                # 3. 覆盖标题 (如果指定)
+                # 3. Handle delay for multiple messages (e.g. Paper)
+                if idx > 0:
+                    logger.info(f"Waiting 5s before next push to ensure order ({idx+1}/{len(results)})...")
+                    time.sleep(5)
+
+                # 4. 覆盖标题 (如果指定)
                 if title:
                     logger.info(f"Overriding title to: {title}")
                     message.title = title
