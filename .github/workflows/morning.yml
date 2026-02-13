@@ -2,8 +2,10 @@ name: "Daily Morning Push"
 
 on:
   schedule:
-    # 23:00 UTC = 07:00 CST (Beijing Time)
+    # 23:00 UTC = 07:00 CST -> Morning
     - cron: '0 23 * * *'
+    # 23:05 UTC = 07:05 CST -> Estate (Chengdu)
+    - cron: '5 23 * * *'
   workflow_dispatch:
 
 jobs:
@@ -54,4 +56,30 @@ jobs:
         QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}
         
       run: |
-        python main.py run morning
+        # Get Current UTC time (HHMM)
+        TIME=$(date -u +%H%M)
+        echo "Current UTC Time: $TIME"
+        
+        # Manual Trigger
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual Trigger: Running Morning and Estate..."
+            python main.py run morning
+            python main.py run estate --topic family
+            exit 0
+        fi
+        
+        # Scheduled Logic
+        if [ "$TIME" == "2300" ]; then
+            echo "Running Morning Module..."
+            python main.py run morning
+        elif [ "$TIME" == "2305" ]; then
+            echo "Running Estate Module..."
+            python main.py run estate --topic family
+        else
+            echo "No module scheduled for time $TIME"
+            # Optional: Fallback check if GHA delay is >= 2 min
+            # If 23:01 or 23:02, still run morning
+            if [[ "$TIME" > "2300" && "$TIME" < "2305" ]]; then
+                 python main.py run morning
+            fi
+        fi
