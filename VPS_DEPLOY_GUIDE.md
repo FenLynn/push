@@ -12,8 +12,36 @@ git clone https://YOUR_PAT@github.com/FenLynn/push.git
 cd push
 ```
 
-> [!TIP]
-> 如果您还没有 PAT，可以在 GitHub [Settings -> Developer settings -> Personal access tokens] 中创建一个，最小权限选 `repo` 即可。
+### 🌐 网络加速 (针对国内 VPS)
+
+如果您在克隆时卡住或提示 `Connection timed out`，按照以下顺序尝试：
+
+#### 方案 A：修改 /etc/hosts 解决 DNS 污染 (最稳、最推荐)
+这是目前国内 VPS 直连 GitHub 最有效的办法。
+1. 编辑文件：`sudo vi /etc/hosts`
+2. 在末尾添加以下映射（确保 IP 为 GitHub 官方 CDN 地址）：
+   ```text
+   140.82.113.3      github.com
+   185.199.108.153   github.io
+   199.232.69.194    github.global.ssl.fastly.net
+   ```
+3. 保存退出，然后再次尝试原始克隆命令。
+
+#### 方案 B：使用 --depth 1 (减小传输量)
+即使修改了 hosts，配合“浅克隆”可以极速完成，不拉取冗余历史记录：
+```bash
+git clone --depth 1 https://YOUR_PAT@github.com/FenLynn/push.git
+```
+
+#### 方案 C：使用加速代理 (备选)
+如果直连依然感人，请尝试目前较稳的镜像：
+```bash
+# 镜像 1
+git clone --depth 1 https://YOUR_PAT@kkgithub.com/FenLynn/push.git
+# 镜像 2
+git clone --depth 1 https://YOUR_PAT@gitmirror.com/FenLynn/push.git
+```
+
 
 ## 2. 准备 VPS 环境
 
