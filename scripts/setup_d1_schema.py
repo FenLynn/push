@@ -38,6 +38,17 @@ def main():
         created_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_published ON articles(published_at);
+    
+    CREATE TABLE IF NOT EXISTS system_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        level TEXT,
+        logger_name TEXT,
+        message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        module TEXT,
+        func_name TEXT,
+        line_no INTEGER
+    );
     """
     
     print(f"Creating table '{table_name}'...")

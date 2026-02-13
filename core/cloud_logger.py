@@ -35,12 +35,7 @@ class D1LogHandler(logging.Handler):
         );
         """
         try:
-            # We don't have a direct "execute_sql" in D1Client yet for DDL, 
-            # but we can try using the query method if it supports raw SQL execution.
-            # If D1Client mainly supports query, we might need to assume table exists 
-            # or add a raw_execute method to D1Client.
-            # For now, let's assume table is created via setup script or D1 UI.
-            pass 
+            self.d1.query(sql)
         except Exception:
             pass
 
