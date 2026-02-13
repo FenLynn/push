@@ -55,6 +55,14 @@ jobs:
         HOUR=$(date -u +%H)
         echo "Current UTC Hour: $HOUR"
         
+        # Check if manually triggered
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual Trigger Detected. Running ALL modules..."
+            python main.py run stock etf --topic stock
+            python main.py run night --topic stock
+            exit 0
+        fi
+        
         if [ "$HOUR" -eq "22" ]; then
             # 22:00 UTC = 06:00 CST -> US Night Report
             echo "Running Night Report..."
