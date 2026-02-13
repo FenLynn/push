@@ -59,8 +59,9 @@ jobs:
 
         # Manual Trigger
         if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "Manual Trigger: Running Estate, Finance, and Fund..."
+            echo "Manual Trigger: Running Estate, Paper, Finance, and Fund..."
             python main.py run estate --topic family
+            python main.py run paper --topic paper
             python main.py run finance
             python main.py run fund --topic stock
             exit 0
@@ -68,8 +69,9 @@ jobs:
 
         # Scheduled Logic
         if [ "$TIME" == "1200" ]; then
-            echo "Running Estate..."
+            echo "Running Estate and Paper..."
             python main.py run estate --topic family
+            python main.py run paper --topic paper
         elif [ "$TIME" == "1230" ]; then
             echo "Running Finance and Fund..."
             python main.py run finance
