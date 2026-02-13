@@ -351,7 +351,10 @@ def main():
             
             send_file(latest_path, topic=args.topic, title=args.title, token=args.token)
         return
-    # For Run/Gen, parse modules
+    import logging
+    logger = logging.getLogger('Push.CLI')
+    
+    # Expand group presets
     if args.command in ['run', 'gen']:
         # Expand group presets
         mods = []
