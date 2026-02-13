@@ -54,4 +54,4 @@ jobs:
         QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}
         
       run: |
-        python main.py run morning --topic family
+        python main.py run morning
