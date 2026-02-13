@@ -26,9 +26,14 @@ class SugarIndicator(BaseIndicator):
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
             df['price'] = pd.to_numeric(df['price'], errors='coerce')
             return df.dropna(subset=['price', 'date']).sort_values('date')
+        except TypeError as e:
+            if "Invalid value" in str(e) and "dtype 'str'" in str(e):
+                 self.logger.warning(f"Sugar Data Source Error (Akshare Upstream Bug): {e}. SkippingSugar.")
+                 return pd.DataFrame() # Return empty to skip safely
+            self.logger.error(f"Sugar Fetch Error: {e}", exc_info=True)
+            raise e
         except Exception as e:
-            import traceback
-            self.logger.error(f"Sugar Fetch Error: {e}\n{traceback.format_exc()}")
+            self.logger.error(f"Sugar Fetch Error: {e}", exc_info=True)
             raise e
 
     def plot(self, df: pd.DataFrame) -> str:
