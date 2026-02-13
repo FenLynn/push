@@ -1,17 +1,17 @@
-name: "Stock Market Updates"
+name: "Entertainment & Life"
 
 on:
   schedule:
-    # 03:35 UTC = 11:35 CST (Market AM Close)
-    - cron: '35 3 * * 1-5'
-    # 07:05 UTC = 15:05 CST (Market PM Close)
-    - cron: '5 7 * * 1-5'
-    # 22:00 UTC = 06:00 CST (Next Day - US Stock Close)
-    - cron: '0 22 * * 1-5'
+    # 23:10 UTC = 07:10 CST (Next Day) -> Damai
+    - cron: '10 23 * * *'
+    # 05:00 UTC = 13:00 CST -> Game
+    - cron: '0 5 * * *'
+    # 12:00 UTC = 20:00 CST -> Life (Movie)
+    - cron: '0 12 * * *'
   workflow_dispatch:
 
 jobs:
-  run-market:
+  run-entertainment:
     runs-on: ubuntu-latest
     
     steps:
@@ -33,7 +33,7 @@ jobs:
       run: |
         pip install -r requirements.txt
         
-    - name: Run Market Modules
+    - name: Run Modules
       env:
         RUN_MODE: cloud
         # Tokens
@@ -55,12 +55,23 @@ jobs:
         HOUR=$(date -u +%H)
         echo "Current UTC Hour: $HOUR"
         
-        if [ "$HOUR" -eq "22" ]; then
-            # 22:00 UTC = 06:00 CST -> US Night Report
-            echo "Running Night Report..."
-            python main.py run night --topic stock
+        # Note: Github Actions might have slight delay, so we check range or exact hour
+        # 23:10 UTC -> 23
+        # 05:00 UTC -> 05
+        # 12:00 UTC -> 12
+        
+        if [ "$HOUR" -eq "23" ]; then
+            echo "Running Damai..."
+            python main.py run damai --topic baobao
+
+        elif [ "$HOUR" -eq "05" ]; then
+            echo "Running Game Schedule..."
+            python main.py run game --topic stock
+            
+        elif [ "$HOUR" -eq "12" ]; then
+            echo "Running Life (Movie/Show)..."
+            python main.py run life --topic baobao
+            
         else
-            # 03:35 / 07:05 UTC -> A-Share Market
-            echo "Running Stock/ETF Report..."
-            python main.py run stock etf --topic stock
+            echo "Unknown schedule for hour $HOUR"
         fi

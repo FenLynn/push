@@ -186,18 +186,17 @@ class DamaiSource(BaseSource):
         final_results = []
         
         if not self.cities_config:
-             return self._create_empty_msg('chengdu')
+             return [] # No cities configured, return empty list
 
         for city_key, city_code in self.cities_config.items():
             msgs = self._process_city(city_key, city_code)
             if msgs:
                 final_results.extend(msgs)
+            else:
+                # If city has no events, explicitly add an "Empty" message for this city
+                # This ensures every configured city sends a push (e.g. "Chengdu: No events", "Xian: Events")
+                final_results.append(self._create_empty_msg(city_key))
         
-        # Logic: If NO events in ANY city -> Send one "No events" msg
-        if not final_results:
-            first_city = list(self.cities_config.keys())[0] if self.cities_config else 'chengdu'
-            return self._create_empty_msg(first_city)
-            
         return final_results
 
     def _create_empty_msg(self, city_code):
