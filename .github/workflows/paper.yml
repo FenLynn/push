@@ -1,9 +1,9 @@
-name: "Module: Morning Push"
+name: "Module: Paper Push"
 
 on:
   schedule:
-    # 23:00 UTC = 07:00 CST
-    - cron: '0 23 * * *'
+    # 12:00 UTC = 20:00 CST
+    - cron: '0 12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -27,12 +27,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
         
-      - name: Run Morning
+      - name: Run Paper
         env:
           RUN_MODE: cloud
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           SMMS_TOKEN: ${{ secrets.SMMS_TOKEN }}
-          QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}
+          # LLM for summaries
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          # Storage
           CLOUDFLARE_D1_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_D1_ACCOUNT_ID }}
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
           CLOUDFLARE_D1_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
@@ -41,4 +45,4 @@ jobs:
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_R2_BUCKET_NAME: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
           CLOUDFLARE_R2_DOMAIN: ${{ secrets.CLOUDFLARE_R2_DOMAIN }}
-        run: python main.py run morning --topic family
+        run: python main.py run paper --topic paper
