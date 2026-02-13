@@ -6,8 +6,6 @@ on:
     - cron: '10 23 * * *'
     # 05:00 UTC = 13:00 CST -> Game
     - cron: '0 5 * * *'
-    # 11:30 UTC = 19:30 CST -> Paper
-    - cron: '30 11 * * *'
     # 12:00 UTC = 20:00 CST -> Life (Movie)
     - cron: '0 12 * * *'
   workflow_dispatch:
@@ -79,10 +77,6 @@ jobs:
             echo "Running Life (Movie/Show)..."
             python main.py run life --topic baobao
 
-        elif [ "$HOUR" -eq "11" ]; then
-            echo "Running Paper (Research)..."
-            python main.py run paper --topic paper
-            
         else
             echo "Unknown schedule for hour $HOUR"
         fi
