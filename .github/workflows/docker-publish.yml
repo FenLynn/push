@@ -1,12 +1,12 @@
 name: Docker Build & Publish
 
 on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Docker Image Tag' 
   push:
-    branches: [ "main", "master" ]
-    # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main", "master" ]
 
 env:
   REGISTRY: ghcr.io

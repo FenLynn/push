@@ -90,8 +90,23 @@ class ConfigLoader:
         return [d.strip() for d in domains.split(',') if d.strip()]
 
     @property
-    def ops_domains(self) -> List[str]:
-        domains = self.get('OPS', 'DOMAINS', fallback='')
-        return [d.strip() for d in domains.split(',') if d.strip()]
+    def RUN_MODE(self) -> str:
+        """
+        Determines the current execution mode.
+        Returns:
+            - 'cloud': GitHub Actions or other serverless env
+            - 'docker': Running inside a Docker container
+            - 'local': Local development (default)
+        """
+        # 1. Explicit override
+        if os.getenv('RUN_MODE'):
+            return os.getenv('RUN_MODE').lower()
+        # 2. GitHub Actions
+        if os.getenv('GITHUB_ACTIONS') == 'true':
+            return 'cloud'
+        # 3. Docker
+        if os.path.exists('/.dockerenv') or os.getenv('AM_I_IN_A_DOCKER_CONTAINER') == 'true':
+            return 'docker'
+        return 'local'
 
 config = ConfigLoader()

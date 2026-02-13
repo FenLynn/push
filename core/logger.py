@@ -41,16 +41,37 @@ def setup_logger(name='Push', log_dir='logs', level=logging.INFO):
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
     
-    # 2. File Handler (按天轮转)
-    log_file = os.path.join(log_dir, 'app.log')
-    file_handler = TimedRotatingFileHandler(
-        log_file,
-        when='midnight',
-        interval=1,
-        backupCount=30,  # 保留30天
-        encoding='utf-8'
-    )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    # 2. Handler based on RUN_MODE
+    from .config import config
+    
+    if config.RUN_MODE == 'cloud':
+        # Cloud Mode: Console + D1 (Error only)
+        # Avoid local file logging in cloud (usually read-only or ephemeral)
+        try:
+            from .cloud_logger import D1LogHandler
+            d1_handler = D1LogHandler()
+            d1_handler.setFormatter(formatter)
+            d1_handler.setLevel(logging.ERROR) # Only push errors to DB
+            logger.addHandler(d1_handler)
+        except Exception as e:
+            # Fallback to console if D1 fails init
+            print(f"Failed to init D1LogHandler: {e}")
+            
+    else:
+        # Local/Docker Mode: Console + File
+        log_file = os.path.join(log_dir, 'app.log')
+        try:
+            file_handler = TimedRotatingFileHandler(
+                log_file,
+                when='midnight',
+                interval=1,
+                backupCount=30,  # 保留30天
+                encoding='utf-8'
+            )
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except Exception:
+            # In some docker envs, log_dir might not be writable?
+            pass
     
     return logger
