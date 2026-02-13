@@ -42,4 +42,4 @@ jobs:
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_R2_BUCKET_NAME: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
           CLOUDFLARE_R2_DOMAIN: ${{ secrets.CLOUDFLARE_R2_DOMAIN }}
-        run: python main.py run stock etf --topic stock
+        run: python main.py run stock --topic stock

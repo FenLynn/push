@@ -2,8 +2,8 @@ name: "Module: Fund Valuation"
 
 on:
   schedule:
-    # 12:30 UTC = 20:30 CST
-    - cron: '30 12 * * *'
+    # 13:00 UTC = 21:00 CST
+    - cron: '0 13 * * *'
   workflow_dispatch:
 
 jobs:

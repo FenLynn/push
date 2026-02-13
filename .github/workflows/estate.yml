@@ -2,8 +2,8 @@ name: "Module: Estate Push"
 
 on:
   schedule:
-    # 12:00 UTC = 20:00 CST
-    - cron: '0 12 * * *'
+    # 11:00 UTC = 19:00 CST
+    - cron: '0 11 * * *'
   workflow_dispatch:
 
 jobs:

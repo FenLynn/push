@@ -159,6 +159,24 @@ class PaperSource(BaseSource):
         if current_papers:
             all_pages.append(current_papers)
             
+        base_title = f'光学文献{time.strftime("%m-%d", time.localtime())}'
+
+        # 如果无任何更新，推送一条提醒消息
+        if not all_pages:
+            html_content = f"""
+            <div style="padding: 30px; text-align: center; background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; margin: 20px;">
+                <p style="font-size: 18px; color: #374151; font-weight: bold; margin-bottom: 10px;">今日无最新论文更新</p>
+                <p style="font-size: 14px; color: #6b7280;">由于所监测的 RSS 源在过去 24 小时内未发布新文章，或未命中您的关键词，因此今日无摘要生成。</p>
+            </div>
+            """
+            return [Message(
+                title=base_title,
+                content=html_content,
+                type=ContentType.HTML,
+                tags=['paper', 'academic', self.topic],
+                metadata={'date': today_info['today'], 'count': 0}
+            )]
+
         # 生成消息列表
         # 重写 run() 的分页循环部分
         messages = []
@@ -171,9 +189,6 @@ class PaperSource(BaseSource):
             for f in pg:
                 journal_total_pages[f['journal']] = journal_total_pages.get(f['journal'], 0) + 1
 
-        total_pages = len(all_pages)
-        base_title = f'光学文献{time.strftime("%m-%d", time.localtime())}'
-        
         for idx, page_papers in enumerate(all_pages):
             is_first_page = (idx == 0)
             
