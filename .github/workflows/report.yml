@@ -68,19 +68,16 @@ jobs:
         fi
 
         # Scheduled Logic
-        if [ "$TIME" == "1200" ]; then
+        # Case 1: Around 20:00 CST (12:00 UTC) -> Estate and Paper
+        if [[ "$TIME" -ge "1200" && "$TIME" -lt "1215" ]]; then
             echo "Running Estate and Paper..."
             python main.py run estate --topic family
             python main.py run paper --topic paper
-        elif [ "$TIME" == "1230" ]; then
+        # Case 2: Around 20:30 CST (12:30 UTC) -> Finance and Fund
+        elif [[ "$TIME" -ge "1230" && "$TIME" -lt "1245" ]]; then
             echo "Running Finance and Fund..."
             python main.py run finance
             python main.py run fund --topic stock
         else
-            echo "No module scheduled for time $TIME"
-            # Fallback for small GHA delays
-            if [[ "$TIME" > "1230" && "$TIME" < "1235" ]]; then
-                 python main.py run finance
-                 python main.py run fund --topic stock
-            fi
+            echo "No module scheduled for current time $TIME"
         fi
