@@ -107,35 +107,6 @@ class PaperSource(BaseSource):
     
     MAX_ARTICLES_PER_PAGE = 35
     
-    def run(self) -> list:
-        """
-        生成论文报告，支持分段推送
-        
-        Returns:
-            list: Message 对象列表
-        """
-        # 获取论文数据
-        today_info = self._get_data()
-        
-        if today_info['articles_sum'] == 0:
-            html_content = self._generate_html(today_info)
-            title = f'光学文献{time.strftime("%m-%d", time.localtime())}'
-            return [Message(
-                title=title,
-                content=html_content,
-                type=ContentType.HTML,
-                tags=['paper', 'academic', self.topic],
-            )]
-
-    MAX_PAGE_SIZE = 19500 # 极限逼近 20k
-    
-    def _estimate_article_size(self, article):
-        """预估单条文章的 HTML 字符数"""
-        size = 150 # 基础 HTML 标签开销 (扁平化后降低)
-        size += len(article.get('title', '')) * 1.5 # 进一步降低权重
-        size += len(article.get('link', ''))
-        size += 50 # 其他字段余量
-        return size
 
     def run(self) -> list:
         """运行获取流程并返回消息列表"""
