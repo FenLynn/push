@@ -22,11 +22,11 @@ Thumbs.db
 *.db
 
 # === 数据目录 (防止仓库膨胀) ===
-data/
-output/
-logs/
-archive/
-backups/
+/data/
+/output/
+/logs/
+/archive/
+/backups/
 *.csv
 *.xlsx
 *.h5

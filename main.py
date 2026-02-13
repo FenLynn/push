@@ -103,10 +103,10 @@ def list_modules():
     for name, mods in GROUPS.items():
         print(f"  @{name:10s} - {', '.join(mods)}")
 
-def get_engine(token=None, require_channel=True):
+def get_engine(token=None, topic='me', require_channel=True):
     engine = Engine()
     try:
-        channel = PushPlusChannel(token=token)
+        channel = PushPlusChannel(token=token, topic=topic)
         engine.register_channel('pushplus', channel)
     except ValueError:
         if require_channel:
@@ -160,7 +160,7 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
     logger = logging.getLogger('Push.CLI')
     logger.info(f"=== Push Run ({time.strftime('%Y-%m-%d %H:%M:%S')}) ===")
     
-    engine = get_engine(token)
+    engine = get_engine(token, topic=topic)
     success_count = 0
     
     # Get scheduler for tracking
@@ -230,7 +230,7 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
             
     logger.info(f"Summary: {success_count}/{len(modules_to_run)} modules succeeded")
 
-def send_file(file_path, title=None, token=None):
+def send_file(file_path, topic='me', title=None, token=None):
     """Send content from an existing file"""
     import os
     from core import Message, ContentType
@@ -265,7 +265,7 @@ def send_file(file_path, title=None, token=None):
     )
     
     # Send
-    engine = get_engine(token)
+    engine = get_engine(token, topic=topic)
     # We call channel send directly or use engine splitter? 
     # Engine logic is better for uniformity (splitting etc)
     # But Engine needs a Source. We can mock one or just use channel directly.
@@ -317,7 +317,7 @@ def main():
         
     if args.command == 'send':
         if args.file:
-            send_file(args.file, title=args.title, token=args.token)
+            send_file(args.file, topic=args.topic, title=args.title, token=args.token)
         elif args.module:
             if args.module not in MODULES:
                 print(f"Error: Unknown module '{args.module}'")
@@ -337,7 +337,7 @@ def main():
                 # Try to extract title from HTML? Or just use "Latest {Module}"
                 args.title = f"Latest {args.module.capitalize()} (Re-push)"
             
-            send_file(latest_path, title=args.title, token=args.token)
+            send_file(latest_path, topic=args.topic, title=args.title, token=args.token)
         return
     # For Run/Gen, parse modules
     if args.command in ['run', 'gen']:
