@@ -118,6 +118,7 @@ class PaperSource(BaseSource):
 
     MAX_PAGE_SIZE = 19500 # 极限逼近 20k
 
+    def run(self) -> list:
         """运行获取流程并返回消息列表"""
         today_info = self._get_data()
         if not today_info['paper']:
