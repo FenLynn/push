@@ -133,17 +133,6 @@ class EstateSource(BaseSource):
         
         self.logger.info(f"D1 Push: {success_count}/{len(data_points)} records saved.")
 
-    def run(self) -> Message:
-        # 1. Initialize DB
-        self._init_db()
-        
-        # 2. Collect Data
-        all_data = []
-        
-        # Chengdu
-        cd_data = self._scrape_chengdu()
-        all_data.extend(cd_data)
-        
     def _scrape_xian(self):
         """
         Scrape Xi'an Real Estate Data
