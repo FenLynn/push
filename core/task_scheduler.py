@@ -93,9 +93,9 @@ MODULE_SCHEDULE = {
     },
     'estate': {
         'desc': '成都房产',
-        'time': '09:00',
-        'condition': lambda: is_china_workday() and date.today().weekday() == 0,  # 周一工作日
-        'group': 'weekly'
+        'time': '19:00',
+        'condition': lambda: True,  # 每天运行 (之前是周一)
+        'group': 'daily'
     },
     'damai': {
         'desc': '大麦演出',
@@ -130,7 +130,7 @@ MODULE_SCHEDULE = {
     'report_weekly': {
         'desc': '周报总结',
         'time': '22:00',
-        'condition': lambda: datetime.datetime.now().weekday() == 6, # Sunday
+        'condition': lambda: datetime.now().weekday() == 6, # Sunday
         'group': 'weekly'
     },
 }
