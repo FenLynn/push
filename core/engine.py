@@ -60,6 +60,31 @@ class Engine:
             f.write(message.content)
             
         self.logger.info(f"Output saved to: {latest_path}")
+        
+        # 3. Cloud Mode: Upload to R2
+        from core.config import config
+        if config.RUN_MODE == 'cloud':
+            try:
+                from core.image_upload import R2Uploader
+                uploader = R2Uploader()
+                if uploader.s3:
+                    # Upload latest version (overwrite)
+                    # Object Name: output/source_name/latest.html
+                    latest_key = f"output/{source_name}/latest{suffix}.{ext}"
+                    url = uploader.upload_file(latest_path, object_name=latest_key)
+                    if url:
+                        self.logger.info(f"☁️ Uploaded to R2 (Latest): {url}")
+                        
+                    # Upload archive version (history)
+                    # Object Name: output/source_name/yyyy-mm-dd.html
+                    # Lifecycle rule on bucket handles 7-day deletion
+                    archive_key = f"output/{source_name}/{date_str}{suffix}.{ext}"
+                    url_arch = uploader.upload_file(archive_path, object_name=archive_key)
+                    if url_arch:
+                        self.logger.info(f"☁️ Uploaded to R2 (Archive): {url_arch}")
+            except Exception as e:
+                self.logger.error(f"Failed to upload output to R2: {e}")
+                
         return latest_path
 
     def run_source_only(self, source_name: str) -> str:
