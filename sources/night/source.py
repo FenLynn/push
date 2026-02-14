@@ -462,7 +462,9 @@ class NightSource(BaseSource):
         target_map = {
             'GC=F': 'GC',
             'CL=F': 'CL',
-            '^VIX': 'VIX'
+            '^VIX': 'VIX',
+            'USDCNH=X': 'USDCNH',
+            '^TNX': 'US10Y'
         }
         
         try:
@@ -483,7 +485,7 @@ class NightSource(BaseSource):
             except:
                 s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
-            tickers = yf.Tickers("GC=F CL=F ^VIX", session=s)
+            tickers = yf.Tickers("GC=F CL=F ^VIX USDCNH=X ^TNX", session=s)
             
             for symbol, key in target_map.items():
                 try:
