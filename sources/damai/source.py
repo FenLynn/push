@@ -83,35 +83,32 @@ class DamaiSource(BaseSource):
         res.append("".join(current).strip())
         return res
 
-    def _fetch_city_events(self, city_name, city_code):
-        """Fetch events for a whole city using City Code"""
-        url = f"https://www.showstart.com/event/list?cityCode={city_code}"
+    def _fetch_city_events(self, city_name, city_code, page=1):
+        """Fetch events for a single page of a city"""
+        url = f"https://www.showstart.com/event/list?cityCode={city_code}&pageNo={page}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.showstart.com/event/list'
         }
         
         events = []
         try:
-            self.logger.info(f"Fetching {city_name} (Code: {city_code})...")
-            resp = requests.get(url, headers=headers, timeout=12)
+            self.logger.info(f"Fetching {city_name} Page {page}...")
+            resp = requests.get(url, headers=headers, timeout=15)
             resp.encoding = 'utf-8'
             
             if resp.status_code != 200:
-                self.logger.warning(f"Failed to fetch {city_name}: {resp.status_code}")
                 return []
 
             # 1. Extract Nuxt Data hydration block
             start_marker = 'window.__NUXT__='
             start_idx = resp.text.find(start_marker)
-            if start_idx == -1:
-                self.logger.warning(f"Could not find Nuxt data marker for {city_name}")
-                return []
+            if start_idx == -1: return []
             
             end_idx = resp.text.find('</script>', start_idx)
             nuxt_js = resp.text[start_idx:end_idx].strip()
             if nuxt_js.endswith(';'): nuxt_js = nuxt_js[:-1].strip()
             
-            # Robust extraction of params, body, args
             payload = nuxt_js[len(start_marker):].strip()
             try:
                 p_open = payload.find('(')
@@ -131,14 +128,12 @@ class DamaiSource(BaseSource):
                 
                 mapping = dict(zip(params_list, args_values))
             except Exception as pe:
-                self.logger.warning(f"Failed to parse hydration structure for {city_name}: {pe}")
+                self.logger.warning(f"Failed to parse hydration for {city_name} P{page}: {pe}")
                 return []
 
             # 2. Extract from activityList
             al_start = body_str.find('activityList:[')
             search_scope = body_str[al_start:] if al_start != -1 else body_str
-
-            # Find all objects with id anchor
             id_matches = list(re.finditer(r'\{id:([a-zA-Z_0-9$]\w*),', search_scope))
             
             for i, match in enumerate(id_matches):
@@ -146,9 +141,6 @@ class DamaiSource(BaseSource):
                 end = id_matches[i+1].start() if i < len(id_matches)-1 else start + 1200
                 chunk = search_scope[start:end]
                 
-                if 'title:' not in chunk or 'showTime:' not in chunk:
-                    continue
-
                 def find_field(key):
                     m = re.search(fr'{key}:([a-zA-Z_0-9$]\w*|"[^"]*")', chunk)
                     if m:
@@ -163,39 +155,60 @@ class DamaiSource(BaseSource):
                 show_time = find_field('showTime')
                 poster = find_field('poster')
 
-                if not eid or not title or not eid.isdigit() or len(eid) < 5:
-                    continue
+                if not eid or not title or not eid.isdigit(): continue
 
+                # Decode Title (Handle double Unicode escaping)
                 if '\\u' in title:
                     try:
                         title = title.encode('utf-8').decode('unicode_escape')
+                        if '\\u' in title:
+                            title = title.encode('utf-8').decode('unicode_escape')
                     except: pass
                 
                 poster = (poster or "").replace(r'\u002F', '/') 
                 show_time = (show_time or "").replace(r'\u002F', '/')
+                
+                # Format price for template (strip symbols)
+                clean_price = (price or "").replace('¥', '').replace('￥', '').strip()
+                if clean_price and not clean_price.endswith('起'):
+                    clean_price = f"{clean_price}起"
+                elif not clean_price:
+                    clean_price = "价格点此"
 
                 events.append({
-                    'title': title,
-                    'time': show_time,
-                    'is_today': False,
-                    'price': price if price and ('¥' in price or '起' in price) else f"¥{price or '点击查看'}起",
-                    'venue': city_name,
+                    'title': title, 'time': show_time, 'is_today': False,
+                    'price': clean_price, 'venue': city_name,
                     'img': poster if poster and poster.startswith('http') else 'https:' + (poster or ""),
                     'link': f"https://www.showstart.com/event/{eid}",
                     'raw_time': show_time
                 })
                 
         except Exception as e:
-            self.logger.error(f"Error parsing city {city_name}: {e}", exc_info=True)
+            self.logger.error(f"Error parsing city {city_name} P{page}: {e}")
             
         return events
 
     def _process_city(self, city_key, city_code):
-        """Process a single city and return a list of Message objects"""
+        """Process multiple pages for a city"""
         city_name = self.city_name_map.get(city_key, city_key.capitalize())
         
-        # 1. Fetch
-        all_events = self._fetch_city_events(city_name, city_code)
+        # 1. Fetch multiple pages (e.g. 1-4) to ensure we get past the sticky past events
+        all_events = []
+        for p in range(1, 4):
+            page_events = self._fetch_city_events(city_name, city_code, page=p)
+            if not page_events: break
+            all_events.extend(page_events)
+            time.sleep(1) # Be gentle
+        
+        self.logger.info(f"{city_name}: Fetched {len(all_events)} total events across pages.")
+
+        # Dedup by ID
+        seen_ids = set()
+        unique_events = []
+        for e in all_events:
+            if e['link'] not in seen_ids:
+                unique_events.append(e)
+                seen_ids.add(e['link'])
         
         # 2. Sort
         def parse_time(t_str):
@@ -203,18 +216,20 @@ class DamaiSource(BaseSource):
                 return time.strptime(t_str, "%Y/%m/%d %H:%M")
             except:
                 return time.localtime()
-        all_events.sort(key=lambda x: parse_time(x['raw_time']))
+        unique_events.sort(key=lambda x: parse_time(x['raw_time']))
         
         # 3. Filter Past
         now_ts = time.time()
         future_events = []
-        for e in all_events:
+        for e in unique_events:
              try:
                  ts = time.mktime(parse_time(e['raw_time']))
                  if ts >= now_ts - 86400: # Include today
                      future_events.append(e)
              except:
                  future_events.append(e)
+        
+        self.logger.info(f"{city_name}: {len(future_events)} events remaining after past filter.")
         
         if not future_events:
             return []
