@@ -271,34 +271,51 @@ class DamaiSource(BaseSource):
         
         # 3. Filter Past & Incremental
         now_ts = time.time()
+        today_str = time.strftime("%Y/%m/%d")
         incremental_events = []
         
         # Load local seen IDs
         history = self._load_seen_ids()
-        city_seen = set(history.get(city_code, []))
+        city_history = history.get(city_code, {})
+        
+        # Migration & Cleanup: Handle old list-based format and remove expired items
+        if isinstance(city_history, list):
+            # Migrate from list to dict (temporary empty date)
+            city_history = {eid: "" for eid in city_history}
+        
+        # Cleanup: Remove items older than today
+        cleaned_history = {}
+        for eid, show_date in city_history.items():
+            if not show_date or show_date >= today_str:
+                cleaned_history[eid] = show_date
+        
+        city_seen_dict = cleaned_history
         
         for e in unique_events:
+             # Link format: https://www.showstart.com/event/289336
              eid = e['link'].split('/')[-1]
+             # raw_time format: 2026/03/14 20:00 -> extract 2026/03/14
+             show_date = e['raw_time'].split(' ')[0] if ' ' in e['raw_time'] else e['raw_time']
+             
              # Skip if already seen (Absolute incremental)
-             if not self.force and eid in city_seen:
+             if not self.force and eid in city_seen_dict:
                  continue
                  
              try:
                  ts = time.mktime(parse_time(e['raw_time']))
                  if ts >= now_ts - 86400: # Include today
                      incremental_events.append(e)
+                     # Track this new event with its date
+                     city_seen_dict[eid] = show_date
              except:
                  incremental_events.append(e)
+                 city_seen_dict[eid] = show_date
         
         self.logger.info(f"{city_name}: {len(incremental_events)} NEW events since last push.")
         
-        # Update history (Append new ones)
-        new_ids = [e['link'].split('/')[-1] for e in incremental_events]
-        if new_ids:
-            updated_seen = list(city_seen.union(new_ids))
-            # Keep only last 200 IDs per city to prevent file bloat
-            history[city_code] = updated_seen[-200:]
-            self._save_seen_ids(history)
+        # Update history (Save the cleaned and updated dict)
+        history[city_code] = city_seen_dict
+        self._save_seen_ids(history)
 
         if not incremental_events:
             return []
