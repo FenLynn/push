@@ -38,6 +38,51 @@ class DamaiSource(BaseSource):
         self.logger = logging.getLogger('Push.Source.Damai')
         self.template_engine = TemplateEngine()
 
+    def _get_balanced(self, s, start_idx, open_char='(', close_char=')'):
+        depth = 0
+        for i in range(start_idx, len(s)):
+            if s[i] == open_char: depth += 1
+            elif s[i] == close_char:
+                depth -= 1
+                if depth == 0: return i
+        return -1
+
+    def _top_level_split(self, s):
+        res = []
+        current = []
+        depth = 0
+        in_quote = False
+        quote_char = None
+        i = 0
+        while i < len(s):
+            char = s[i]
+            if char in ('"', "'"):
+                if not in_quote:
+                    in_quote = True
+                    quote_char = char
+                elif quote_char == char:
+                    # check for escaped quote
+                    prev_backslashes = 0
+                    j = i - 1
+                    while j >= 0 and s[j] == '\\':
+                        prev_backslashes += 1
+                        j -= 1
+                    if prev_backslashes % 2 == 0:
+                        in_quote = False
+            
+            if not in_quote:
+                if char in ('{', '['): depth += 1
+                elif char in ('}', ']'): depth -= 1
+                elif char == ',' and depth == 0:
+                    res.append("".join(current).strip())
+                    current = []
+                    i += 1
+                    continue
+            current.append(char)
+            i += 1
+        res.append("".join(current).strip())
+        return res
+
     def _fetch_city_events(self, city_name, city_code):
         """Fetch events for a whole city using City Code"""
         url = f"https://www.showstart.com/event/list?cityCode={city_code}"
@@ -47,55 +92,101 @@ class DamaiSource(BaseSource):
         
         events = []
         try:
-            print(f"[Damai] Fetching {city_name} (Code: {city_code})...")
-            resp = requests.get(url, headers=headers, timeout=10)
+            self.logger.info(f"Fetching {city_name} (Code: {city_code})...")
+            resp = requests.get(url, headers=headers, timeout=12)
             resp.encoding = 'utf-8'
             
             if resp.status_code != 200:
                 self.logger.warning(f"Failed to fetch {city_name}: {resp.status_code}")
                 return []
 
-            # Regex for City List Page (Nuxt Dump)
-            # Confirmed regex: id:(\d+),title:"(.*?)",poster:"(.*?)".*?price:(.*?),showTime:"(.*?)"
-            regex = r'id:(\d+),title:"(.*?)",poster:"(.*?)".*?price:(.*?),showTime:"(.*?)"'
+            # 1. Extract Nuxt Data hydration block
+            start_marker = 'window.__NUXT__='
+            start_idx = resp.text.find(start_marker)
+            if start_idx == -1:
+                self.logger.warning(f"Could not find Nuxt data marker for {city_name}")
+                return []
             
-            raw_matches = re.findall(regex, resp.text)
+            end_idx = resp.text.find('</script>', start_idx)
+            nuxt_js = resp.text[start_idx:end_idx].strip()
+            if nuxt_js.endswith(';'): nuxt_js = nuxt_js[:-1].strip()
             
-            for m in raw_matches:
-                eid, title, poster, price_raw, show_time = m
+            # Robust extraction of params, body, args
+            payload = nuxt_js[len(start_marker):].strip()
+            try:
+                p_open = payload.find('(')
+                p_close = self._get_balanced(payload, p_open)
+                params_list = [p.strip() for p in payload[p_open+1 : p_close].split(',')]
                 
-                # Clean up unicode
-                def unescape_func(match):
-                    return chr(int(match.group(1), 16))
+                b_open = payload.find('{', p_close)
+                b_close = self._get_balanced(payload, b_open, '{', '}')
+                body_str = payload[b_open+1 : b_close]
                 
-                if '\\u' in title:
-                    title = re.sub(r'\\u([0-9a-fA-F]{4})', unescape_func, title)
+                args_open = payload.find('(', b_close)
+                args_close = self._get_balanced(payload, args_open)
+                args_str = payload[args_open+1 : args_close]
                 
-                # Clean Price
-                price = price_raw.strip('"')
-                if not price or price == 'ad': 
-                    # fallback if regex captured 'ad' or junk
-                    price = "点击查看" 
+                args_values = self._top_level_split(args_str)
+                if params_list and params_list[-1] == '': params_list = params_list[:-1]
                 
-                poster = poster.replace(r'\u002F', '/') 
-                show_time = show_time.replace(r'\u002F', '/')
+                mapping = dict(zip(params_list, args_values))
+            except Exception as pe:
+                self.logger.warning(f"Failed to parse hydration structure for {city_name}: {pe}")
+                return []
 
-                # Construct Event
-                evt = {
+            # 2. Extract from activityList
+            al_start = body_str.find('activityList:[')
+            search_scope = body_str[al_start:] if al_start != -1 else body_str
+
+            # Find all objects with id anchor
+            id_matches = list(re.finditer(r'\{id:([a-zA-Z_0-9$]\w*),', search_scope))
+            
+            for i, match in enumerate(id_matches):
+                start = match.start()
+                end = id_matches[i+1].start() if i < len(id_matches)-1 else start + 1200
+                chunk = search_scope[start:end]
+                
+                if 'title:' not in chunk or 'showTime:' not in chunk:
+                    continue
+
+                def find_field(key):
+                    m = re.search(fr'{key}:([a-zA-Z_0-9$]\w*|"[^"]*")', chunk)
+                    if m:
+                        val_raw = m.group(1)
+                        resolved = mapping.get(val_raw, val_raw)
+                        return str(resolved).strip('"')
+                    return None
+
+                eid = find_field('id')
+                title = find_field('title')
+                price = find_field('price') or find_field('salesPrice') or find_field('basePrice')
+                show_time = find_field('showTime')
+                poster = find_field('poster')
+
+                if not eid or not title or not eid.isdigit() or len(eid) < 5:
+                    continue
+
+                if '\\u' in title:
+                    try:
+                        title = title.encode('utf-8').decode('unicode_escape')
+                    except: pass
+                
+                poster = (poster or "").replace(r'\u002F', '/') 
+                show_time = (show_time or "").replace(r'\u002F', '/')
+
+                events.append({
                     'title': title,
                     'time': show_time,
                     'is_today': False,
-                    'price': price,
-                    'venue': city_name, # City list doesn't easily give venue name in this regex, use City for now
-                    'img': poster if poster.startswith('http') else 'https:' + poster,
+                    'price': price if price and ('¥' in price or '起' in price) else f"¥{price or '点击查看'}起",
+                    'venue': city_name,
+                    'img': poster if poster and poster.startswith('http') else 'https:' + (poster or ""),
                     'link': f"https://www.showstart.com/event/{eid}",
                     'raw_time': show_time
-                }
-                
-                events.append(evt)
+                })
                 
         except Exception as e:
-            self.logger.error(f"Error parsing city {city_name}: {e}")
+            self.logger.error(f"Error parsing city {city_name}: {e}", exc_info=True)
             
         return events
 
