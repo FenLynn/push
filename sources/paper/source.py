@@ -80,8 +80,8 @@ class PaperSource(BaseSource):
                 n -= val
         return result
 
-    def __init__(self, topic='me', test_mode=None):
-        super().__init__()
+    def __init__(self, topic='me', test_mode=None, **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.test_mode = test_mode if test_mode is not None else self.TEST_MODE
         

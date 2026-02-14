@@ -18,8 +18,8 @@ from core import Message, ContentType
 from core.db import db
 
 class WeeklyReportSource(BaseSource):
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.logger = logging.getLogger('Push.Source.ReportWeekly')
         
