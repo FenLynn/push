@@ -25,7 +25,11 @@ docker compose up -d
 
 ### 2. Manual Run
 ```bash
+# Standard run (Respects schedule)
 docker exec -it push-service python main.py run all
+
+# Force run (Bypass trading day/holiday checks)
+docker exec -it push-service python main.py run all --force
 ```
 
 ## 🔄 Git Workflow (How to Update)
