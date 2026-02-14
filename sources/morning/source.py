@@ -24,6 +24,11 @@ from .utils import (
     get_game, get_hot_search, get_news_url, get_lsjt,
     get_daily_english
 )
+from core.trading_calendar import (
+    is_china_workday, 
+    is_china_holiday, 
+    get_china_holiday_name
+)
 
 # 天气图标映射
 WEATHER_ICONS = {
@@ -157,54 +162,22 @@ class MorningSource(BaseSource):
     
     def _get_day_status(self, dt: datetime) -> str:
         """判断是工作日/休息日/节日/调休"""
-        # 2026年调休日和节假日 (手动维护，因为 chinese_calendar 不支持)
-        # 格式: 'YYYY-MM-DD': 'status'
-        SPECIAL_DAYS_2026 = {
-            # 春节调休上班
-            '2026-02-28': '调休上班',
-            # 春节假期
-            '2026-02-14': '春节假期',
-            '2026-02-15': '春节假期',
-            '2026-02-16': '春节假期',
-            '2026-02-17': '春节假期',
-            '2026-02-18': '春节假期',
-            '2026-02-19': '春节假期',
-            '2026-02-20': '春节假期',
-            '2026-02-21': '春节假期',
-            '2026-02-22': '春节假期',
-            # 清明节
-            '2026-04-04': '清明节',
-            '2026-04-05': '清明节',
-            '2026-04-06': '清明节',
-            # 劳动节
-            '2026-05-01': '劳动节',
-            '2026-05-02': '劳动节',
-            '2026-05-03': '劳动节',
-            '2026-05-04': '劳动节',
-            '2026-05-05': '劳动节',
-            # 端午节
-            '2026-05-31': '端午节',
-            # 中秋节
-            '2026-09-25': '中秋节',
-            '2026-09-26': '中秋节',
-            '2026-09-27': '中秋节',
-            # 国庆节
-            '2026-10-01': '国庆节',
-            '2026-10-02': '国庆节',
-            '2026-10-03': '国庆节',
-            '2026-10-04': '国庆节',
-            '2026-10-05': '国庆节',
-            '2026-10-06': '国庆节',
-            '2026-10-07': '国庆节',
-        }
+        d = dt.date()
         
-        date_str = dt.strftime('%Y-%m-%d')
-        if date_str in SPECIAL_DAYS_2026:
-            return SPECIAL_DAYS_2026[date_str]
-        
-        weekday = dt.weekday()
-        if weekday >= 5:
+        # 1. 优先判断法定节假日
+        holiday_name = get_china_holiday_name(d)
+        if holiday_name:
+            return holiday_name
+            
+        # 2. 判断是否是调休上班
+        if is_china_workday(d) and d.weekday() >= 5:
+            return '调休上班'
+            
+        # 3. 普通周末
+        if d.weekday() >= 5:
             return '周末休息'
+            
+        # 4. 普通工作日
         return '工作日'
     
     def _get_status_emoji(self, status: str) -> str:
@@ -226,7 +199,7 @@ class MorningSource(BaseSource):
         # 格式: (名称, 月, 日, 放假天数, 补班日期)
         LEGAL_HOLIDAYS = [
             ('元旦', 1, 1, 1, None),
-            ('春节', 2, 15, 10, '02/14, 02/28'),   # 除夕(2/15)~初九(2/24), 补班2/14(周六)、2/28(周六)
+            ('春节', 2, 15, 9, '02/14, 02/28'),   # 除夕(2/15)~初七(2/23), 补班2/14(周六)、2/28(周六)
             ('清明节', 4, 4, 3, None),
             ('劳动节', 5, 1, 5, '04/26'),          # 5天
             ('端午节', 5, 31, 1, None),            # 1天 (2026年农历)
