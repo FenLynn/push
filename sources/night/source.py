@@ -21,8 +21,8 @@ class NightSource(BaseSource):
     夜盘数据源 (v6.3) - 审美对齐 & 指标逻辑修正
     """
     
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.config_loader = ConfigLoader()
         self.timeout = 5
