@@ -8,7 +8,11 @@ Features:
 3. US stock trading day detection (NYSE/NASDAQ)
 """
 from datetime import date, datetime, timedelta
-from typing import Optional
+import os
+import json
+import time
+from typing import Optional, Dict, List
+import requests
 import chinese_calendar
 
 # US Market Holidays (approximated, update yearly)
@@ -27,44 +31,125 @@ US_HOLIDAYS_2026 = [
 
 # Cache for performance
 _cache = {}
+_holiday_data = {}
+
+def _get_data_dir():
+    """获取数据存储目录"""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(base_dir, 'data')
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    return data_dir
+
+def sync_holidays_from_remote(year: int = None, force: bool = False) -> bool:
+    """
+    从远程同步节假日数据 (holiday-cn)
+    
+    Args:
+        year: 年份，默认为今年
+        force: 是否强制同步
+    """
+    year = year or date.today().year
+    cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+    
+    # 如果文件存在且不是 force 模式，且修改时间在一周内，则跳过
+    if not force and os.path.exists(cache_file):
+        mtime = os.path.getmtime(cache_file)
+        if time.time() - mtime < 7 * 24 * 3600:
+            return True
+            
+    # 从 CDN 获取
+    url = f"https://fastly.jsdelivr.net/gh/NateScarlet/holiday-cn@master/{year}.json"
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"[Calendar] Synced holidays for {year} from remote.")
+            return True
+    except Exception as e:
+        print(f"[Calendar] Remote sync failed: {e}")
+    return False
+
+def _load_holidays(year: int) -> Dict[str, bool]:
+    """加载指定年份的节假日数据"""
+    global _holiday_data
+    if year in _holiday_data:
+        return _holiday_data[year]
+        
+    cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+    
+    # 如果不存在或超期，尝试同步（但不阻塞太久）
+    if not os.path.exists(cache_file):
+        sync_holidays_from_remote(year)
+        
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # 转换为 dict: {'YYYY-MM-DD': isHoliday}
+                day_map = {d['date']: d['isHoliday'] for d in data.get('days', [])}
+                _holiday_data[year] = day_map
+                return day_map
+        except:
+            pass
+    return {}
 
 def is_china_workday(d: Optional[date] = None) -> bool:
     """
     判断是否为中国工作日（非周末、非法定假日，包括调休上班日）
-    
-    Args:
-        d: 日期，默认为今天
-        
-    Returns:
-        bool: True=工作日, False=休息日
+    优先使用远程同步的最新数据，失败时回退到本地库。
     """
     d = d or date.today()
+    
+    # 尝试使用同步数据
+    holidays = _load_holidays(d.year)
+    date_str = d.strftime('%Y-%m-%d')
+    if date_str in holidays:
+        # isHoliday 为 True 表示放假，为 False 表示补班（即工作日）
+        return not holidays[date_str]
+        
+    # 回退到本地库
     return chinese_calendar.is_workday(d)
 
 def is_china_holiday(d: Optional[date] = None) -> bool:
     """
     判断是否为中国法定节假日
-    
-    Args:
-        d: 日期，默认为今天
-        
-    Returns:
-        bool: True=法定假日, False=非法定假日
     """
     d = d or date.today()
+    
+    # 尝试使用同步数据
+    holidays = _load_holidays(d.year)
+    date_str = d.strftime('%Y-%m-%d')
+    if date_str in holidays:
+        return holidays[date_str]
+        
+    # 回退到本地库
     return chinese_calendar.is_holiday(d)
 
 def get_china_holiday_name(d: Optional[date] = None) -> Optional[str]:
     """
     获取中国法定节假日名称
-    
-    Args:
-        d: 日期，默认为今天
-        
-    Returns:
-        str or None: 节假日名称，如 "春节"、"国庆节"
+    优先使用自同步数据。
     """
     d = d or date.today()
+    
+    # 尝试使用同步数据获取名称
+    year = d.year
+    cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                date_str = d.strftime('%Y-%m-%d')
+                for day in data.get('days', []):
+                    if day['date'] == date_str and day['isHoliday']:
+                        return day['name']
+        except:
+            pass
+
+    # 回退到本地库
     try:
         holiday = chinese_calendar.get_holiday_detail(d)
         if holiday[0]:  # is_holiday
