@@ -47,8 +47,8 @@ def get_weather_icon(desc: str) -> str:
 class MorningSource(BaseSource):
     """增强版早报 - 满足用户 12 项需求"""
     
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
     
     def run(self) -> Message:

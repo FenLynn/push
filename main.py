@@ -155,7 +155,7 @@ def gen_modules(modules_to_run, topic='me', token=None):
         except Exception as e:
             logger.error(f"Failed to generate {name}: {e}")
 
-def run_modules(modules_to_run, topic='me', token=None, title=None):
+def run_modules(modules_to_run, topic='me', token=None, title=None, **kwargs):
     """Generate and Send (Standard Run)"""
     logger = logging.getLogger('Push.CLI')
     logger.info(f"=== Push Run ({time.strftime('%Y-%m-%d %H:%M:%S')}) ===")
@@ -184,23 +184,26 @@ def run_modules(modules_to_run, topic='me', token=None, title=None):
             continue
         
         # Check if should run based on scheduler
-        if not scheduler.should_run_today(module_key):
+        force = kwargs.get('force', False)
+        if not force and not scheduler.should_run_today(module_key):
             logger.info(f"Skipping {module_key} (condition not met today)")
             scheduler.record_skip(module_key, "条件不满足")
             continue
+        elif force:
+            logger.info(f"Force running {module_key} (Bypassing scheduler)")
             
         info = MODULES[module_key]
         logger.info(f"Running {module_key} ({extra_kwargs if extra_kwargs else 'default'})...")
-        kwargs = {'topic': topic}
-        if 'args' in info: kwargs.update(info['args'])
-        kwargs.update(extra_kwargs)
+        mod_kwargs = {'topic': topic, 'force': force}
+        if 'args' in info: mod_kwargs.update(info['args'])
+        mod_kwargs.update(extra_kwargs)
         
         # Record start
         scheduler.record_start(module_key)
             
         try:
             # 1. 初始化源
-            source = info['class'](**kwargs)
+            source = info['class'](**mod_kwargs)
             engine.register_source(name, source)
             
             # 2. 生成消息
@@ -305,6 +308,7 @@ def main():
     run_parser = subparsers.add_parser('run', parents=[common], help='Generate AND Send')
     run_parser.add_argument('modules', nargs='+', help='Module names (or "all")')
     run_parser.add_argument('--title', help='Override notification title')
+    run_parser.add_argument('--force', action='store_true', help='Force run even if scheduler skips')
     
     # 2. GEN (Generate Only)
     gen_parser = subparsers.add_parser('gen', parents=[common], help='Generate Only (Save to output/)')
@@ -372,7 +376,7 @@ def main():
         mods = list(dict.fromkeys(mods))  # Remove duplicates, preserve order
         
         if args.command == 'run':
-            if not run_modules(mods, topic=args.topic, token=args.token, title=args.title):
+            if not run_modules(mods, topic=args.topic, token=args.token, title=args.title, force=args.force):
                 import sys
                 logger.error("Some modules failed to run.")
                 sys.exit(1)
