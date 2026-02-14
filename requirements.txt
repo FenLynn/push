@@ -11,6 +11,7 @@ pandas==3.0.0
 pillow==12.1.0
 PyYAML==6.0.3
 requests==2.32.5
+yfinance==0.2.36
 
 # 可选依赖 (非核心功能)
 feedparser==6.0.12

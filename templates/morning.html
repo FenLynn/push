@@ -327,6 +327,15 @@
                     </span>
                 </div>
                 {% endif %}
+                {% endif %}
+                {% if finance.oil_wti %}
+                <div class="fin-row">
+                    <span class="fin-label">{{ finance.oil_wti.name }}</span>
+                    <span>
+                        <span class="fin-val {{ "up" if finance.oil_wti.change and finance.oil_wti.change > 0 else "down" if finance.oil_wti.change and finance.oil_wti.change < 0 else "" }}">{{ finance.oil_wti.value }}</span>
+                        {% if finance.oil_wti.change %}<span class="fin-change {{ "up" if finance.oil_wti.change > 0 else "down" }}">{{ "%+.2f" % finance.oil_wti.change }}%</span>{% endif %}
+                    </span>
+                </div>
                 {% if finance.usd_cnh %}
                 <div class="fin-row">
                     <span class="fin-label">{{ finance.usd_cnh.name }}</span>

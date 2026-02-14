@@ -14,6 +14,7 @@ import time
 from typing import Optional, Dict, List
 import requests
 import chinese_calendar
+from core.d1_client import D1Client
 
 # US Market Holidays (approximated, update yearly)
 # Source: NYSE holiday calendar
@@ -32,6 +33,23 @@ US_HOLIDAYS_2026 = [
 # Cache for performance
 _cache = {}
 _holiday_data = {}
+_d1_client = None
+
+def get_d1():
+    """Get or initialize D1 client"""
+    global _d1_client
+    if _d1_client is None:
+        _d1_client = D1Client()
+        if _d1_client.enabled:
+            # Ensure KV table exists
+            _d1_client.ensure_table('sys_kv', """
+                CREATE TABLE sys_kv (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+    return _d1_client if _d1_client and _d1_client.enabled else None
 
 def _get_data_dir():
     """获取数据存储目录"""
@@ -44,29 +62,43 @@ def _get_data_dir():
 def sync_holidays_from_remote(year: int = None, force: bool = False) -> bool:
     """
     从远程同步节假日数据 (holiday-cn)
-    
-    Args:
-        year: 年份，默认为今年
-        force: 是否强制同步
     """
     year = year or date.today().year
-    cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+    key = f'holidays_{year}'
     
-    # 如果文件存在且不是 force 模式，且修改时间在一周内，则跳过
-    if not force and os.path.exists(cache_file):
-        mtime = os.path.getmtime(cache_file)
-        if time.time() - mtime < 7 * 24 * 3600:
-            return True
-            
-    # 从 CDN 获取
+    d1 = get_d1()
+    
+    # 1. 检查是否需要同步 (云端持久化)
+    if not force and d1:
+        res = d1.query("SELECT updated_at FROM sys_kv WHERE key = ?", [key])
+        if res['success'] and res['data'] and res['data'][0]['results']:
+            updated_at_str = res['data'][0]['results'][0]['updated_at']
+            # Simple TTL check: 7 days
+            try:
+                updated_at = datetime.strptime(updated_at_str, '%Y-%m-%d %H:%M:%S')
+                if datetime.now() - updated_at < timedelta(days=7):
+                    return True # Data is fresh enough
+            except:
+                pass
+                
+    # 2. 从 CDN 获取
     url = f"https://fastly.jsdelivr.net/gh/NateScarlet/holiday-cn@master/{year}.json"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
-            data = resp.json()
+            data_json = resp.text
+            
+            # 存入 D1
+            if d1:
+                sql = "INSERT OR REPLACE INTO sys_kv (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+                d1.query(sql, [key, data_json])
+                print(f"[Calendar] Synced holidays for {year} to D1.")
+            
+            # 同时存入本地缓存 (Actions 运行期间)
+            cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
             with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            print(f"[Calendar] Synced holidays for {year} from remote.")
+                f.write(data_json)
+                
             return True
     except Exception as e:
         print(f"[Calendar] Remote sync failed: {e}")
@@ -78,20 +110,35 @@ def _load_holidays(year: int) -> Dict[str, bool]:
     if year in _holiday_data:
         return _holiday_data[year]
         
-    cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+    key = f'holidays_{year}'
+    d1 = get_d1()
+    data_json = None
     
-    # 如果不存在或超期，尝试同步（但不阻塞太久）
-    if not os.path.exists(cache_file):
-        sync_holidays_from_remote(year)
-        
-    if os.path.exists(cache_file):
-        try:
+    # 1. 尝试从 D1 读取
+    if d1:
+        res = d1.query("SELECT value FROM sys_kv WHERE key = ?", [key])
+        if res['success'] and res['data'] and res['data'][0]['results']:
+            data_json = res['data'][0]['results'][0]['value']
+            
+    # 2. 如果 D1 没药，尝试本地文件 (Fallback)
+    if not data_json:
+        cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+        if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # 转换为 dict: {'YYYY-MM-DD': isHoliday}
-                day_map = {d['date']: d['isHoliday'] for d in data.get('days', [])}
-                _holiday_data[year] = day_map
-                return day_map
+                data_json = f.read()
+                
+    # 3. 如果还是没有，尝试同步
+    if not data_json:
+        if sync_holidays_from_remote(year):
+            # 同步完再读一次 (这次从 D1 或文件)
+            return _load_holidays(year)
+            
+    if data_json:
+        try:
+            data = json.loads(data_json)
+            day_map = {d['date']: d['isHoliday'] for d in data.get('days', [])}
+            _holiday_data[year] = day_map
+            return day_map
         except:
             pass
     return {}
@@ -137,15 +184,28 @@ def get_china_holiday_name(d: Optional[date] = None) -> Optional[str]:
     
     # 尝试使用同步数据获取名称
     year = d.year
-    cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
-    if os.path.exists(cache_file):
-        try:
+    key = f'holidays_{year}'
+    d1 = get_d1()
+    data_json = None
+    
+    if d1:
+        res = d1.query("SELECT value FROM sys_kv WHERE key = ?", [key])
+        if res['success'] and res['data'] and res['data'][0]['results']:
+            data_json = res['data'][0]['results'][0]['value']
+            
+    if not data_json:
+        cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+        if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                date_str = d.strftime('%Y-%m-%d')
-                for day in data.get('days', []):
-                    if day['date'] == date_str and day['isHoliday']:
-                        return day['name']
+                data_json = f.read()
+
+    if data_json:
+        try:
+            data = json.loads(data_json)
+            date_str = d.strftime('%Y-%m-%d')
+            for day in data.get('days', []):
+                if day['date'] == date_str and day['isHoliday']:
+                    return day['name']
         except:
             pass
 

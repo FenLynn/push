@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.config import ConfigLoader
+from core.env import EnvironmentDetector
+import yfinance as yf
 
 class NightSource(BaseSource):
     """
@@ -106,6 +108,12 @@ class NightSource(BaseSource):
         # 2. 获取宏观网格数据
         macro_results = self._get_authentic_macro()
         
+        # v7.2 Override with resilient data (yfinance)
+        resilient_data = self._get_resilient_macro()
+        if resilient_data:
+            self.logger.info(f"YFinance Resilient Data: {list(resilient_data.keys())}")
+            macro_results.update(resilient_data)
+        
         # 3. 获取全球指数列表
         exclude_table = ['VIX', 'GC', 'CL', 'USDCNH']
         all_indices = self._get_authentic_indices(idx_list_raw, bold_idx, exclude_table) 
@@ -156,13 +164,6 @@ class NightSource(BaseSource):
                 d = data[c]
                 res[k] = {'p': d['price'], 'c': f"{d['change_pct']:+.2f}", 's': 'up' if d['change_pct'] >= 0 else 'down'}
         
-        fallbacks = {
-            'USDCNH': ('6.9299', '-0.16', 'down'),
-            'VIX': ('17.76', '-18.42', 'down'),
-            'US10Y': ('4.208%', '+0.48', 'up')
-        }
-        for k, v in fallbacks.items():
-            if k not in res: res[k] = {'p': v[0], 'c': v[1], 's': v[2]}
         return res
 
     def _fetch_tencent(self, codes):
@@ -451,3 +452,74 @@ class NightSource(BaseSource):
         # 注意：这里和 v5.7 保持一致的名字
         lbl = {'NDX': '纳斯达克', 'VIX': 'VIX恐慌', 'USDCNH': '离岸人民币', 'GC': 'COMEX黄金', 'CL': 'WTI原油', 'US10Y': '10Y美债'}
         return [{'label': lbl[k], 'price': res[k]['p'], 'change': res[k]['c'], 'status': res[k]['s']} for k in order if k in res]
+
+    def _get_resilient_macro(self):
+        """
+        v7.2 Resilient Macro Data Fetching (yfinance + proxy + fallback)
+        Targets: GC=F (Gold), CL=F (Oil), ^VIX (VIX)
+        """
+        results = {}
+        target_map = {
+            'GC=F': 'GC',
+            'CL=F': 'CL',
+            '^VIX': 'VIX'
+        }
+        
+        try:
+             # Configure custom session for yfinance
+            s = requests.Session()
+            if EnvironmentDetector.detect() == 'local':
+                 proxies = {
+                    'http': 'socks5://192.168.12.21:50170',
+                    'https': 'socks5://192.168.12.21:50170'
+                }
+                 s.proxies.update(proxies)
+                 self.logger.info("NightSource: Using Local Proxy")
+            
+            try:
+                from fake_useragent import UserAgent
+                ua = UserAgent()
+                s.headers.update({"User-Agent": ua.random})
+            except:
+                s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+
+            tickers = yf.Tickers("GC=F CL=F ^VIX", session=s)
+            
+            for symbol, key in target_map.items():
+                try:
+                    # Try info first
+                    info = tickers.tickers[symbol].info
+                    price = info.get("regularMarketPrice") or info.get("currentPrice")
+                    prev = info.get("regularMarketPreviousClose") or info.get("previousClose")
+                    
+                    if not price:
+                        raise ValueError("Price missing")
+
+                    change_pct = ((price - prev) / prev * 100) if prev else 0
+                    
+                    results[key] = {
+                        'p': f"{price:.2f}",
+                        'c': f"{change_pct:+.2f}",
+                        's': 'up' if change_pct >= 0 else 'down'
+                    }
+                except Exception as e:
+                    self.logger.warning(f"{symbol} info failed: {e}. Trying history...")
+                    try:
+                        # 5d history fallback - use iloc[-1] (latest) and iloc[-2] (prev close)
+                        hist = tickers.tickers[symbol].history(period="5d")
+                        if not hist.empty:
+                            price = hist["Close"].iloc[-1]
+                            prev = hist["Close"].iloc[-2] if len(hist) > 1 else price
+                            change_pct = ((price - prev) / prev * 100) if len(hist) > 1 else 0
+                            
+                            results[key] = {
+                                'p': f"{price:.2f}",
+                                'c': f"{change_pct:+.2f}",
+                                's': 'up' if change_pct >= 0 else 'down'
+                            }
+                    except:
+                        pass
+        except Exception as e:
+            self.logger.error(f"Resilient macro fetch failed: {e}")
+            
+        return results
