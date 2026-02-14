@@ -31,16 +31,9 @@ from core.llm_factory import LLMFactory
 class PaperSource(BaseSource):
     """论文数据源"""
     
-    # 关键词配置
-    CHN_KEYWORDS = ["光纤", "激光", "高功率", "窄线宽", "受激拉曼散射", "模式不稳定",
-                    "受激布里渊散射", "同带泵浦", "合束器", "机器学习", "神经网络",
-                    "深度学习", "自旋", "轨道"]
-    
-    ENG_KEYWORDS = ["fiber", "laser", "narrow linewidth", "tandem", "coherrent",
-                    "transverse mode instability", "stimulated Raman scattering",
-                    "stimulated Brillouin scattering", "SRS", "SBS", "TMI", "1018 nm",
-                    "combiner", "machine learning", "neural network", "deep learning",
-                    "orbital angular momentum", "skyrmions", "metafiber", "multimode"]
+    # 关键词配置 (Fallback values if not in INI)
+    CHN_KEYWORDS = []
+    ENG_KEYWORDS = []
     
     # 期刊配置
     GENERAL_JOURNALS = ["Scientific Reports", "物理学报", "Micromachines",
@@ -90,6 +83,9 @@ class PaperSource(BaseSource):
         if self.in_docker:
             print("[Paper] Running in DOCKER environment")
         
+        # Initialize Keywords from Config
+        self._load_keywords()
+        
         # Initialize LLM Provider
         llm_conf = config.get_llm_config()
         self.llm_provider = LLMFactory.create_provider(llm_conf)
@@ -97,6 +93,18 @@ class PaperSource(BaseSource):
             print(f"[Paper] LLM Provider Initialized: {llm_conf.get('provider')}")
         else:
             print("[Paper] LLM Provider NOT initialized")
+
+    def _load_keywords(self):
+        """从配置文件加载关键词"""
+        chn_val = config.get('paper.keywords', 'chn', fallback='')
+        eng_val = config.get('paper.keywords', 'eng', fallback='')
+        
+        if chn_val:
+            self.CHN_KEYWORDS = [k.strip() for k in chn_val.split(',') if k.strip()]
+        if eng_val:
+            self.ENG_KEYWORDS = [k.strip() for k in eng_val.split(',') if k.strip()]
+        
+        print(f"[Paper] Loaded {len(self.CHN_KEYWORDS)} CHN and {len(self.ENG_KEYWORDS)} ENG keywords from config.")
 
     def _is_docker(self):
         """判断是否在 Docker 环境中"""

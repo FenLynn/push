@@ -15,6 +15,7 @@ from sources.base import BaseSource
 from core import Message, ContentType
 from core.env import EnvironmentDetector
 from zhdate import ZhDate
+from core.health_checker import check_health
 
 # 导入原有辅助函数
 # 导入原有辅助函数
@@ -107,6 +108,9 @@ class MorningSource(BaseSource):
         
         # 12. 图片 (新闻/历史)
         context['images'] = self._get_image_urls()
+        
+        # 13. 系统健康自检 (异常哨兵)
+        context['health_status'] = self._safe_call(check_health, "✅ 系统健康自检中...")
         
         return context
 
