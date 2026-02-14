@@ -2,6 +2,8 @@
 import requests
 import re
 import time
+import json
+import os
 import logging
 from core import SourceInterface, Message, ContentType
 from core.template import TemplateEngine
@@ -37,6 +39,7 @@ class DamaiSource(BaseSource):
 
         self.logger = logging.getLogger('Push.Source.Damai')
         self.template_engine = TemplateEngine()
+        self.root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     def _get_balanced(self, s, start_idx, open_char='(', close_char=')'):
         depth = 0
@@ -46,6 +49,58 @@ class DamaiSource(BaseSource):
                 depth -= 1
                 if depth == 0: return i
         return -1
+
+    def _recursive_decode(self, text):
+        """Iteratively decode unicode escapes and fix Mojibake (max 5 levels)"""
+        if not text:
+            return text
+        
+        current = text
+        for _ in range(5):
+            changed = False
+            # 1. Unicode Escapes
+            if '\\u' in current:
+                try:
+                    decoded = current.encode('utf-8').decode('unicode_escape')
+                    if decoded != current:
+                        current = decoded
+                        changed = True
+                except:
+                    pass
+            
+            # 2. Mojibake correction (e.g. UTF-8 read as Latin-1)
+            try:
+                if any(ord(c) > 127 for c in current):
+                    # Check if it looks like UTF-8 that was mis-decoded as Latin-1
+                    # A quick check is to see if we can encode it as Latin-1
+                    candidate = current.encode('latin1').decode('utf-8')
+                    if candidate != current:
+                        current = candidate
+                        changed = True
+            except:
+                pass
+                
+            if not changed:
+                break
+        return current
+
+    def _load_seen_ids(self):
+        path = os.path.join(self.root_dir, 'data', 'damai_seen_ids.json')
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except: pass
+        return {}
+
+    def _save_seen_ids(self, seen_dict):
+        path = os.path.join(self.root_dir, 'data', 'damai_seen_ids.json')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(seen_dict, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.logger.error(f"Failed to save seen IDs: {e}")
 
     def _top_level_split(self, s):
         res = []
@@ -157,13 +212,8 @@ class DamaiSource(BaseSource):
 
                 if not eid or not title or not eid.isdigit(): continue
 
-                # Decode Title (Handle double Unicode escaping)
-                if '\\u' in title:
-                    try:
-                        title = title.encode('utf-8').decode('unicode_escape')
-                        if '\\u' in title:
-                            title = title.encode('utf-8').decode('unicode_escape')
-                    except: pass
+                # Robust Unicode Decoding
+                title = self._recursive_decode(title)
                 
                 poster = (poster or "").replace(r'\u002F', '/') 
                 show_time = (show_time or "").replace(r'\u002F', '/')
@@ -206,9 +256,10 @@ class DamaiSource(BaseSource):
         seen_ids = set()
         unique_events = []
         for e in all_events:
-            if e['link'] not in seen_ids:
+            eid = e['link'].split('/')[-1]
+            if eid not in seen_ids:
                 unique_events.append(e)
-                seen_ids.add(e['link'])
+                seen_ids.add(eid)
         
         # 2. Sort
         def parse_time(t_str):
@@ -218,26 +269,44 @@ class DamaiSource(BaseSource):
                 return time.localtime()
         unique_events.sort(key=lambda x: parse_time(x['raw_time']))
         
-        # 3. Filter Past
+        # 3. Filter Past & Incremental
         now_ts = time.time()
-        future_events = []
+        incremental_events = []
+        
+        # Load local seen IDs
+        history = self._load_seen_ids()
+        city_seen = set(history.get(city_code, []))
+        
         for e in unique_events:
+             eid = e['link'].split('/')[-1]
+             # Skip if already seen (Absolute incremental)
+             if not self.force and eid in city_seen:
+                 continue
+                 
              try:
                  ts = time.mktime(parse_time(e['raw_time']))
                  if ts >= now_ts - 86400: # Include today
-                     future_events.append(e)
+                     incremental_events.append(e)
              except:
-                 future_events.append(e)
+                 incremental_events.append(e)
         
-        self.logger.info(f"{city_name}: {len(future_events)} events remaining after past filter.")
+        self.logger.info(f"{city_name}: {len(incremental_events)} NEW events since last push.")
         
-        if not future_events:
+        # Update history (Append new ones)
+        new_ids = [e['link'].split('/')[-1] for e in incremental_events]
+        if new_ids:
+            updated_seen = list(city_seen.union(new_ids))
+            # Keep only last 200 IDs per city to prevent file bloat
+            history[city_code] = updated_seen[-200:]
+            self._save_seen_ids(history)
+
+        if not incremental_events:
             return []
 
         # 4. Pagination
         MAX_CHARS = 19800
         pages = []
-        remaining = future_events[:]
+        remaining = incremental_events[:]
         page_num = 1
         
         while remaining:
