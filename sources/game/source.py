@@ -28,8 +28,8 @@ class GameSource(BaseSource):
     
     WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     
-    def __init__(self, topic='me', games=None):
-        super().__init__()
+    def __init__(self, topic='me', games=None, **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.games = games or self.DEFAULT_GAMES
         self.template = TemplateEngine()

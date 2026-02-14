@@ -24,7 +24,7 @@ import logging
 
 class FinanceSource(BaseSource):
     def __init__(self, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         self.manager = DataManager()
         self.plotter = Plotter()
         self.indicators = [

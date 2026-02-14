@@ -13,8 +13,8 @@ class ETFSource(BaseSource):
     """
     ETF Monitoring Source V2.0 (Premium Dashboard Edition)
     """
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.logger = logging.getLogger('Push.Source.ETF')
         self.template_engine = TemplateEngine()
