@@ -336,10 +336,10 @@ def should_push_module(module_name: str) -> bool:
     # 模块推送规则
     rules = {
         'morning': lambda: True,  # 每天推送
-        'finance': lambda: is_a_share_trading_day(today),  # A股交易日
-        'stock': lambda: is_a_share_trading_day(today),
-        'etf': lambda: is_a_share_trading_day(today),
-        'fund': lambda: is_a_share_trading_day(today),
+        'finance': lambda: is_china_workday(today),  # 中国工作日 (包含补班)
+        'stock': lambda: is_china_workday(today),
+        'etf': lambda: is_china_workday(today),
+        'fund': lambda: is_china_workday(today),
         'night': lambda: is_us_trading_day(today),  # 美股交易日
         'paper': lambda: True,  # 每天推送
         'game': lambda: True,

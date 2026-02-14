@@ -121,8 +121,7 @@ class PaperSource(BaseSource):
     def run(self) -> list:
         """运行获取流程并返回消息列表"""
         today_info = self._get_data()
-        if not today_info['paper']:
-            return []
+        # Remove early return to allow "No Update" message generation
             
         # 分段逻辑 - 动态长度适配
         all_pages = []
