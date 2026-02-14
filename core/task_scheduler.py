@@ -46,7 +46,7 @@ MODULE_SCHEDULE = {
     'finance': {
         'desc': '财经日报 (宏观/市场)',
         'time': '18:00',
-        'condition': lambda: is_a_share_trading_day(),  # A股交易日
+        'condition': lambda: True,  # 每天运行 (非交易日也有数据更新)
         'group': 'stock'
     },
     'paper': {
@@ -94,7 +94,7 @@ MODULE_SCHEDULE = {
     'estate': {
         'desc': '成都房产',
         'time': '19:00',
-        'condition': lambda: True,  # 每天运行 (之前是周一)
+        'condition': lambda: is_china_workday(),  # 中国工作日
         'group': 'daily'
     },
     'damai': {
