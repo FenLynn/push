@@ -9,9 +9,10 @@ from core.template import TemplateEngine
 class BaseSource(SourceInterface):
     """数据源基类 - 提供通用能力"""
     
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.template_engine = TemplateEngine()
         self.logger = logging.getLogger(f'Push.Source.{self.__class__.__name__}')
+        self.force = kwargs.get('force', False)
     
     def render_template(self, template_name: str, context: dict) -> str:
         """

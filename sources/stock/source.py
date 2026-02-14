@@ -25,8 +25,8 @@ from core.config import config
 class StockSource(BaseSource):
     """股票数据源 (Enhanced)"""
     
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         
         # Load watchlists from config
@@ -62,6 +62,10 @@ class StockSource(BaseSource):
             weekday = datetime.now().weekday()
             is_trade_day = weekday < 5
             self.logger.info(f"Using fallback trade day detection: {is_trade_day}")
+        
+        if self.force:
+            self.logger.info("Force mode enabled: Bypassing internal trade day check.")
+            is_trade_day = True
         
         # 准备数据 (初始化所有字段，防止渲染报错)
         data = {
