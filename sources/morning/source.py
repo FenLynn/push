@@ -11,10 +11,9 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from sources.base import BaseSource
 from core import Message, ContentType
+from core.env import EnvironmentDetector
 from zhdate import ZhDate
 
 # 导入原有辅助函数
@@ -24,6 +23,8 @@ from .utils import (
     get_game, get_hot_search, get_news_url, get_lsjt,
     get_daily_english
 )
+import chinese_calendar
+import yfinance as yf
 from core.trading_calendar import (
     is_china_workday, 
     is_china_holiday, 
@@ -85,13 +86,11 @@ class MorningSource(BaseSource):
         context['macro'] = self._safe_call(self._get_macro_data)
         
         # 6. 加密货币 (BTC/ETH)
-        context['crypto'] = self._safe_call(self._get_crypto_data)
-        
-        # 7. 金融数据 (国内金价/伦敦金/离岸人民币)
-        context['finance'] = self._safe_call(self._get_finance_data)
-        
-        # 8. 油价 (四川/陕西/湖北)
-        context['oil'] = self._safe_call(self._get_oil_data)
+        # 7. 金融/金价/油价
+        gold_oil = self._safe_call(self._get_gold_oil)
+        context["finance"] = gold_oil
+        context["oil"] = gold_oil.get("oil_cn") if gold_oil else None
+        context['oil'] = gold_oil.get('oil_cn') if gold_oil else None
         
         # 9. 流量
         if self.topic in ['me', 'baobao']:
@@ -281,22 +280,21 @@ class MorningSource(BaseSource):
             return None
 
     # ========== 5. 金融数据 ==========
-    def _get_finance_data(self) -> Optional[Dict]:
-        """获取金价和汇率"""
+    # ========== 6. 油价 (及国际金油) ==========
+    def _get_gold_oil(self) -> Optional[Dict]:
+        """获取金价和油价 (集成 yfinance 国际数据)"""
         result = {}
         
-        # 金价
+        # 1. 国内金价 & 汇率 (保持原有逻辑)
         try:
             url = 'https://api.lolimi.cn/API/huangj/api.php'
             resp = requests.get(url, timeout=10)
             try:
                 r = resp.json()
-            except Exception as e:
-                self.logger.warning(f"Gold API JSON Error: {e}. Content: {resp.text[:200]}...")
+            except:
                 r = {}
             
             if r.get('code') == 200:
-                # 国内金价
                 for item in r.get('国内黄金', []):
                     if item['品种'] == '国内金价':
                         change = None
@@ -312,25 +310,47 @@ class MorningSource(BaseSource):
                             'unit': '元/克',
                             'change': change
                         }
-                # 国际金价 (伦敦金)
-                for item in r.get('国际黄金', []):
-                    if item['品种'] == '国际金价':
-                        change = None
-                        try:
-                            change_str = item.get('涨跌幅', '').replace('%', '')
-                            if change_str:
-                                change = float(change_str)
-                        except:
-                            pass
-                        result['gold_intl'] = {
-                            'name': '伦敦金',
-                            'value': item['最新价'],
-                            'unit': '美元/盎司',
-                            'change': change
-                        }
         except Exception as e:
-            self.logger.warning(f"Gold price error: {e}")
-        
+            self.logger.warning(f"CN Gold error: {e}")
+            
+        # 2. 国际金油 (COMEX黄金 + WTI原油) - via yfinance
+        try:
+            # GC=F: Gold, CL=F: Crude Oil
+            tickers = yf.Tickers('GC=F CL=F')
+            
+            # Gold
+            try:
+                info = tickers.tickers['GC=F'].info
+                price = info.get('regularMarketPrice') or info.get('currentPrice')
+                prev = info.get('regularMarketPreviousClose') or info.get('previousClose')
+                change = ((price - prev) / prev * 100) if price and prev else 0
+                result['gold_intl'] = {
+                    'name': 'COMEX黄金',
+                    'value': round(price, 2) if price else '--',
+                    'unit': '美元',
+                    'change': round(change, 2)
+                }
+            except Exception as e:
+                self.logger.warning(f"Comex Gold error: {e}")
+
+            # Oil
+            try:
+                info = tickers.tickers['CL=F'].info
+                price = info.get('regularMarketPrice') or info.get('currentPrice')
+                prev = info.get('regularMarketPreviousClose') or info.get('previousClose')
+                change = ((price - prev) / prev * 100) if price and prev else 0
+                result['oil_wti'] = {
+                    'name': 'WTI原油',
+                    'value': round(price, 2) if price else '--',
+                    'unit': '美元',
+                    'change': round(change, 2)
+                }
+            except Exception as e:
+                self.logger.warning(f"WTI Oil error: {e}")
+                
+        except Exception as e:
+            self.logger.warning(f"YFinance error: {e}")
+            
         # 汇率 (离岸人民币)
         try:
             url = 'https://v2.xxapi.cn/api/allrates'
@@ -344,27 +364,110 @@ class MorningSource(BaseSource):
                 }
         except Exception as e:
             self.logger.warning(f"Currency error: {e}")
-        
-        return result if result else None
 
-    # ========== 6. 油价 ==========
-    def _get_oil_data(self) -> Optional[Dict]:
-        """获取油价 (四川/陕西/湖北)"""
+        # 3. 国内成品油 (保持原有)
+        # 3. 国内成品油 (保持原有)
         try:
-            df = get_oil_price()  # DataFrame
-            if df is None or df.empty:
-                return None
-            last_row = df.iloc[-1].to_dict()
-            return {
-                'sichuan': {'name': '四川', 'value': last_row.get('四川', '--')},
-                'shaanxi': {'name': '陕西', 'value': last_row.get('陕西', '--')},
-                'hubei': {'name': '湖北', 'value': last_row.get('湖北', '--')},
-                'beijing': {'name': '北京', 'value': last_row.get('北京', '--')},
-                'type': '95#汽油', 
-            }
+            df = get_oil_price()
+            if not df.empty:
+                last_row = df.iloc[-1].to_dict()
+                result['oil_cn'] = {
+                    'sichuan': {'name': '四川', 'value': last_row.get('四川', '--')},
+                    'shaanxi': {'name': '陕西', 'value': last_row.get('陕西', '--')},
+                    'hubei': {'name': '湖北', 'value': last_row.get('湖北', '--')},
+                    'beijing': {'name': '北京', 'value': last_row.get('北京', '--')},
+                    'type': '95#汽油', 
+                }
         except Exception as e:
-            self.logger.warning(f"Oil price error: {e}")
-            return None
+            self.logger.warning(f"CN Oil error: {e}")
+
+        # 2. 国际金油 (COMEX黄金 + WTI原油) - via yfinance
+        try:
+            # Configure custom session for yfinance
+            s = requests.Session()
+            
+            # v2.1 Environment-Aware Proxy
+            # Only use specific SOCKS5 proxy in local environment (192.168.x.x)
+            # Cloud/VPS environments will use direct connection or system default
+            if EnvironmentDetector.detect() == 'local':
+                 proxies = {
+                    'http': 'socks5://192.168.12.21:50170',
+                    'https': 'socks5://192.168.12.21:50170'
+                }
+                 s.proxies.update(proxies)
+                 self.logger.info("Using Local Proxy: socks5://192.168.12.21:50170")
+            try:
+                from fake_useragent import UserAgent
+                ua = UserAgent()
+                s.headers.update({"User-Agent": ua.random})
+            except:
+                s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+
+            # GC=F: Gold, CL=F: Crude Oil
+            tickers = yf.Tickers("GC=F CL=F", session=s)
+            
+            # Gold
+            try:
+                info = tickers.tickers["GC=F"].info
+                price = info.get("regularMarketPrice") or info.get("currentPrice")
+                prev = info.get("regularMarketPreviousClose") or info.get("previousClose")
+                change = ((price - prev) / prev * 100) if price and prev else 0
+                result["gold_intl"] = {
+                    "name": "COMEX黄金",
+                    "value": round(price, 2) if price else "--",
+                    "unit": "美元",
+                    "change": round(change, 2)
+                }
+            except Exception as e:
+                self.logger.warning(f"Comex Gold info error: {e}. Trying history fallback...")
+                try:
+                     hist = tickers.tickers["GC=F"].history(period="5d")
+                     if not hist.empty:
+                         price = hist["Close"].iloc[-1]
+                         prev = hist["Close"].iloc[0] if len(hist) > 1 else price
+                         change = ((price - prev) / prev * 100) if len(hist) > 1 else 0
+                         result["gold_intl"] = {
+                            "name": "COMEX黄金",
+                            "value": round(price, 2),
+                            "unit": "美元",
+                            "change": round(change, 2)
+                        }
+                except:
+                    pass
+
+            # Oil
+            try:
+                info = tickers.tickers["CL=F"].info
+                price = info.get("regularMarketPrice") or info.get("currentPrice")
+                prev = info.get("regularMarketPreviousClose") or info.get("previousClose")
+                change = ((price - prev) / prev * 100) if price and prev else 0
+                result["oil_wti"] = {
+                    "name": "WTI原油",
+                    "value": round(price, 2) if price else "--",
+                    "unit": "美元",
+                    "change": round(change, 2)
+                }
+            except Exception as e:
+                self.logger.warning(f"WTI Oil info error: {e}. Trying history fallback...")
+                try:
+                     hist = tickers.tickers["CL=F"].history(period="5d")
+                     if not hist.empty:
+                         price = hist["Close"].iloc[-1]
+                         prev = hist["Close"].iloc[0] if len(hist) > 1 else price
+                         change = ((price - prev) / prev * 100) if len(hist) > 1 else 0
+                         result["oil_wti"] = {
+                            "name": "WTI原油",
+                            "value": round(price, 2),
+                            "unit": "美元",
+                            "change": round(change, 2)
+                        }
+                except:
+                    pass
+                
+        except Exception as e:
+            self.logger.warning(f"YFinance error: {e}")
+
+        return result
 
     # ========== 9/10/11. 信息流 (文本模式替代图片) ==========
     def _get_image_urls(self) -> dict:
