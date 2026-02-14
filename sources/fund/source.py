@@ -13,8 +13,8 @@ from core.utils.lib import *
 
 class FundSource(BaseSource):
     """基金估值数据源"""
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.template = TemplateEngine()
         self.template = TemplateEngine()
