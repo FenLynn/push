@@ -10,8 +10,8 @@ from core.db import db
 from core.image_upload import upload_image_with_cdn
 
 class ArchiveVPSSource(BaseSource):
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.logger = logging.getLogger('Push.Source.ArchiveVPS')
         self.table_name = "ops_vps_daily"
@@ -120,7 +120,7 @@ class ArchiveVPSSource(BaseSource):
             plt.close()
             
             # Upload
-            return upload_image_to_cdn(img_path)
+            return upload_image_with_cdn(img_path)
             
         except Exception as e:
             self.logger.error(f"Chart generation failed: {e}")

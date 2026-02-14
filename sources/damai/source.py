@@ -15,8 +15,8 @@ class DamaiSource(BaseSource):
     Strategy: Aggregate events from specific Top Venues in Chengdu.
     """
     
-    def __init__(self, city_code=None, topic='me'):
-        super().__init__()
+    def __init__(self, city_code=None, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.city_code_filter = city_code
         self.city_name_map = {'chengdu': '成都', 'xian': '西安', 'beijing': '北京', 'shanghai': '上海'}

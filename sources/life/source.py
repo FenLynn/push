@@ -12,8 +12,8 @@ from core.utils.lib import *
 
 class LifeSource(BaseSource):
     """娱乐数据源 (电影/电视剧/综艺)"""
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.template = TemplateEngine()
     

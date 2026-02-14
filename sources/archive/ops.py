@@ -12,8 +12,8 @@ from core import Message, ContentType
 from core.db import db
 
 class ArchiveOpsSource(BaseSource):
-    def __init__(self, topic='me'):
-        super().__init__()
+    def __init__(self, topic='me', **kwargs):
+        super().__init__(**kwargs)
         self.topic = topic
         self.logger = logging.getLogger('Push.Source.ArchiveOps')
         # TODO: Load from config/env in future
