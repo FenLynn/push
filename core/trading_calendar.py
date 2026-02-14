@@ -68,7 +68,7 @@ def get_china_holiday_name(d: Optional[date] = None) -> Optional[str]:
     try:
         holiday = chinese_calendar.get_holiday_detail(d)
         if holiday[0]:  # is_holiday
-            return holiday[1].chinese if holiday[1] else None
+            return holiday[1] if holiday[1] else None
     except:
         pass
     return None
