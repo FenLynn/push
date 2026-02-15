@@ -22,8 +22,11 @@ from core.health_checker import check_health
 from .utils import (
     get_quota_info, get_index, get_oil_price,
     get_game, get_hot_search, get_news_url, get_lsjt,
-    get_daily_english
+    get_daily_english as get_daily_english_legacy,
+    get_quota_info as get_quota_real,
+    get_gold_price_v2, get_cny_price_v2
 )
+from .english import get_daily_english
 import chinese_calendar
 import yfinance as yf
 from core.trading_calendar import (
@@ -92,13 +95,20 @@ class MorningSource(BaseSource):
             'vix': finance_data.get('vix'),
             'treasury_10y': finance_data.get('treasury_10y')
         }
-        # 兼容旧版模板可能的汇率引用
-        context['usd_cnh'] = finance_data.get('usd_cnh')
-        context['oil'] = finance_data.get('oil_cn')
+        # 8. 金融 & 汇率 (恢复旧版可靠 API)
+        legacy_gold = self._safe_call(get_gold_price_v2, {})
+        legacy_cny = self._safe_call(get_cny_price_v2, {})
         
-        # 9. 流量
-        if self.topic in ['me', 'baobao']:
-            context['quota'] = self._safe_call(get_quota_info)
+        # 映射至模板期望的字段
+        if legacy_gold:
+            context['finance'] = {
+                'gold_cn': {'name': '国内金价', 'value': legacy_gold.get('国内', {}).get('国内金价')},
+                'gold_intl': {'name': '国际金价', 'value': legacy_gold.get('国际', {}).get('国际金价')},
+                'usd_cnh': {'name': '离岸人民币', 'value': legacy_cny.get('CNH', {}).get('rate')}
+            }
+        
+        # 9. 流量 (JustMySocks 真实接口)
+        context['quota'] = self._safe_call(get_quota_real)
         
         # 10. 本周财经日历
         context['calendar'] = self._get_economic_calendar()
@@ -384,6 +394,29 @@ class MorningSource(BaseSource):
                     except: pass
         except Exception as e:
             self.logger.warning(f"YFinance batch error: {e}")
+
+        # 3. Sina Fallback for critical missing data (Gold, USDCNH)
+        if 'gold_intl' not in result:
+             try:
+                 # COMEX Gold via Sina
+                 res_sina = requests.get("http://hq.sinajs.cn/list=hf_GC", timeout=5)
+                 # Format: var hq_str_hf_GC="Price,ChangePct,..."
+                 match = re.search(r'="([^"]+)"', res_sina.text)
+                 if match:
+                     p = match.group(1).split(',')
+                     result['gold_intl'] = {"name": "COMEX黄金", "value": round(float(p[0]), 2), "unit": "美元", "change": round(float(p[1]), 2)}
+             except: pass
+        
+        if 'usd_cnh' not in result:
+            try:
+                # USDCNH via Sina
+                res_sina = requests.get("http://hq.sinajs.cn/list=fx_susdcnh", timeout=5)
+                match = re.search(r'="([^"]+)"', res_sina.text)
+                if match:
+                    p = match.group(1).split(',')
+                    # Price is index 1 or 8?
+                    result['usd_cnh'] = {"name": "离岸人民币", "value": round(float(p[1]), 4), "unit": "USD/CNH"}
+            except: pass
 
         return result
 

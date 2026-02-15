@@ -2,43 +2,53 @@
 /* UI Refinements Rev. 4 (Compact) */
 :root{--bg:#fff;--text:#222;--hl:#d61c4e;--date:#555}
 body{margin:0;font-family:-apple-system,sans-serif;color:var(--text);font-size:13px;line-height:1.4;padding:0;background:#f9f9f9}
-.meta{font-size:14px;color:var(--date);margin:0;border-bottom:1px solid #e5e5e5;padding:10px 10px;background:#fff;margin-bottom:8px}
-.stat{font-weight:500}
+.meta{padding:12px 14px;background:#fff;border-bottom:1px solid #e5e5e5;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.meta-l{flex:1}
+.meta-r{text-align:right;font-family:monospace;font-size:12px;color:#999}
+.date-str{font-size:18px;font-weight:800;color:#000;display:block}
+.stat{font-size:13px;color:#666;margin-top:2px}
+.stat b{color:var(--hl);margin:0 2px}
 .j-grp{margin-bottom:10px;background:#fff;border-top:1px solid #eee;border-bottom:1px solid #eee}
-.j-h{font-size:14px;font-weight:700;margin:0;color:#000;background:#f4f4f5;padding:6px 10px;border-bottom:1px solid #eee}
+.j-h{font-size:14px;font-weight:700;margin:0;color:#000;background:#f4f4f5;padding:6px 12px;border-bottom:1px solid #eee}
 .j-h span{font-weight:400;font-size:12px;color:#666;margin-left:6px}
 .res-h{background:#f3e8ff;color:#4c1d95}
 .art-ul{list-style:none;padding:0;margin:0}
-.art-li{margin:0;position:relative;padding:4px 10px;border-bottom:1px solid #fcfcfc;display:flex;align-items:baseline}
+.art-li{margin:0;position:relative;padding:3px 12px;border-bottom:1px solid #f8f8f8;display:flex;align-items:baseline}
 .art-li:last-child{border-bottom:none}
-.art-li.hl{border-left:4px solid var(--hl);padding-left:6px;background:#fff1f2}
-.idx{color:#999;font-size:12px;min-width:20px;margin-right:4px;font-family:monospace;text-align:right;flex-shrink:0}
+.art-li.hl{border-left:4px solid var(--hl);padding-left:8px;background:#fff1f2}
+.idx{color:#aaa;font-size:11px;min-width:18px;margin-right:4px;font-family:monospace;text-align:right;flex-shrink:0}
 .cnt{flex:1;overflow:hidden}
-.art-link{text-decoration:none;color:#1d4ed8 !important;font-weight:500;font-size:14px}
+.art-link{text-decoration:none;color:#1d4ed8 !important;font-weight:500;font-size:13px;line-height:1.3}
 .art-link:visited{color:#1d4ed8 !important}
-.kw{display:inline-block;font-size:11px;color:var(--hl);background:rgba(214,28,78,0.08);padding:0 4px;border-radius:2px;margin-left:4px;margin-bottom:2px;line-height:1.4;vertical-align:middle}
-.ai{font-size:12px;color:#555;background:#f8fafc;border-left:2px solid #3b82f6;padding:4px 8px;margin:2px 0 0 0;clear:both}
-.ft{font-size:10px;text-align:center;color:#ccc;margin-top:20px;padding-bottom:20px}
+.kw{display:inline-block;font-size:10px;color:var(--hl);background:rgba(214,28,78,0.08);padding:0 3px;border-radius:2px;margin-left:4px;line-height:1.3;vertical-align:middle;border:0.5px solid rgba(214,28,78,0.15)}
+.ai{font-size:11px;color:#555;background:#f8fafc;border-left:2px solid #3b82f6;padding:3px 8px;margin:2px 0 0 0}
+.ft{font-size:10px;text-align:center;color:#ccc;margin-top:15px;padding-bottom:15px}
+.cont-tag{background:#fff;border:1px solid #eee;color:#999;font-size:11px;padding:2px 8px;border-radius:10px;margin-bottom:6px;display:inline-block}
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #111; --text: #e5e5e5; }
-  body { background: #000; color: var(--text); }
-  .meta { background: #1a1a1a; border-color: #333; color: #aaa; }
-  .j-grp { background: #1a1a1a; border-color: #333; }
-  .j-h { background: #262626; color: #fff; border-color: #333; }
-  .j-h span { color: #888; }
-  .res-h { background: #3b0764; color: #e9d5ff; }
-  .art-li { border-color: #222; }
-  .art-li.hl { background: #2c1015; border-left-color: #be123c; }
+  :root { --bg: #000; --text: #d1d5db; }
+  body { background: #000; }
+  .meta { background: #111; border-color: #222; }
+  .date-str { color: #fff; }
+  .j-grp { background: #111; border-color: #222; }
+  .j-h { background: #1a1a1a; color: #fff; border-color: #222; }
+  .res-h { background: #2e1065; color: #ddd6fe; }
+  .art-li { border-color: #1a1a1a; }
+  .art-li.hl { background: #1c0a0d; }
   .art-link { color: #60a5fa !important; }
-  .art-link:visited { color: #a78bfa !important; }
-  .idx { color: #666; }
-  .kw { background: rgba(214,28,78,0.2); }
-  .ai { background: #1e293b; color: #ccc; border-color: #3b82f6; }
+  .kw { background: rgba(214,28,78,0.2); border-color: rgba(214,28,78,0.3); }
+  .ai { background: #0f172a; color: #94a3b8; }
+  .cont-tag { background: #111; border-color: #222; }
 }
 </style></head><body>
 <div class="meta">
-{% if not is_first_page %}<div style="color:#999;font-size:12px;margin-bottom:4px">... 续接上页 ({{ page_idx }}/{{ total_pages }})</div>{% endif %}
-<div class="stat">{{ today }} · <b>{{ total_journals }}</b> 刊 · <b>{{ total_articles_sum }}</b> 文</div>
+<div class="meta-l">
+    <span class="date-str">{{ today }}</span>
+    <div class="stat"><b>{{ total_journals }}</b> 刊 / <b>{{ total_articles_sum }}</b> 文</div>
+</div>
+<div class="meta-r">
+    {% if not is_first_page %}<div class="cont-tag">续接上页 ({{ page_idx }}/{{ total_pages }})</div>{% endif %}
+    <div>{{ update_time.split(' ')[1][:5] }} 更新</div>
+</div>
 </div>
 {% if not paper %}<div style="text-align:center;padding:40px;color:#999">📭 无更新</div>{% else %}
 {% for f in paper %}

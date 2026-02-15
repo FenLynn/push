@@ -187,13 +187,6 @@
             <div class="date-sub">{{ date_info.zhdate }} · 第{{ date_info.week_no }}周 · 年度第{{ date_info.day_no }}天</div>
         </div>
 
-        {% if health_status %}
-        <div class="card health-card {{ 'health-warn' if '❌' in health_status or '⚠️' in health_status else 'health-ok' }}">
-            <div style="font-weight: 700; font-size: 15px; margin-bottom: 2px;">🛡️ 系统健康哨兵</div>
-            <div style="font-size: 13px; white-space: pre-wrap;">{{ health_status }}</div>
-        </div>
-        {% endif %}
-
         {% if holidays %}
         <div class="card">
             <div class="card-header">🗓️ 假期时间轴</div>
@@ -433,6 +426,13 @@
                 {% if english[0] %}<div class="english-box">{{ english[0] }}</div>{% endif %}
                 {% if english[1] %}<div class="english-box">{{ english[1] }}</div>{% endif %}
             </div>
+        </div>
+        {% endif %}
+
+        {% if health_status %}
+        <div class="card health-card {{ 'health-warn' if '❌' in health_status or '⚠️' in health_status else 'health-ok' }}">
+            <div style="font-weight: 700; font-size: 15px; margin-bottom: 2px;">🛡️ 系统健康哨兵</div>
+            <div style="font-size: 13px; white-space: pre-wrap;">{{ health_status }}</div>
         </div>
         {% endif %}
 
