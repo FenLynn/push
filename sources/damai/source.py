@@ -9,6 +9,7 @@ from core import SourceInterface, Message, ContentType
 from core.template import TemplateEngine
 from core.config import config
 from sources.base import BaseSource
+from core.d1_client import D1Client
 
 class DamaiSource(BaseSource):
     """
@@ -40,6 +41,16 @@ class DamaiSource(BaseSource):
         self.logger = logging.getLogger('Push.Source.Damai')
         self.template_engine = TemplateEngine()
         self.root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.d1 = D1Client()
+        if self.d1.enabled:
+            # Ensure KV table exists
+            self.d1.ensure_table('sys_kv', """
+                CREATE TABLE sys_kv (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
     def _get_balanced(self, s, start_idx, open_char='(', close_char=')'):
         depth = 0
@@ -85,6 +96,17 @@ class DamaiSource(BaseSource):
         return current
 
     def _load_seen_ids(self):
+        # 1. Try D1 first (Cloud persistence)
+        if self.d1.enabled:
+            try:
+                res = self.d1.query("SELECT value FROM sys_kv WHERE key = 'damai_seen_ids'", [])
+                if res['success'] and res['data'] and res['data'][0]['results']:
+                    val_str = res['data'][0]['results'][0]['value']
+                    return json.loads(val_str)
+            except Exception as e:
+                self.logger.warning(f"Failed to load seen_ids from D1: {e}")
+
+        # 2. Fallback to local file
         path = os.path.join(self.root_dir, 'data', 'damai_seen_ids.json')
         if os.path.exists(path):
             try:
@@ -94,6 +116,16 @@ class DamaiSource(BaseSource):
         return {}
 
     def _save_seen_ids(self, seen_dict):
+        # 1. Save to D1 (Cloud persistence)
+        if self.d1.enabled:
+            try:
+                val_str = json.dumps(seen_dict, ensure_ascii=False)
+                sql = "INSERT OR REPLACE INTO sys_kv (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+                self.d1.query(sql, ['damai_seen_ids', val_str])
+            except Exception as e:
+                self.logger.warning(f"Failed to save seen_ids to D1: {e}")
+
+        # 2. Save to local file (Backup / Local dev)
         path = os.path.join(self.root_dir, 'data', 'damai_seen_ids.json')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         try:
