@@ -8,7 +8,81 @@ from datetime import datetime
 logger = logging.getLogger('Push.Morning.Utils')
 
 def get_quota_info():
-    """Stub: Quota Info"""
+    """获取 VPN 流量信息 (JustMySocks 真实接口)"""
+    try:
+        # 真实的 JustMySocks 接口
+        api_url = 'https://justmysocks3.net/members/getbwcounter.php?service=1004623&id=485b1fe9-fb27-4938-8671-9bdeed1973cc'
+        r = requests.get(api_url, timeout=10)
+        import json
+        itxt = json.loads(r.text)
+        
+        data = {}
+        data['limit'] = round(itxt['monthly_bw_limit_b'] / 1e9, 2)
+        data['used'] = round(itxt['bw_counter_b'] / 1e9, 2)
+        data['reset_day'] = itxt['bw_reset_day_of_month']
+        data['percentage'] = f"{round(data['used'] / data['limit'] * 100, 2)}%"
+        
+        # 计算剩余天数 (每月 3 号重置)
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        due1 = datetime(today.year, today.month, 3)
+        if today.month <= 11:
+            due2 = datetime(today.year, today.month + 1, 3)
+        else:
+            due2 = datetime(today.year + 1, 1, 3)
+            
+        if today < due1:
+            target_due = due1
+        else:
+            target_due = due2
+            
+        remaining_days = (target_due - today).days + 1
+        return {
+            'used': data['used'],
+            'limit': data['limit'],
+            'percentage': data['percentage'],
+            'next_round': target_due.strftime('%Y-%m-%d'),
+            'days': remaining_days
+        }
+    except Exception as e:
+        logger.warning(f"Quota fetch error: {e}")
+        return None
+
+def get_gold_price_v2():
+    """获取金价信息 (Lolimi API)"""
+    try:
+        url = 'https://api.lolimi.cn/API/huangj/api.php'
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=10)
+        data = r.json()
+        if data.get('code') == 200:
+            price = {'金店': {}, '国际': {}, '国内': {}}
+            for i in data.get('国内十大金店', []):
+                if i['品牌'] in ['内地周大福','内地周生生','内地六福珠宝','老凤祥','中国黄金']:
+                    price['金店'][i['品牌'].replace('内地','')] = i['黄金价格']
+            for i in data.get('国际黄金', []):
+                if i['品种'] in ['国际金价','国际银价']:
+                    price['国际'][i['品种']] = i['最新价']
+            for i in data.get('国内黄金', []):
+                if i['品种'] in ['国内金价','投资金条','黄金回收价格']:
+                    price['国内'][i['品种']] = i['最新价']
+            return price
+    except: pass
+    return None
+
+def get_cny_price_v2():
+    """获取汇率信息 (XxAPI)"""
+    try:
+        url = 'https://v2.xxapi.cn/api/allrates'
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        if data.get('code') == 200:
+            rates = data['data']['rates']
+            return {
+                'CNY': {'name': '人民币', 'rate': rates['CNY']},
+                'CNH': {'name': '离岸人民币', 'rate': rates['CNH']}
+            }
+    except: pass
     return None
 
 def get_game():
