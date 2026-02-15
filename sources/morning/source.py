@@ -100,7 +100,7 @@ class MorningSource(BaseSource):
         legacy_cny = self._safe_call(get_cny_price_v2, {})
         
         # 映射至模板期望的字段
-        if legacy_gold:
+        if legacy_gold and legacy_cny:
             context['finance'] = {
                 'gold_cn': {'name': '国内金价', 'value': legacy_gold.get('国内', {}).get('国内金价')},
                 'gold_intl': {'name': '国际金价', 'value': legacy_gold.get('国际', {}).get('国际金价')},
