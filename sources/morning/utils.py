@@ -68,7 +68,7 @@ def get_gold_price_v2():
                     price['国内'][i['品种']] = i['最新价']
             return price
     except: pass
-    return None
+    return {}
 
 def get_cny_price_v2():
     """获取汇率信息 (XxAPI)"""
@@ -83,7 +83,7 @@ def get_cny_price_v2():
                 'CNH': {'name': '离岸人民币', 'rate': rates['CNH']}
             }
     except: pass
-    return None
+    return {}
 
 def get_game():
     """Stub: Game Info"""
