@@ -176,7 +176,31 @@ class PaperSource(BaseSource):
         if current_papers:
             all_pages.append(current_papers)
             
-        base_title = f'光学文献{time.strftime("%m-%d", time.localtime())}'
+        # 1.3 Add ArXiv and S2 sections if available
+        arxiv_data = today_info.get('arxiv', [])
+        if arxiv_data:
+            # We treat arxiv as a special journal to reuse the layout
+            all_pages.append([{
+                'journal': 'ArXiv Preprints (领域追踪)',
+                'data': arxiv_data,
+                'articles_nu': len(arxiv_data)
+            }])
+            
+        s2_data = today_info.get('s2', [])
+        if s2_data:
+            all_pages.append([{
+                'journal': 'Scholar Updates (学者动态)',
+                'data': s2_data,
+                'articles_nu': len(s2_data)
+            }])
+
+        # Update total counts for metadata and UI header
+        virtual_journals = (1 if arxiv_data else 0) + (1 if s2_data else 0)
+        virtual_articles = len(arxiv_data) + len(s2_data)
+        today_info['journals'] += virtual_journals
+        today_info['articles_sum'] += virtual_articles
+
+        base_title = f'学术文献{time.strftime("%m-%d", time.localtime())}'
 
         # 如果无任何更新，推送一条提醒消息
         if not all_pages:
@@ -223,11 +247,15 @@ class PaperSource(BaseSource):
                     f_item['page_label'] = ""
                 
                 # 设置全天总文章数
-                f_item['total_nu'] = next(p['articles_nu'] for p in today_info['paper'] if p['journal'] == j_name)
-                
-                # 设置中文序号 (基于原始期刊列表的顺序)
-                original_idx = next(i for i, p in enumerate(today_info['paper']) if p['journal'] == j_name) + 1
-                f_item['chinese_idx'] = self.to_chinese_num(original_idx)
+                if j_name in ['ArXiv Preprints (领域追踪)', 'Scholar Updates (学者动态)']:
+                    f_item['total_nu'] = f_item['articles_nu']
+                    # 为特殊模块设置专属中文序号或放在最后
+                    f_item['chinese_idx'] = "补" if "ArXiv" in j_name else "专"
+                else:
+                    f_item['total_nu'] = next(p['articles_nu'] for p in today_info['paper'] if p['journal'] == j_name)
+                    # 设置中文序号 (基于原始期刊列表的顺序)
+                    original_idx = next(i for i, p in enumerate(today_info['paper']) if p['journal'] == j_name) + 1
+                    f_item['chinese_idx'] = self.to_chinese_num(original_idx)
 
                 for article in f_item['data']:
                     article['global_idx'] = global_idx
@@ -428,12 +456,126 @@ class PaperSource(BaseSource):
     
     def _get_data(self) -> dict:
         """获取论文数据 (Dispatcher)"""
-        mode = os.getenv('PAPER_SOURCE_MODE', 'rss').lower()
-        if mode == 'd1':
-            print("[Paper] Fetching data from Cloudflare D1...")
-            return self._get_data_from_d1()
+        # Always fetch ArXiv and S2 as they are dynamic
+        arxiv_list = self._get_data_from_arxiv()
+        s2_list = self._get_data_from_s2()
+
+        if config.get('paper', 'source', fallback='rss') == 'd1':
+            res = self._get_data_from_d1()
         else:
-            return self._get_data_from_rss()
+            res = self._get_data_from_rss()
+            
+        res['arxiv'] = arxiv_list
+        res['s2'] = s2_list
+        return res
+
+    def _get_data_from_arxiv(self) -> list:
+        """从 ArXiv API 获取数据"""
+        queries = config.get_section('paper.queries')
+        if not queries:
+            return []
+            
+        all_arxiv = []
+        now = datetime.now()
+        # ArXiv API normally updates once a day, 24h is safe
+        yesterday = (now - timedelta(hours=24)).strftime("%Y%m%d%H%M%S")
+        
+        for name, query in queries.items():
+            self.logger.info(f"[Paper] Searching ArXiv for {name}: {query}")
+            try:
+                # url = f"http://export.arxiv.org/api/query?search_query={requests.utils.quote(query)}&sortBy=submittedDate&sortOrder=descending&max_results=5"
+                # Safer with requests param
+                params = {
+                    'search_query': query,
+                    'sortBy': 'submittedDate',
+                    'sortOrder': 'descending',
+                    'max_results': 5
+                }
+                r = requests.get("http://export.arxiv.org/api/query", params=params, timeout=15)
+                feed = feedparser.parse(r.text)
+                
+                for entry in feed.entries:
+                    # ArXiv date format: 2024-02-15T00:00:00Z
+                    pub_date = entry.published
+                    paper = {
+                        'title': entry.title.replace('\n', ' ').strip(),
+                        'link': entry.link,
+                        'author': ", ".join([a.name for a in entry.authors]),
+                        'content': entry.summary.replace('\n', ' ').strip(),
+                        'journal': f"ArXiv ({name})",
+                        'date': pub_date
+                    }
+                    
+                    # Deduplication & Date Filter (Simpler for ArXiv API as we trust its sort)
+                    # Use D1 to really deduplicate in cloud
+                    if self._is_new_paper(paper):
+                         all_arxiv.append(paper)
+                         
+            except Exception as e:
+                self.logger.error(f"ArXiv search error ({name}): {e}")
+                
+        return all_arxiv
+
+    def _get_data_from_s2(self) -> list:
+        """从 Semantic Scholar 获取学者动态"""
+        authors = config.get_section('paper.authors')
+        if not authors:
+            return []
+            
+        all_s2 = []
+        for name, author_id in authors.items():
+            self.logger.info(f"[Paper] Tracking Scholar {name} (ID: {author_id})")
+            try:
+                # API: /graph/v1/author/{author_id}/papers
+                url = f"https://api.semanticscholar.org/graph/v1/author/{author_id}/papers"
+                params = {'fields': 'title,url,year,publicationDate,authors,abstract', 'limit': 3}
+                r = requests.get(url, params=params, timeout=15)
+                data = r.json()
+                
+                if 'data' in data:
+                    for p in data['data']:
+                        # Filtering by date: Only if publicationDate is recent (within last 30 days for scholarship)
+                        # Or if we haven't seen it
+                        pub_date = p.get('publicationDate') or f"{p.get('year')}-01-01"
+                        
+                        art = {
+                            'title': p['title'],
+                            'link': p['url'],
+                            'author': ", ".join([a['name'] for a in p.get('authors', [])]),
+                            'content': p.get('abstract') or "(无摘要)",
+                            'journal': f"Scholar: {name}",
+                            'date': pub_date
+                        }
+                        
+                        if self._is_new_paper(art):
+                            all_s2.append(art)
+            except Exception as e:
+                 self.logger.error(f"S2 search error ({name}): {e}")
+        return all_s2
+
+    def _is_new_paper(self, paper: dict) -> bool:
+        """通过 D1 检查是否是新论文"""
+        # Unique ID for paper: link or title
+        pid = paper.get('link') or paper.get('title')
+        if not pid: return True
+        
+        # Check cloud cache (D1 Client)
+        from core.d1_client import D1Client
+        d1 = D1Client()
+        if d1.enabled:
+            # Table paper_seen_ids: key, updated_at
+            d1.ensure_table('sys_kv', "") # Already ensured by other modules usually
+            res = d1.query("SELECT value FROM sys_kv WHERE key = ?", [f"paper_seen_{pid}"])
+            if res['success'] and res['data'] and res['data'][0]['results']:
+                return False # Seen
+            
+            # Not seen, save it
+            d1.query("INSERT OR REPLACE INTO sys_kv (key, value, updated_at) VALUES (?, ?, datetime('now'))", 
+                     [f"paper_seen_{pid}", "1"])
+            return True
+        
+        # Local fallback if D1 disabled
+        return True
 
     def _get_data_from_d1(self) -> dict:
         """从 D1 数据库获取数据"""
