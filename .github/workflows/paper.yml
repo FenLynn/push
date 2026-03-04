@@ -5,6 +5,15 @@ on:
     # 12:00 UTC = 20:00 CST
     - cron: '0 12 * * *'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '推送模式 (production=发paper群, test=只发自己)'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - test
 
 jobs:
   run:
@@ -47,4 +56,13 @@ jobs:
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_R2_BUCKET_NAME: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
           CLOUDFLARE_R2_DOMAIN: ${{ secrets.CLOUDFLARE_R2_DOMAIN }}
-        run: python main.py run paper --topic paper
+        # 定时运行(无 inputs) 或 production 模式 → paper 群组
+        # 手动选 test 模式 → 只发给自己 (--topic me)
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "test" ]; then
+            echo "🧪 Test 模式：仅发送给自己 (--topic me)"
+            python main.py run paper --topic me
+          else
+            echo "📢 Production 模式：发送到 paper 群组 (--topic paper)"
+            python main.py run paper --topic paper
+          fi

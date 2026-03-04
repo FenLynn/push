@@ -53,7 +53,8 @@ class D1Client:
         }
 
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=10)
+            resp = requests.post(url, headers=headers, json=payload, timeout=10,
+                                 proxies={"http": None, "https": None})  # D1 直连，绕过本地代理
             data = resp.json()
             
             if resp.status_code == 200 and data.get('success'):

@@ -36,8 +36,13 @@ class PaperSource(BaseSource):
     ENG_KEYWORDS = []
     
     # 期刊配置
-    GENERAL_JOURNALS = ["Scientific Reports", "物理学报", "Micromachines",
-                        "Nature Communications", "IEEE Journal of Quantum Electronics"]
+    # 通用宽泛期刊列表：这些期刊覆盖面广，只推送命中关键词的文章
+    # 光学专业期刊（OE/OL 等）不在此列，全量推送
+    GENERAL_JOURNALS = [
+        "Nature", "Nature Communications", "Scientific Reports",
+        "Physical Review Letters", "物理学报", "Micromachines",
+        "IEEE Journal of Quantum Electronics",
+    ]
     
     MDPI_JOURNALS = ['Micromachines', 'Photonics']
     
@@ -47,10 +52,11 @@ class PaperSource(BaseSource):
                     'Journal of the Optical Society of America B',
                     'Applied Optics', 'Advances in Optics and Photonics']
     
-    MAX_ARTICLES_PER_JOURNAL = 15
-    MAX_PAGE_SIZE = 18000 # Safe limit for PushPlus (max 20k)
+    # 单个期刊默认最大展示文章数（可通过环境变量覆盖）
+    MAX_ARTICLES_PER_JOURNAL = int(os.getenv('PAPER_MAX_ARTICLES_PER_JOURNAL', 15))
+    MAX_PAGE_SIZE = 18000  # Safe limit for PushPlus (max 20k)
     TTRSS_CAT_ID = None
-    PAST_HOURS = int(os.getenv('PAPER_PAST_HOURS', 25))
+    PAST_HOURS = int(os.getenv('PAPER_PAST_HOURS', 48))
     
     TEST_MODE = False
     TEST_JOURNALS = ['Optics Express', 'Optics Letters', 'Applied Optics', 'Photonics Research']
@@ -93,6 +99,9 @@ class PaperSource(BaseSource):
             print(f"[Paper] LLM Provider Initialized: {llm_conf.get('provider')}")
         else:
             print("[Paper] LLM Provider NOT initialized")
+            
+        # Normalize GENERAL_JOURNALS for case-insensitive check
+        self._general_journals_lower = [j.lower() for j in self.GENERAL_JOURNALS]
 
     def _load_keywords(self):
         """从配置文件加载关键词"""
@@ -136,6 +145,14 @@ class PaperSource(BaseSource):
         current_papers = []
         current_page_size = 500
         
+        # Helper to settle current page
+        def settle_page():
+            nonlocal current_papers, current_page_size
+            if current_papers:
+                all_pages.append(current_papers)
+                current_papers = []
+                current_page_size = 500
+
         for feed in today_info['paper']:
             articles = feed['data']
             if not articles: continue
@@ -156,10 +173,7 @@ class PaperSource(BaseSource):
                         journal_articles_to_page = []
                     
                     # 结算当前页
-                    if current_papers:
-                        all_pages.append(current_papers)
-                        current_papers = []
-                        current_page_size = 500
+                    settle_page()
                 
                 journal_articles_to_page.append(art)
                 current_page_size += est_size
@@ -172,27 +186,44 @@ class PaperSource(BaseSource):
                     'articles_nu': len(journal_articles_to_page)
                 })
 
-        # 全天处理完，手动结算最后一页
-        if current_papers:
-            all_pages.append(current_papers)
-            
         # 1.3 Add ArXiv and S2 sections if available
+        # Attempts to merge into last page if space allows
+        
+        extra_feeds = []
         arxiv_data = today_info.get('arxiv', [])
         if arxiv_data:
-            # We treat arxiv as a special journal to reuse the layout
-            all_pages.append([{
+            extra_feeds.append({
                 'journal': 'ArXiv Preprints (领域追踪)',
                 'data': arxiv_data,
                 'articles_nu': len(arxiv_data)
-            }])
+            })
             
         s2_data = today_info.get('s2', [])
         if s2_data:
-            all_pages.append([{
+            extra_feeds.append({
                 'journal': 'Scholar Updates (学者动态)',
                 'data': s2_data,
                 'articles_nu': len(s2_data)
-            }])
+            })
+            
+        for feed in extra_feeds:
+            # Estimate size
+            feed_size = 0
+            for art in feed['data']:
+                feed_size += self._estimate_article_size(art)
+            
+            # Check if fits in current page
+            if current_page_size + feed_size <= self.MAX_PAGE_SIZE:
+                current_papers.append(feed)
+                current_page_size += feed_size
+            else:
+                # Settle current page and start new
+                settle_page()
+                current_papers.append(feed)
+                current_page_size = 500 + feed_size # Reset + feed
+
+        # 全天处理完，手动结算最后一页
+        settle_page()
 
         # Update total counts for metadata and UI header
         virtual_journals = (1 if arxiv_data else 0) + (1 if s2_data else 0)
@@ -207,7 +238,7 @@ class PaperSource(BaseSource):
             html_content = f"""
             <div style="padding: 30px; text-align: center; background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; margin: 20px;">
                 <p style="font-size: 18px; color: #374151; font-weight: bold; margin-bottom: 10px;">今日无最新论文更新</p>
-                <p style="font-size: 14px; color: #6b7280;">由于所监测的 RSS 源在过去 24 小时内未发布新文章，或未命中您的关键词，因此今日无摘要生成。</p>
+                <p style="font-size: 14px; color: #6b7280;">由于所监测的 RSS 源在过去 {self.PAST_HOURS} 小时内未发布新文章，或未命中您的关键词，因此今日无摘要生成。</p>
             </div>
             """
             return [Message(
@@ -343,7 +374,7 @@ class PaperSource(BaseSource):
                 # 简单请求
                 resp = requests.get(url, timeout=timeout, headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                })
+                }, proxies={"http": None, "https": None})  # 直连，不走本地代理
                 
                 if resp.status_code == 200:
                     try:
@@ -406,17 +437,24 @@ class PaperSource(BaseSource):
         """检查论文是否包含关键词"""
         total_keywords = self.CHN_KEYWORDS + self.ENG_KEYWORDS
         
+        # 如果未配置任何关键词，则默认认为“不过滤”，全部通过
+        if not total_keywords:
+            return True, []
+        
         def find_keywords(text, keywords):
-            keyword_pattern = re.compile("|".join(keywords), re.IGNORECASE)
-            matches = keyword_pattern.findall(text)
-            return matches
+            # 使用 re.escape 避免关键词中包含正则特殊字符导致误匹配
+            pattern = "|".join(re.escape(k) for k in keywords if k)
+            if not pattern:
+                return []
+            keyword_pattern = re.compile(pattern, re.IGNORECASE)
+            return keyword_pattern.findall(text or "")
         
-        found_title = find_keywords(paper['title'], total_keywords)
-        found_abstract = find_keywords(paper['content'], total_keywords)
+        found_title = find_keywords(paper.get('title', ''), total_keywords)
+        found_abstract = find_keywords(paper.get('content', ''), total_keywords)
         
-        found_unique = list(set([i.lower() for i in (found_title + found_abstract)]))
+        found_unique = list({i.lower() for i in (found_title + found_abstract)})
         
-        has_keyword = len(found_title) > 0 or len(found_abstract) > 0
+        has_keyword = bool(found_title or found_abstract)
         return has_keyword, found_unique
     
     def _filter_date(self, paper, journal_title) -> bool:
@@ -460,7 +498,9 @@ class PaperSource(BaseSource):
         arxiv_list = self._get_data_from_arxiv()
         s2_list = self._get_data_from_s2()
 
-        if config.get('paper', 'source', fallback='rss') == 'd1':
+        # 支持环境变量 PAPER_SOURCE_MODE 或 INI 配置 [paper] source = d1
+        _source_mode = os.getenv('PAPER_SOURCE_MODE') or config.get('paper', 'source', fallback='rss')
+        if _source_mode == 'd1':
             res = self._get_data_from_d1()
         else:
             res = self._get_data_from_rss()
@@ -477,8 +517,6 @@ class PaperSource(BaseSource):
             
         all_arxiv = []
         now = datetime.now()
-        # ArXiv API normally updates once a day, 24h is safe
-        yesterday = (now - timedelta(hours=24)).strftime("%Y%m%d%H%M%S")
         
         for name, query in queries.items():
             self.logger.info(f"[Paper] Searching ArXiv for {name}: {query}")
@@ -489,9 +527,10 @@ class PaperSource(BaseSource):
                     'search_query': query,
                     'sortBy': 'submittedDate',
                     'sortOrder': 'descending',
-                    'max_results': 5
+                    'max_results': 20
                 }
-                r = requests.get("http://export.arxiv.org/api/query", params=params, timeout=15)
+                r = requests.get("http://export.arxiv.org/api/query", params=params, timeout=15,
+                                 proxies={"http": None, "https": None})  # 直连，不走本地代理
                 feed = feedparser.parse(r.text)
                 
                 for entry in feed.entries:
@@ -503,13 +542,20 @@ class PaperSource(BaseSource):
                         'author': ", ".join([a.name for a in entry.authors]),
                         'content': entry.summary.replace('\n', ' ').strip(),
                         'journal': f"ArXiv ({name})",
-                        'date': pub_date
+                        'date': pub_date,
                     }
                     
-                    # Deduplication & Date Filter (Simpler for ArXiv API as we trust its sort)
-                    # Use D1 to really deduplicate in cloud
-                    if self._is_new_paper(paper):
-                         all_arxiv.append(paper)
+                    # 时间窗口过滤：仅保留最近 PAST_HOURS 内的论文
+                    try:
+                        dt = datetime.strptime(pub_date, "%Y-%m-%dT%H:%M:%SZ")
+                        if now - dt > timedelta(hours=self.PAST_HOURS):
+                            continue
+                    except Exception:
+                        # 日期解析失败时不过度严格过滤，交由后续去重/人工判断
+                        pass
+                    
+                    # 时间窗口内的文章直接收录（每天只运行一次，不需要逐条 D1 去重）
+                    all_arxiv.append(paper)
                          
             except Exception as e:
                 self.logger.error(f"ArXiv search error ({name}): {e}")
@@ -529,7 +575,8 @@ class PaperSource(BaseSource):
                 # API: /graph/v1/author/{author_id}/papers
                 url = f"https://api.semanticscholar.org/graph/v1/author/{author_id}/papers"
                 params = {'fields': 'title,url,year,publicationDate,authors,abstract', 'limit': 3}
-                r = requests.get(url, params=params, timeout=15)
+                r = requests.get(url, params=params, timeout=15,
+                                 proxies={"http": None, "https": None})  # 直连，不走本地代理
                 data = r.json()
                 
                 if 'data' in data:
@@ -547,8 +594,8 @@ class PaperSource(BaseSource):
                             'date': pub_date
                         }
                         
-                        if self._is_new_paper(art):
-                            all_s2.append(art)
+                        # 直接收录（无需逐条 D1 去重）
+                        all_s2.append(art)
             except Exception as e:
                  self.logger.error(f"S2 search error ({name}): {e}")
         return all_s2
@@ -562,9 +609,12 @@ class PaperSource(BaseSource):
         # Check cloud cache (D1 Client)
         from core.d1_client import D1Client
         d1 = D1Client()
-        if d1.enabled:
-            # Table paper_seen_ids: key, updated_at
-            d1.ensure_table('sys_kv', "") # Already ensured by other modules usually
+        if not d1.enabled:
+            return True # Fail open if DB not enabled
+            
+        # Table paper_seen_ids: key, updated_at
+        try:
+            d1.ensure_table('sys_kv', "") 
             res = d1.query("SELECT value FROM sys_kv WHERE key = ?", [f"paper_seen_{pid}"])
             if res['success'] and res['data'] and res['data'][0]['results']:
                 return False # Seen
@@ -572,6 +622,9 @@ class PaperSource(BaseSource):
             # Not seen, save it
             d1.query("INSERT OR REPLACE INTO sys_kv (key, value, updated_at) VALUES (?, ?, datetime('now'))", 
                      [f"paper_seen_{pid}", "1"])
+            return True
+        except Exception as e:
+            print(f"[Paper] Cache check failed: {e}")
             return True
         
         # Local fallback if D1 disabled
@@ -646,7 +699,11 @@ class PaperSource(BaseSource):
             }
             
             art['is_include_keyword'], art['keywords'] = self._include_keywords(art)
-            if j_type == 'journal' and j_name in self.GENERAL_JOURNALS and not art['is_include_keyword']:
+            # 只有 GENERAL_JOURNALS 中的期刊才需要强制关键词命中
+            # D1 模式已通过 SQL created_at 时间窗口过滤，无需再用 published_at 二次过滤
+            j_name_lower = j_name.lower()
+            in_general = any(j_name_lower == g.lower() for g in self.GENERAL_JOURNALS)
+            if j_type == 'journal' and in_general and not art['is_include_keyword']:
                 continue
             
             if self.llm_provider and (art['is_include_keyword'] or self.test_mode):
@@ -716,7 +773,7 @@ class PaperSource(BaseSource):
                     
                     # 3. 期刊筛选逻辑 (通用期刊必须包含关键词)
                     # 研究人员订阅 (researcher) 通常不强制要求关键词
-                    if f_type == 'journal' and journal_title in self.GENERAL_JOURNALS and not art['is_include_keyword']:
+                    if f_type == 'journal' and journal_title.lower() in self._general_journals_lower and not art['is_include_keyword']:
                         continue
                     
                     # 4. LLM 摘要 (如果有)

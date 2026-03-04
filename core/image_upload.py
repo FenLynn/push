@@ -9,6 +9,7 @@ Features:
 """
 import os
 import time
+import datetime
 import requests
 import threading
 import logging
@@ -165,16 +166,23 @@ class ImageUploader:
         token = os.getenv('GITHUB_TOKEN')
         owner = config.get('GITHUB', 'OWNER', fallback='')
         repo = config.get('GITHUB', 'REPO', fallback='')
-        if not (token and owner and repo): return None
+        if not (token and owner and repo):
+            return None
         try:
             with open(image_path, "rb") as f:
                 content = base64.b64encode(f.read()).decode('utf-8')
             filename = f"pic/{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png"
             api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{filename}"
-            resp = requests.put(api_url, json={"message":"upload","content":content}, headers={"Authorization":f"token {token}"}, timeout=20)
+            resp = requests.put(
+                api_url,
+                json={"message": "upload", "content": content},
+                headers={"Authorization": f"token {token}"},
+                timeout=20,
+            )
             if resp.status_code == 201:
                 return f"https://cdn.jsdelivr.net/gh/{owner}/{repo}@main/{filename}"
-        except: pass
+        except Exception as e:
+            logger.warning(f"GitHub upload failed: {e}")
         return None
 
     def apply_cdn(self, url: str) -> str:

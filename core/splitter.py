@@ -1,20 +1,21 @@
 """
-Content Splitter - Handle PushPlus 18k character limit
+Content Splitter - Handle PushPlus character limit
 """
 from typing import List
 import re
 from core import Message, ContentType
+from core.constants import PUSHPLUS_MAX_CONTENT_LENGTH
 
 
 class Splitter:
     """内容分割器 - 处理超长内容"""
     
-    def __init__(self, max_length: int = 18000):
+    def __init__(self, max_length: int = PUSHPLUS_MAX_CONTENT_LENGTH):
         """
         初始化分割器
         
         Args:
-            max_length: 最大长度（字符数）
+            max_length: 最大长度（字符数），默认使用 PushPlus 单条消息安全上限
         """
         self.max_length = max_length
     
