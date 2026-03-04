@@ -5,6 +5,7 @@ Extracted from cloud/net.py
 import os
 import requests
 from core import ChannelInterface, Message, ContentType
+from core.constants import PUSHPLUS_MAX_CONTENT_LENGTH
 
 
 class PushPlusChannel(ChannelInterface):
@@ -35,13 +36,14 @@ class PushPlusChannel(ChannelInterface):
         Returns:
             bool: 是否成功
         """
-        SAFE_LENGTH = 19800  # User confirmed limit. HTML optimization required.
+        safe_length = PUSHPLUS_MAX_CONTENT_LENGTH
         
         # 检查内容长度，如果过长则分割发送
-        if len(str(message.content)) > SAFE_LENGTH:
-            print(f"[PushPlus] Content length {len(str(message.content))} exceeds {SAFE_LENGTH}, splitting...")
+        content_str = str(message.content)
+        if len(content_str) > safe_length:
+            print(f"[PushPlus] Content length {len(content_str)} exceeds {safe_length}, splitting...")
             from core.splitter import Splitter
-            splitter = Splitter(max_length=SAFE_LENGTH)
+            splitter = Splitter(max_length=safe_length)
             messages = splitter.split(message)
             
             import time

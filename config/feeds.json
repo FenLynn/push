@@ -200,6 +200,31 @@
     "type": "journal"
   },
   {
+    "title": "光学学报（网络版）",
+    "url": "https://www.opticsjournal.net/J/RSS/AOS_OL",
+    "type": "journal"
+  },
+  {
+    "title": "强激光与粒子束",
+    "url": "https://www.hplpb.com.cn/rss/current.xml",
+    "type": "journal"
+  },
+  {
+    "title": "激光与光电子学进展",
+    "url": "https://www.opticsjournal.net/J/RSS/lop",
+    "type": "journal"
+  },
+  {
+    "title": "物理学报",
+    "url": "https://wulixb.iphy.ac.cn/rss/current.xml",
+    "type": "journal"
+  },
+  {
+    "title": "红外与激光工程",
+    "url": "http://irla.cn/rss/current.xml",
+    "type": "journal"
+  },
+  {
     "title": "曾令发",
     "url": "https://rsshub.pseudoyu.com/orcid/0000-0001-6787-2987",
     "type": "researcher"

@@ -2,24 +2,20 @@
 Stock Source - 股票行情推送 (Enhanced)
 全面升级版：自选股 + 指数 + 板块动态 + 成交排行 + 热门股 + 创新高
 """
-import sys, os, time
+import os
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import requests
 import akshare as ak
 import logging
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.config import config
-
-# 导入原有的 cloud 库
-sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
+from core.constants import PUSHPLUS_MAX_CONTENT_LENGTH
 from core.legacy import *
 from core.utils.lib import *
-from core.config import config
 
 
 class StockSource(BaseSource):
@@ -109,31 +105,30 @@ class StockSource(BaseSource):
         except Exception as e:
             self.logger.error(f"Error collecting market data: {e}")
             # 继续使用已收集的部分数据
-        # 渲染 HTML
-        # 渲染 HTML (智能裁剪防分页)
-        MAX_LEN = 18500 # PushPlus limit is ~20KB, slightly safer at 18.5KB
+        # 渲染 HTML（智能裁剪以避免超过 PushPlus 单条消息限制）
+        max_len = PUSHPLUS_MAX_CONTENT_LENGTH
         
         html = self.render_template('stock.html', data)
         # Minify (Simple): remove newlines and extra spaces
         html = html.replace('\n', '').replace('  ', '')
-
-        if len(html) > MAX_LEN:
+       
+        if len(html) > max_len:
             self.logger.info("Output too large, trimming New Highs...")
             data['new_highs'] = []
             html = self.render_template('stock.html', data)
             html = html.replace('\n', '').replace('  ', '')
             
-        if len(html) > MAX_LEN:
-             self.logger.info("Output still too large, trimming Turnover Ranking...")
-             data['turnover_ranking'] = []
-             html = self.render_template('stock.html', data)
-             html = html.replace('\n', '').replace('  ', '')
-             
-        if len(html) > MAX_LEN:
-             self.logger.info("Output still too large, trimming Sectors...")
-             data['sectors'] = {} # Trim sectors
-             html = self.render_template('stock.html', data)
-             html = html.replace('\n', '').replace('  ', '')
+        if len(html) > max_len:
+            self.logger.info("Output still too large, trimming Turnover Ranking...")
+            data['turnover_ranking'] = []
+            html = self.render_template('stock.html', data)
+            html = html.replace('\n', '').replace('  ', '')
+            
+        if len(html) > max_len:
+            self.logger.info("Output still too large, trimming Sectors...")
+            data['sectors'] = {}  # Trim sectors
+            html = self.render_template('stock.html', data)
+            html = html.replace('\n', '').replace('  ', '')
 
         title = f'自选股({time.strftime("%m-%d", time.localtime())})'
         
