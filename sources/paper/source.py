@@ -397,11 +397,9 @@ class PaperSource(BaseSource):
                                 dt = datetime(*entry.updated_parsed[:6])
                             
                             if not dt:
-                                # STRICT MODE: If no date is found, do NOT assume it is new.
-                                # Default to a very old date so it gets filtered out.
-                                dt = datetime.min
-                                # We could log this if needed, but for now we just want to suppress noise.
-                                # print(f"[Paper] Warning: No date for '{entry.title[:20]}...', assuming old.")
+                                # 无日期文章：fallback 到最近 12 小时（当做“最近更新”处理）
+                                # 不再使用 datetime.min 导致全部被时间过滤器丢弃
+                                dt = datetime.now() - timedelta(hours=12)
                             
                             content = ""
                             if hasattr(entry, 'description'): content = entry.description
@@ -529,7 +527,7 @@ class PaperSource(BaseSource):
                     'sortOrder': 'descending',
                     'max_results': 20
                 }
-                r = requests.get("http://export.arxiv.org/api/query", params=params, timeout=15,
+                r = requests.get("https://export.arxiv.org/api/query", params=params, timeout=15,
                                  proxies={"http": None, "https": None})  # 直连，不走本地代理
                 feed = feedparser.parse(r.text)
                 

@@ -82,13 +82,14 @@ class PushPlusChannel(ChannelInterface):
             "template": template
         }
         
-        # topic 映射（仅当非 'me' 时添加数字 topic）
-        topic_map = {
-            'baobao': 12,
-            'family': 13,
-            'stock': 14,
-            'paper': 15
-        }
+        # topic 映射：优先从 config.ini [pushplus.topics] 读取，兜底使用内置默认值
+        _BUILTIN_TOPICS = {'baobao': 12, 'family': 13, 'stock': 14, 'paper': 15}
+        try:
+            from core.config import config as _cfg
+            _cfg_topics = _cfg.get_section('pushplus.topics')
+            topic_map = {k: int(v) for k, v in _cfg_topics.items()} if _cfg_topics else _BUILTIN_TOPICS
+        except Exception:
+            topic_map = _BUILTIN_TOPICS
         
         if self.topic in topic_map:
             data['topic'] = topic_map[self.topic]
