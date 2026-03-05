@@ -3,7 +3,7 @@ name: "Module: Paper Push"
 on:
   schedule:
     # 12:00 UTC = 20:00 CST
-    - cron: '0 12 * * *'
+    - cron: '0 11 * * *'
   workflow_dispatch:
     inputs:
       mode:

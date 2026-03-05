@@ -29,7 +29,10 @@ if os.path.exists(env_path):
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     k, v = line.split('=', 1)
-                    os.environ[k.strip()] = v.strip()
+                    k = k.strip()
+                    # 不覆盖已有环境变量（命令行/CI 注入的优先级更高）
+                    if k not in os.environ:
+                        os.environ[k] = v.strip()
     except Exception as e:
         print(f"Warning: Failed to load .env: {e}")
 

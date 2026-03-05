@@ -135,6 +135,8 @@ def main():
         created_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_published ON articles(published_at);
+    CREATE INDEX IF NOT EXISTS idx_created ON articles(created_at);
+    CREATE INDEX IF NOT EXISTS idx_source_created ON articles(source_name, created_at);
     """
     d1.ensure_table(D1_TABLE, schema)
     
