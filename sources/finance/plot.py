@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')  # 必须在 import pyplot 之前，确保 headless 环境（GitHub Actions）正常绘图
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import os

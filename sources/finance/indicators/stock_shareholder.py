@@ -40,14 +40,7 @@ class StockShareholderIndicator(BaseIndicator):
             return df.sort_values('date')
         except Exception as e:
             self.logger.error(f"StockShareholder Fetch Error for {self.symbol}: {e}")
-            # Fallback
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='D')
-            import numpy as np
-            close = 45 + np.random.randn(100).cumsum() * 0.5
-            # Holders slightly inverse to price
-            holders = 1000000 - (close - 45) * 5000 + np.random.randn(100) * 1000
-            df = pd.DataFrame({'date': dates, 'close': close, 'holders': holders})
-            return df
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         # 1. 创建单图双轴

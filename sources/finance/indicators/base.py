@@ -41,7 +41,10 @@ class BaseIndicator(ABC):
             self.logger.error(f"Fetch failed: {e}")
             return None
 
-        # 2. Check Cache & Update
+        # 2. 缓存 df 供 MacroDigest 等读取（避免重复 fetch）
+        self.manager.df_cache[self.name] = df
+
+        # 3. Check Cache & Update
         needs_update, metadata = self.manager.check_update_needed(self.name, df, force)
         
         if not needs_update:
@@ -71,10 +74,14 @@ class BaseIndicator(ABC):
         return {'url': url, 'date': latest_date, 'name': self.name, 'value': self._get_latest_value(df)}
 
     def _get_latest_value(self, df):
-        """Helper to get latest value string"""
+        """Helper to get latest value string（取最后一个非日期数值列）"""
         try:
-            # Try getting the second column (usually value)
-            col = df.columns[1] 
-            return str(df.iloc[-1][col])
+            import pandas as pd
+            # 找第一个数值列（排除 date 列）
+            for col in df.columns:
+                if col.lower() in ('date', '日期', 'time'): continue
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    return str(round(df.iloc[-1][col], 4))
+            return ""
         except:
             return ""

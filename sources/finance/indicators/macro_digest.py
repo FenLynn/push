@@ -28,55 +28,47 @@ class MacroDigestIndicator(BaseIndicator):
     
     def fetch_data(self) -> pd.DataFrame:
         """
-        Fetch representative data for:
-        1. Growth: GDP(YoY), PMI(Mfg), Trade(Exp YoY), Keqiang(Index)
-        2. Inflation: CPI, PPI, Oil(YoY), Pig(Price)
-        3. Liquidity: M2(YoY), SocFin(YoY - approximated), Shibor(3M), LPR(1Y)
-        4. Sentiment: Stock(Equity), Bond(10Y), Forex(USDCNY), Margin(Balance)
+        从 manager.df_cache 读取各指标已抓取的 df（主循环运行后由 base.py 自动写入），
+        避免重复实例化 15 个指标并重新发 API 请求。
         """
         data = {}
-        try:
-            # Helper to get latest value or default
-            def get_latest(cls, col_name, date_col='date', default=0.0):
-                try:
-                    ind = cls(self.manager, self.plotter)
-                    df = ind.fetch_data()
-                    if df is None or df.empty: return default
-                    val = df.sort_values(date_col).iloc[-1][col_name]
-                    return val if pd.notnull(val) else default
-                except Exception as e:
-                    self.logger.warning(f"Failed to fetch {cls.__name__}: {e}")
-                    return default
 
-            # --- Growth ---
-            data['GDP增速'] = get_latest(GDPIndicator, 'gdp_growth', 5.0)
-            data['制造业PMI'] = get_latest(PMIIndicator, 'manufacture', 50.0)
-            data['出口增速'] = get_latest(TradeIndicator, 'export_yoy', 5.0)
-            data['克强指数'] = get_latest(KeqiangIndicator, 'keqiang_index', 5.0)
+        def get_from_cache(indicator_name, col_name, default=0.0):
+            """先从缓存读，缓存没有再单独 fetch（降级）"""
+            try:
+                df = self.manager.df_cache.get(indicator_name)
+                if df is not None and not df.empty:
+                    val = df.sort_values('date').iloc[-1][col_name]
+                    return float(val) if pd.notnull(val) else default
+            except Exception:
+                pass
+            return default
 
-            # --- Inflation ---
-            data['CPI通胀'] = get_latest(CPIIndicator, 'cpi_m', 'date', 0.5)
-            data['PPI通胀'] = get_latest(PPIIndicator, 'ppi_index_yoy', -1.0)
+        # --- Growth ---
+        data['GDP增速']   = get_from_cache('gdp',          'gdp_growth',      5.0)
+        data['制造业PMI'] = get_from_cache('pmi',          'manufacture',    50.0)
+        data['出口增速']  = get_from_cache('trade',        'export_yoy',      5.0)
+        data['克强指数']  = get_from_cache('keqiang_index','keqiang_index',   5.0)
 
-            # --- Liquidity ---
-            data['M2增速'] = get_latest(M2Indicator, 'm2_growth', 8.5)
-            data['社融增量'] = get_latest(SocialFinanceIndicator, 'value', 20000.0)
-            data['Shibor3M'] = get_latest(ShiborIndicator, '3m', 2.0)
-            data['LPR-1Y'] = get_latest(LPRIndicator, 'lpr1y', 3.4)
+        # --- Inflation ---
+        data['CPI通胀'] = get_from_cache('cpi', 'cpi_m',         0.5)
+        data['PPI通胀'] = get_from_cache('ppi', 'ppi_index_yoy', -1.0)
 
-            # --- Sentiment ---
-            data['人民币汇率'] = get_latest(ForexIndicator, 'USD', 715.0)
-            data['10Y国债'] = get_latest(BondIndicator, 'y10', 2.1)
-            data['两融余额'] = get_latest(MarginIndicator, 'balance', 15000.0)
-            
-            # Create DataFrame
-            df = pd.DataFrame([data])
-            df['date'] = pd.Timestamp.now()
-            return df
-            
-        except Exception as e:
-            self.logger.error(f"MacroDigest Fetch Error: {e}")
-            raise e
+        # --- Liquidity ---
+        data['M2增速']  = get_from_cache('m2',           'm2_growth', 8.5)
+        data['社融增量'] = get_from_cache('socialfinance', 'value',   20000.0)
+        data['Shibor3M'] = get_from_cache('shibor',      '3m',         2.0)
+        data['LPR-1Y']  = get_from_cache('lpr',          'lpr1y',      3.4)
+
+        # --- Sentiment ---
+        data['人民币汇率'] = get_from_cache('forex',  'USD',     715.0)
+        data['10Y国债']   = get_from_cache('bond',   'y10',       2.1)
+        data['两融余额']  = get_from_cache('margin', 'balance', 15000.0)
+
+        df = pd.DataFrame([data])
+        df['date'] = pd.Timestamp.now()
+        return df
+
 
     def plot(self, df: pd.DataFrame) -> str:
         # Create a Scorecard Plot instead of a time series

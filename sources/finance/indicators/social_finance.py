@@ -26,8 +26,8 @@ class SocialFinanceIndicator(BaseIndicator):
         if not df_src.empty:
             df_final = pd.merge(df_final, df_src[['date', 'value']], on='date', how='left')
         else:
-            # 2026 拟合模型: 均值 3.5万亿, 带年度周期性
-            df_final['value'] = 35000 + np.sin(np.arange(3650)*2*np.pi/365)*15000 + np.random.randn(3650)*2000
+            self.logger.warning("Social Finance: data unavailable, skipping.")
+            return None
             
         # 线性插值
         df_final['value'] = df_final['value'].interpolate(method='linear').ffill().bfill()

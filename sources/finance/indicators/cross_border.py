@@ -23,21 +23,7 @@ class CrossBorderIndicator(BaseIndicator):
             return df.dropna(subset=['cn_10y', 'us_10y']).sort_values('date')
         except Exception as e:
             self.logger.error(f"CrossBorder Fetch Error: {e}")
-            # Fallback
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=1000, freq='D')
-            import numpy as np
-            # Simulate US (Mean 4.0, Volatility)
-            us_10y = 4.0 + np.cumsum(np.random.randn(1000)*0.05)
-            # Simulate CN (Mean 2.5, Downward trend)
-            cn_10y = 2.5 + np.cumsum(np.random.randn(1000)*0.02)
-            
-            df = pd.DataFrame({
-                'date': dates, 
-                'us_10y': us_10y, 
-                'cn_10y': cn_10y
-            })
-            df['spread'] = df['us_10y'] - df['cn_10y']
-            return df
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

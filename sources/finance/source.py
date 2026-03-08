@@ -138,7 +138,6 @@ class FinanceSource(BaseSource):
             '宏观经济 (Macro Economy)': [],
             '流动性与定价 (Liquidity & Pricing)': [],
             '利率与债市 (Interest Rate & Bond)': [],
-            '利率与债市 (Interest Rate & Bond)': [],
             '行业与板块 (Industry & Sector)': [],
             '深度分析 (Advanced Analysis)': []
         }
