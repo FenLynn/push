@@ -83,15 +83,15 @@
         <!-- 1. Realtime Box Office -->
         {% if box_real %}
         <div class="cd">
-            <div class="ch">🔥 实时票房 (万)</div>
+            <div class="ch">🔥 实时票房</div>
             <div class="cb">
                 <table>
                     <thead>
                         <tr>
                             <th>#</th>
                             <th>影片</th>
-                            <th width="19%" style="text-align:right">实时</th>
-                            <th width="14%" style="text-align:right">占比</th>
+                            <th width="21%" style="text-align:right">实时(万)</th>
+                            <th width="12%" style="text-align:right">占比</th>
                             <th width="17%" style="text-align:right">累计(亿)</th>
                             <th width="11%" style="text-align:right">天</th>
                         </tr>
@@ -116,16 +116,16 @@
         <!-- 2. Yearly Box Office -->
         {% if box_year %}
         <div class="cd">
-            <div class="ch">📅 年度票房 (亿)</div>
+            <div class="ch">📅 年度票房</div>
             <div class="cb">
                 <table>
                     <thead>
                         <tr>
                             <th>#</th>
                             <th>影片</th>
-                            <th width="18%" style="text-align:right">总票房</th>
-                            <th width="12%" style="text-align:right">票价</th>
-                            <th width="24%" style="text-align:right">日期</th>
+                            <th width="20%" style="text-align:right">总票房(亿)</th>
+                            <th width="12%" style="text-align:right">票价(元)</th>
+                            <th width="22%" style="text-align:right">上映日期</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -144,7 +144,96 @@
         </div>
         {% endif %}
 
-        <!-- 3. TV Series -->
+        <!-- 3. Douban Books -->
+        {% if book_list %}
+        <div class="cd">
+            <div class="ch">📚 豆瓣非虚构高分榜</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>书籍名称</th>
+                            <th width="20%" style="text-align:right">豆瓣评分</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in book_list %}
+                        <tr>
+                            <td>{% if loop.index <= 3 %}🥇{% else %}{{ loop.index }}{% endif %}</td>
+                            <td>{{ i.name }}</td>
+                            <td class="hl" style="text-align:right; font-weight:700;">{{ i.rate }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 5. Douban Hot Movies -->
+        {% if douban_list %}
+        <div class="cd">
+            <div class="ch">🍿 豆瓣热门新片</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>电影名称</th>
+                            <th width="18%" style="text-align:center">状态</th>
+                            <th width="18%" style="text-align:right">豆瓣评分</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in douban_list %}
+                        <tr>
+                            <td>{% if loop.index <= 3 %}🥇{% else %}{{ loop.index }}{% endif %}</td>
+                            <td>{{ i.name }}</td>
+                            <td style="text-align:center">
+                                {% if i.is_new %}<span style="color:var(--hl-hot);font-size:12px;font-weight:700">新上映</span>{% else %}<span class="sub">近期热片</span>{% endif %}
+                            </td>
+                            <td class="hl" style="text-align:right; font-weight:700;">{{ i.rate or '暂无' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 4. Douban High Rate Movies -->
+        {% if douban_high_rate %}
+        <div class="cd">
+            <div class="ch">⭐ 豆瓣高分口碑榜</div>
+            <div class="cb">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>电影名称</th>
+                            <th width="18%" style="text-align:center">状态</th>
+                            <th width="18%" style="text-align:right">豆瓣评分</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in douban_high_rate %}
+                        <tr>
+                            <td>{% if loop.index <= 3 %}🥇{% else %}{{ loop.index }}{% endif %}</td>
+                            <td>{{ i.name }}</td>
+                            <td style="text-align:center">
+                                {% if i.is_new %}<span style="color:var(--hl-hot);font-size:12px;font-weight:700">新上映</span>{% else %}<span class="sub">经典高分</span>{% endif %}
+                            </td>
+                            <td class="hl" style="text-align:right; font-weight:700;">{{ i.rate or '暂无' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 7. TV Series -->
         {% if tv_list %}
         <div class="cd">
             <div class="ch">📺 热播剧</div>
@@ -175,7 +264,7 @@
         </div>
         {% endif %}
         
-        <!-- 4. Variety Shows -->
+        <!-- 8. Variety Shows -->
         {% if show_list %}
         <div class="cd">
             <div class="ch">🎪 综艺</div>
