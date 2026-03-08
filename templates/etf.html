@@ -57,7 +57,7 @@
         .market-val { font-weight: 700; font-family: monospace; color: var(--t); }
 
         /* Stats Bar */
-        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+        .stats { display: grid; grid-template-columns: 1fr 1.6fr 1.1fr; gap: 10px; margin-bottom: 16px; }
         .stat-card { background: var(--bc); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--bd); box-shadow: var(--bs); }
         .stat-label { font-size: 11px; color: var(--ts); margin-bottom: 4px; }
         .stat-val { font-size: 17px; font-weight: 800; color: var(--t); }
@@ -149,7 +149,7 @@
             </div>
             <div class="stat-card">
                 <div class="stat-label">领涨板块</div>
-                <div class="stat-val" style="font-size:16px; display:flex; align-items:baseline; gap:4px">
+                <div class="stat-val" style="display:flex; align-items:baseline; gap:4px">
                     <span>{{ stats.top_sector }}</span>
                     <span style="font-size:13px; font-weight:700; color:{% if stats.top_sector_chg > 0 %}var(--red){% else %}var(--green){% endif %}">
                         {% if stats.top_sector_chg > 0 %}+{% endif %}{{ stats.top_sector_chg }}%
@@ -200,7 +200,7 @@
         {% endfor %}
 
         <div class="ft">
-            AI Engine Antigravity · Dashboard Analytics v2.0
+            Generated at {{ date.split(' ')[1][:5] }}
         </div>
     </div>
 </body>
