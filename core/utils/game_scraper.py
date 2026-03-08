@@ -57,6 +57,7 @@ class GameSchedule:
                 if should_include:
                     # 1. 尝试识别游戏类型 (用于 UI 药丸标签)
                     game_type = "电竞"
+                    search_text = match_text + " " + li.get('label', '')
                     type_keywords = {
                         '王者': '王者', 'KPL': '王者',
                         'LOL': 'LOL', 'LPL': 'LOL', 'LCK': 'LOL', '英雄联盟': 'LOL',
@@ -65,53 +66,38 @@ class GameSchedule:
                         '世界杯': '足球', '五大联赛': '足球'
                     }
                     for kw, val in type_keywords.items():
-                        if kw.upper() in match_text.upper():
+                        if kw.upper() in search_text.upper():
                             game_type = val
                             break
                     
-                    # 2. 精准拆分联赛和队伍
-                    content_clean = match_text.replace(time_str, "").strip()
-                    content_clean = re.sub(r'互动直播|手机看直播|视频|文字|比分|动画|虎牙|咪咕|央视频', '', content_clean).strip()
+                    # 2. 从 DOM 原生结构精准提取联赛名与队伍名
+                    span_league = li.find('span', class_='_league')
+                    span_teams = li.find('span', class_='_teams')
                     
-                    league = "赛事"
-                    team_a = ""
-                    team_b = ""
-
-                    # 常用赛事前缀
-                    common_leagues = ['KPL春季赛', 'LCK杯', 'LPL', 'DOTA2', '斯诺克', '足球', '篮球', '乒乓球']
-                    found_league = False
-                    for cl in common_leagues:
-                        if cl in content_clean:
-                            league = cl
-                            parts_str = content_clean.split(cl, 1)[-1].strip()
-                            if '-' in parts_str:
-                                teams_p = parts_str.split('-', 1)
-                                team_a = teams_p[0].strip()
-                                team_b = teams_p[1].strip()
-                            else:
-                                team_a = parts_str
-                            found_league = True
-                            break
-                    
-                    if not found_league:
-                        if '-' in content_clean:
-                            parts_str = content_clean.split('-', 1)
-                            team_a = parts_str[0].strip()
-                            team_b = parts_str[1].strip()
+                    if span_league and span_teams:
+                        league = span_league.get_text(separator=" ", strip=True)
+                        teams_str = span_teams.get_text(separator=" ", strip=True) # 使用空格分隔以免文字粘连
+                        
+                        # 3. 安全分割主客队队伍
+                        if '-' in teams_str:
+                            parts = teams_str.split('-', 1)
+                            team_a = parts[0].strip()
+                            team_b = parts[1].strip()
+                        elif 'vs' in teams_str.lower():
+                            parts = re.split(r'vs', teams_str, flags=re.IGNORECASE)
+                            team_a = parts[0].strip()
+                            team_b = parts[1].strip() if len(parts) > 1 else ""
                         else:
-                            team_a = content_clean
+                            team_a = teams_str
+                            team_b = ""
+                    else:
+                        # Fallback
+                        league = "赛事"
+                        content_clean = match_text.replace(time_str, "").strip()
+                        team_a = re.sub(r'互动直播|手机看直播|视频|文字|比分|动画', '', content_clean).strip()
+                        team_b = ""
 
-                    # 4. 优化：在赛事性质关键词（如第二轮A组）后强制增加两个空格
-                    # 这里识别复杂的阶段组合
-                    stage_pattern = r'(常规赛|季后赛|淘汰赛|决赛|半决赛|1/4决赛|资格赛|第一轮|第二轮|第三轮|第四轮|[A-DS]组)+'
-                    match_stage = re.search(stage_pattern, team_a)
-                    if match_stage:
-                        matched_str = match_stage.group(0)
-                        remaining = team_a[len(matched_str):].strip()
-                        if remaining:
-                            team_a = f"{matched_str}  {remaining}"
-
-                    # 3. 构造片段
+                    # 4. 构造片段
                     fragment = f'<span class="_league">{league}</span><span class="_teams">{team_a} vs {team_b}</span>'
 
                     results.append({
@@ -119,6 +105,9 @@ class GameSchedule:
                         'time': time_str,
                         'type': game_type, 
                         'content': fragment,
+                        'league': league,
+                        'team_a': team_a,
+                        'team_b': team_b,
                         'media': "视频/互动"
                     })
             
