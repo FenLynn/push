@@ -78,6 +78,29 @@
             border-bottom: 1px dashed var(--border);
         }
 
+        /* City Divider */
+        .city-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 15px 0 5px;
+            color: var(--accent);
+            font-weight: 800;
+            font-size: 15px;
+        }
+        .city-divider::before, .city-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px dashed var(--muted);
+            opacity: 0.3;
+        }
+        .city-divider:not(:empty)::before {
+            margin-right: 1em;
+        }
+        .city-divider:not(:empty)::after {
+            margin-left: 1em;
+        }
+
         /* Event List (Flat) */
         .event-item {
             display: flex;
@@ -118,6 +141,7 @@
             /* Line Clamp */
             display: -webkit-box;
             -webkit-line-clamp: 2;
+            line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
@@ -185,7 +209,14 @@
 
         <!-- List -->
         <div class="event-list">
+            {% set ns = namespace(city='') %}
             {% for event in events %}
+            {% if event.venue != ns.city %}
+            <div class="city-divider">
+                <span>📍 {{ event.venue }} 分会场</span>
+            </div>
+            {% set ns.city = event.venue %}
+            {% endif %}
             <a href="{{ event.link }}" class="event-item">
                 <img src="{{ event.img }}" class="poster" loading="lazy" onerror="this.src='https://via.placeholder.com/80x106?text=No+Img'">
                 <div class="info">
