@@ -349,14 +349,45 @@ class DamaiSource(BaseSource):
         history[city_code] = city_seen_dict
         self._save_seen_ids(history)
 
-        if not incremental_events:
-            return []
+        return incremental_events
 
-        # 4. Pagination
+    def run(self):
+        final_results = []
+        
+        if not self.cities_config:
+             return [] # No cities configured, return empty list
+
+        all_incremental_events = []
+        for city_key, city_code in self.cities_config.items():
+            msgs_or_events = self._process_city(city_key, city_code)
+            if msgs_or_events:
+                all_incremental_events.extend(msgs_or_events)
+
+        if not all_incremental_events:
+            return [self._create_empty_msg()]
+
+        # 全局按城市和时间复合排序（西安在前，成都居后）
+        def get_city_priority(city_name):
+            if '西安' in city_name: return 1
+            if '成都' in city_name: return 2
+            return 99
+
+        def parse_time(t_str):
+            try:
+                import time
+                return time.strptime(t_str, "%Y/%m/%d %H:%M")
+            except:
+                import time
+                return time.localtime()
+                
+        all_incremental_events.sort(key=lambda x: (get_city_priority(x['venue']), parse_time(x['raw_time'])))
+
+        # 全局分页与防截断机制
         MAX_CHARS = 19800
         pages = []
-        remaining = incremental_events[:]
+        remaining = all_incremental_events[:]
         page_num = 1
+        import time
         
         while remaining:
             current_page_events = []
@@ -366,7 +397,7 @@ class DamaiSource(BaseSource):
             for evt in remaining:
                 temp_list.append(evt)
                 html = self.template_engine.render('damai.html', {
-                    'title': f'{city_name}演出票务', 'city': city_name,
+                    'title': '全国精选演出票务', 'city': '精选',
                     'date': time.strftime("%Y-%m-%d"), 'events': temp_list
                 })
                 # Minify
@@ -387,17 +418,17 @@ class DamaiSource(BaseSource):
             
             if not last_valid_html and current_page_events:
                  last_valid_html = self.template_engine.render('damai.html', {
-                    'title': f'{city_name}演出票务', 'city': city_name,
+                    'title': '全国精选演出票务', 'city': '精选',
                     'date': time.strftime("%Y-%m-%d"), 'events': current_page_events
                 })
             
             title_suffix = f" P{page_num}" if (page_num > 1 or len(remaining) > len(current_page_events)) else ""
             
             pages.append(Message(
-                title=f'{city_name}演出({time.strftime("%m-%d")}){title_suffix}',
+                title=f'精选演出({time.strftime("%m-%d")}){title_suffix}',
                 content=last_valid_html,
                 type=ContentType.HTML,
-                tags=['damai', city_key]
+                tags=['damai', 'merged']
             ))
             
             remaining = remaining[len(current_page_events):]
@@ -406,30 +437,13 @@ class DamaiSource(BaseSource):
             
         return pages
 
-    def run(self):
-        final_results = []
-        
-        if not self.cities_config:
-             return [] # No cities configured, return empty list
-
-        for city_key, city_code in self.cities_config.items():
-            msgs = self._process_city(city_key, city_code)
-            if msgs:
-                final_results.extend(msgs)
-            else:
-                # If city has no events, explicitly add an "Empty" message for this city
-                # This ensures every configured city sends a push (e.g. "Chengdu: No events", "Xian: Events")
-                final_results.append(self._create_empty_msg(city_key))
-        
-        return final_results
-
-    def _create_empty_msg(self, city_code):
-        city_name = self.city_name_map.get(city_code, city_code.capitalize())
+    def _create_empty_msg(self):
+        import time
         html = self.template_engine.render('damai.html', {
-            'title': f'{city_name}演出票务', 'city': city_name, 
+            'title': '全国精选演出票务', 'city': '精选', 
             'date': time.strftime("%Y-%m-%d"), 'events': []
         })
-        return Message(title=f'{city_name}演出(无)', content=html, type=ContentType.HTML)
+        return Message(title='精选演出(无)', content=html, type=ContentType.HTML)
 
 if __name__ == '__main__':
     # Test
