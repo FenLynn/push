@@ -44,7 +44,8 @@
         /* Columns - Layout Adjusted */
         .tm { width:42px; font-family:monospace; font-weight:500; color:var(--text-sub); text-align:center; white-space:nowrap; }
         .tp { width:32px; text-align:center; }
-        .lg { width:22%; font-size:11px; color:var(--text-sub); font-weight:400; white-space:normal; line-height:1.2; } /* League column narrower */
+        .lg { width:32%; font-size:11px; color:var(--text-sub); font-weight:400; white-space:normal; line-height:1.2; } /* League column narrower */
+        th.lg, th.vs { text-align:center; }
         .vs { width:auto; font-weight:600; white-space:normal; } /* Teams column wider */
         
         .match-box { display:flex; align-items:center; flex-wrap:wrap; font-size:12px; gap:2px; line-height: 1.1; } /* Tighter line height for wrapped rows */
@@ -52,12 +53,10 @@
         .vs-tag { color:var(--text-sub); font-size:9px; margin:0 1px; font-weight:400; }
         
         /* Game Pill */
-        .g-pill { display:inline-block; padding:1px 4px; border-radius:3px; font-size:10px; font-weight:700; white-space:nowrap; } /* Bigger text but less scaling */
-        .lol { background:#dbeafe; color:#1e40af; }
-        .kpl { background:#fae8ff; color:#86198f; }
-        .王者 { background:#fae8ff; color:#86198f; }
-        .dota { background:#fee2e2; color:#991b1b; }
-        .dota2 { background:#fee2e2; color:#991b1b; }
+        .g-pill { display:inline-block; padding:0 3px; line-height:1.3; border-radius:3px; font-size:10px; font-weight:700; white-space:nowrap; } 
+        .lol, .LOL { background:#dbeafe; color:#1e40af; }
+        .kpl, .KPL, .王者 { background:#fae8ff; color:#86198f; }
+        .dota, .dota2, .DOTA, .Dota2, .DOTA2 { background:#fee2e2; color:#991b1b; }
         .乒乓 { background:#fef3c7; color:#92400e; }
         .足球 { background:#dcfce7; color:#166534; }
         .篮球 { background:#ffedd5; color:#9a3412; }
@@ -160,7 +159,7 @@
         {% endif %}
 
         <div class="ft">
-            Power by Antigravity · Generated at {{ update_time }}
+            Generated at {{ update_time }}
         </div>
     </div>
 </body>

@@ -171,8 +171,13 @@ class GameSource(BaseSource):
                 
             matches = []
             for _, row in day_games.iterrows():
-                # 解析内容
-                league, team_a, team_b = self._parse_content(row['content'])
+                # 获取内容
+                if 'league' in row and 'team_a' in row and 'team_b' in row:
+                    league = row.get('league', '')
+                    team_a = row.get('team_a', '')
+                    team_b = row.get('team_b', '')
+                else:
+                    league, team_a, team_b = self._parse_content(row.get('content', ''))
                 
                 # 高亮处理 logic
                 # 标记整行是否高亮 (用于背景色)
@@ -231,17 +236,28 @@ class GameSource(BaseSource):
             league_match = re.search(r'class="_league">([^<]+)<', html_content)
             league = league_match.group(1) if league_match else ""
             
-            # 提取 teams
-            teams_match = re.search(r'class="_teams">([^<]+)', html_content)
+            # 使用非贪婪匹配完整抽取 teams 区块
+            teams_match = re.search(r'class="_teams">(.*?)</span>', html_content)
+            if not teams_match:
+                # Fallback to older html end patterns
+                teams_match = re.search(r'class="_teams">(.*)', html_content)
             raw_teams = teams_match.group(1) if teams_match else ""
             
-            # 清理
-            clean_teams = raw_teams.replace('>', '').replace('&gt;', '').replace('互动直播', '').strip()
+            # 回归 bak 逻辑清洗
+            clean_teams = re.sub(r'<[^>]+>', '', raw_teams) # 剥离所有 HTML 内置标签
+            clean_teams = clean_teams.replace('&gt;', '').replace('互动直播', '').strip()
             
-            if 'vs.' in clean_teams:
+            # 安全的通过含空格的 vs 拆分队伍名
+            if ' vs. ' in clean_teams:
+                parts = clean_teams.split(' vs. ')
+            elif ' vs ' in clean_teams:
+                parts = clean_teams.split(' vs ')
+            elif ' VS ' in clean_teams:
+                parts = clean_teams.split(' VS ')
+            elif 'VS' in clean_teams:
+                parts = clean_teams.split('VS')
+            elif 'vs.' in clean_teams:
                 parts = clean_teams.split('vs.')
-            elif 'vs' in clean_teams:
-                parts = clean_teams.split('vs')
             else:
                 parts = [clean_teams, ""]
                 
