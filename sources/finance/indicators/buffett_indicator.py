@@ -30,13 +30,9 @@ class BuffettIndicator(BaseIndicator):
                         break
                 except: continue
             
-            # 10年期补全 (针对无远期数据问题)
-            if df_idx.empty or len(df_idx) < 2500:
-                self.logger.warning("SH Index data sparse, reconstructing 10-year history...")
-                dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-                # 锚定 3700 点
-                price = 3700 + np.random.randn(3650).cumsum() * 8
-                df_idx = pd.DataFrame({'date': dr, '上证指数': price})
+            if df_idx.empty or len(df_idx) < 100:
+                self.logger.warning("Buffett: SH Index data insufficient, skipping.")
+                return None
 
             # 2. 采用对冲还原法计算历史市值
             try:
@@ -77,8 +73,9 @@ class BuffettIndicator(BaseIndicator):
                 df_gdp_raw['date'] = df_gdp_raw.apply(q_to_date, axis=1)
                 df_gdp_ttm = df_gdp_raw.dropna(subset=['gdp_ttm'])[['date', 'gdp_ttm']].rename(columns={'gdp_ttm': 'gdp'})
             except:
-                dr_q = pd.date_range(start='2010-03-31', end='2030-12-31', freq='Q')
-                df_gdp_ttm = pd.DataFrame({'date': dr_q, 'gdp': 1200000 * (1.012 ** np.arange(len(dr_q)))})
+                dr_q = pd.date_range(start='2010-03-31', end='2030-12-31', freq='QE')
+                df_gdp_ttm = pd.DataFrame({'date': dr_q, 'gdp': [1200000] * len(dr_q)})
+                self.logger.warning("Buffett: GDP data unavailable, using flat placeholder.")
 
             # 4. 鲁棒合并 + 线性插值 (消除台阶感)
             df = pd.merge(df_idx, df_gdp_ttm, on='date', how='outer').sort_values('date')
@@ -89,13 +86,8 @@ class BuffettIndicator(BaseIndicator):
             df['buffett_ratio'] = (df['total_cap'] / df['gdp']) * 100
             return df.drop_duplicates(subset=['date']).dropna(subset=['buffett_ratio']).sort_values('date')
         except Exception as e:
-            self.logger.error(f"Buffett Critical Reconstruction Error: {e}")
-            dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-            # 拟合 2026 水位: 上证 3700, 证券化率 75%
-            index_price = 3700 + np.random.randn(3650).cumsum() * 6
-            gdp = 1400000 * (1.00015 ** np.arange(len(dr))) # 平滑增长
-            ratio = 75.0 + np.random.randn(3650).cumsum() * 0.1
-            return pd.DataFrame({'date': dr, '上证指数': index_price, 'gdp': gdp, 'buffett_ratio': ratio})
+            self.logger.error(f"Buffett Fetch Error: {e}")
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

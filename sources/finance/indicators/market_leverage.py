@@ -34,18 +34,13 @@ class MarketLeverageIndicator(BaseIndicator):
                 df_idx['date'] = pd.to_datetime(df_idx['date'])
             except: pass
 
-            # 3. 10年期补全 (针对无远期数据问题)
-            if df_idx.empty or len(df_idx) < 2500:
-                self.logger.warning("Leverage Index data sparse, reconstructing 10-year history...")
-                dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-                # 锚定 3700 点
-                price = 3700 + np.random.randn(3650).cumsum() * 7
-                df_idx = pd.DataFrame({'date': dr, '上征指数': price})
+            if df_idx.empty or len(df_idx) < 100:
+                self.logger.warning("Leverage: Index data insufficient, skipping.")
+                return None
 
-            if df_margin.empty or len(df_margin) < 1000:
-                df_margin = df_idx[['date', '上征指数']].copy()
-                # 2.6% 杠杆率对应的拟合余额
-                df_margin['margin_balance'] = df_idx['上征指数'] * 4.4e8 # 2026 拟合常数
+            if df_margin.empty or len(df_margin) < 50:
+                self.logger.warning("Leverage: Margin data insufficient, skipping.")
+                return None
 
             # 4. 流通市值对冲还原法
             current_float_cap = 640000 
@@ -63,9 +58,8 @@ class MarketLeverageIndicator(BaseIndicator):
             
             return df.drop_duplicates(subset=['date']).dropna().sort_values('date')
         except Exception as e:
-            self.logger.error(f"Market Leverage Critical Reconstruction Error: {e}")
-            dr = pd.date_range(end=pd.Timestamp.now(), periods=3650, freq='D')
-            return pd.DataFrame({'date': dr, 'leverage_ratio': [2.6]*3650, '上征指数': [3700]*3650})
+            self.logger.error(f"Market Leverage Fetch Error: {e}")
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

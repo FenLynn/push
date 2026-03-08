@@ -38,22 +38,13 @@ class LiquidityPortraitIndicator(BaseIndicator):
                 df_idx['date'] = pd.to_datetime(df_idx['date'])
             except: pass
 
-            # 3. 10年期补全 (针对无远期数据问题)
-            if df_idx.empty or len(df_idx) < 2500:
-                self.logger.warning("Liquidity Index data sparse, reconstructing 10-year history...")
-                dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-                # 锚定 3700 点
-                price = 3700 + np.random.randn(3650).cumsum() * 7
-                df_idx = pd.DataFrame({'date': dr, '上证明细': price})
+            if df_idx.empty or len(df_idx) < 100:
+                self.logger.warning("Liquidity: Index data insufficient, skipping.")
+                return None
 
-            if df_m2.empty or len(df_m2) < 120:
-                # 随机波动 M2 (消除直线感)
-                dr_m = pd.date_range(start=df_idx['date'].min(), end=pd.Timestamp.now().normalize(), freq='MS')
-                base_m2 = 3400000
-                # 模拟向上增长且带有 0.8% 左右的随机波动
-                m2_vals = base_m2 * (0.9995 ** np.arange(len(dr_m))[::-1]) # 历史递减回溯
-                m2_vals = m2_vals * (1 + np.random.randn(len(dr_m)) * 0.008) 
-                df_m2 = pd.DataFrame({'date': dr_m, 'm2': m2_vals})
+            if df_m2.empty or len(df_m2) < 12:
+                self.logger.warning("Liquidity: M2 data insufficient, skipping.")
+                return None
 
             # 4. 市值对冲还原法
             current_total_cap = 880000 # 假设基准 or 从 spot 获取 (此处简化，逻辑同前)
@@ -70,9 +61,8 @@ class LiquidityPortraitIndicator(BaseIndicator):
             
             return df.drop_duplicates(subset=['date']).dropna().sort_values('date')
         except Exception as e:
-            self.logger.error(f"Liquidity Critical Reconstruction Error: {e}")
-            dr = pd.date_range(end=pd.Timestamp.now(), periods=3650, freq='D')
-            return pd.DataFrame({'date': dr, 'market_cap': [900000]*3650, 'm2': [3400000]*3650, '上证明细': [3700]*3650, 'liquidity_ratio': [26.5]*3650})
+            self.logger.error(f"Liquidity Fetch Error: {e}")
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

@@ -13,9 +13,13 @@ from core.cache_db import CacheDB
 class HKConnectFlowIndicator(BaseIndicator):
     """港股通资金流向（北向资金 + 南向资金）"""
     
-    def __init__(self):
-        super().__init__()
-        self.cache_db = CacheDB()
+    def __init__(self, manager, plotter):
+        super().__init__(manager, plotter)
+        try:
+            from core.cache_db import CacheDB
+            self.cache_db = CacheDB()
+        except Exception:
+            self.cache_db = None
     
     def fetch_data(self) -> pd.DataFrame:
         """
@@ -72,20 +76,10 @@ class HKConnectFlowIndicator(BaseIndicator):
         
         return df.sort_values('date')
     
-    def _generate_fallback(self) -> pd.DataFrame:
-        """生成模拟数据（备用）"""
-        dates = pd.date_range(end=pd.Timestamp.now(), periods=365, freq='D')
-        import numpy as np
-        
-        # 模拟北向资金波动
-        north = np.cumsum(np.random.randn(365) * 30 + 10)  # 平均流入
-        south = np.cumsum(np.random.randn(365) * 20 + 5)
-        
-        return pd.DataFrame({
-            'date': dates,
-            'north_flow': north,
-            'south_flow': south
-        })
+    def _generate_fallback(self):
+        """数据不可用时返回 None，不生成随机数据"""
+        self.logger.warning("HKConnect: no data in cache and AkShare failed, skipping.")
+        return None
     
     def plot(self, df: pd.DataFrame) -> str:
         """绘制港股通资金流向图"""

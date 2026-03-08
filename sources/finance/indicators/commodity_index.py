@@ -18,13 +18,7 @@ class CommodityIndexIndicator(BaseIndicator):
             return df.dropna(subset=['index']).sort_values('date')
         except Exception as e:
             self.logger.error(f"Commodity Index Fetch Error: {e}")
-            # Fallback
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=1040, freq='W')
-            import numpy as np
-            base = 180
-            values = base + np.random.randn(1040).cumsum()
-            df = pd.DataFrame({'date': dates, 'index': values})
-            return df
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

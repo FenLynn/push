@@ -54,21 +54,17 @@ class KeqiangIndicator(BaseIndicator):
             
             # 合并数据
             if not df_elec.empty: df_final = pd.merge(df_final, df_elec, on='date', how='left')
-            else: df_final['elec_yoy'] = 6.5 + np.random.randn(3650).cumsum() * 0.1
+            else: df_final['elec_yoy'] = float('nan')
             
             if not df_rail.empty: df_final = pd.merge(df_final, df_rail, on='date', how='left')
-            else: df_final['rail_yoy'] = 3.2 + np.random.randn(3650).cumsum() * 0.15
+            else: df_final['rail_yoy'] = float('nan')
             
             if not df_loan.empty: df_final = pd.merge(df_final, df_loan, on='date', how='left')
-            else: df_final['loan_yoy'] = 11.5 + np.random.randn(3650).cumsum() * 0.08
+            else: df_final['loan_yoy'] = float('nan')
             
-            # 线性插值消除台阶
+            # 线性插值消除台阶，数据不足时保留 NaN（不注入随机数）
             for col in ['elec_yoy', 'rail_yoy', 'loan_yoy']:
                 if col in df_final.columns:
-                    # 如果数据量太少，注入随机漂移
-                    if df_final[col].count() < 12:
-                        base = 6.0 if 'elec' in col else 3.0 if 'rail' in col else 11.0
-                        df_final[col] = base + np.random.randn(3650).cumsum() * 0.1
                     df_final[col] = df_final[col].interpolate(method='linear').ffill().bfill()
             
             # 5. 计算综合克强指数: 0.4*用电 + 0.25*铁路 + 0.35*贷款
@@ -80,10 +76,8 @@ class KeqiangIndicator(BaseIndicator):
             
             return df_final.sort_values('date')
         except Exception as e:
-            self.logger.error(f"Keqiang Index Reconstruction Disaster: {e}")
-            dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-            val = 7.5 + np.random.randn(3650).cumsum() * 0.05
-            return pd.DataFrame({'date': dr, 'keqiang_index': val, 'elec_yoy': val, 'rail_yoy': val, 'loan_yoy': val})
+            self.logger.error(f"Keqiang Index Fetch Error: {e}")
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

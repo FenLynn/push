@@ -35,17 +35,7 @@ class RealInterestRateIndicator(BaseIndicator):
             return df.dropna().sort_values('date')
         except Exception as e:
             self.logger.error(f"RealRate Fetch Error: {e}")
-            # Fallback
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=240, freq='MS')
-            import numpy as np
-            # Nominal (Bond)
-            nominal = 2.5 + np.random.randn(240) * 0.2
-            # CPI
-            cpi = 0.5 + np.random.randn(240) * 0.5
-            
-            df = pd.DataFrame({'date': dates, 'nominal': nominal, 'cpi': cpi})
-            df['real'] = df['nominal'] - df['cpi']
-            return df
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

@@ -36,12 +36,10 @@ class ERPIndicator(BaseIndicator):
                 except: continue
 
             # 2. 10年期补全补齐 (针对无远期数据问题)
-            if df_idx.empty or len(df_idx) < 2500:
-                self.logger.warning("ERP Index data sparse, reconstructing 10-year history...")
-                dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-                # 锚定 4600 点
-                price = 4600 + np.random.randn(3650).cumsum() * 10
-                df_idx = pd.DataFrame({'date': dr, '沪深300': price})
+            # 数据不足时不使用随机数填充，直接跳过该指标
+            if df_idx.empty or len(df_idx) < 100:
+                self.logger.warning("ERP Index data insufficient, skipping.")
+                return None
 
             # 3. PE (CSI 300)
             df_pe = pd.DataFrame()
@@ -52,9 +50,9 @@ class ERPIndicator(BaseIndicator):
                     df_pe['date'] = pd.to_datetime(df_pe['date'])
             except: pass
 
-            if df_pe.empty or len(df_pe) < 2500:
-                df_pe = df_idx[['date']].copy()
-                df_pe['pe'] = 14.5 + np.random.randn(len(df_pe)).cumsum() * 0.05
+            if df_pe.empty or len(df_pe) < 100:
+                self.logger.warning("ERP PE data insufficient, skipping.")
+                return None
             
             # 4. Bond (10Y)
             df_bond = pd.DataFrame()
@@ -65,9 +63,9 @@ class ERPIndicator(BaseIndicator):
                     df_bond['date'] = pd.to_datetime(df_bond['date'])
             except: pass
 
-            if df_bond.empty or len(df_bond) < 2500:
-                df_bond = df_idx[['date']].copy()
-                df_bond['bond'] = 2.15 + np.random.randn(len(df_bond)).cumsum() * 0.01
+            if df_bond.empty or len(df_bond) < 100:
+                self.logger.warning("ERP Bond data insufficient, skipping.")
+                return None
 
             # 5. 鲁棒合并
             df = pd.merge(df_idx, df_pe[['date', 'pe']], on='date', how='outer')
@@ -82,9 +80,8 @@ class ERPIndicator(BaseIndicator):
             
             return df.drop_duplicates(subset=['date']).dropna(subset=['erp']).sort_values('date')
         except Exception as e:
-            self.logger.error(f"ERP Critical Reconstruction Error: {e}")
-            dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-            return pd.DataFrame({'date': dr, '沪深300': 4600 + np.random.randn(3650).cumsum()*10, 'erp': 4.5 + np.random.randn(3650).cumsum()*0.02})
+            self.logger.error(f"ERP Fetch Error: {e}")
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])

@@ -34,20 +34,22 @@ class TradeIndicator(BaseIndicator):
             df_final = pd.DataFrame({'date': dr})
             
             if not df_exp.empty: df_final = pd.merge(df_final, df_exp[['date', 'export_yoy']], on='date', how='left')
-            else: df_final['export_yoy'] = 5.0 + np.random.randn(3650).cumsum() * 0.2
+            else: df_final['export_yoy'] = float('nan')
             
             if not df_imp.empty: df_final = pd.merge(df_final, df_imp[['date', 'import_yoy']], on='date', how='left')
-            else: df_final['import_yoy'] = 3.0 + np.random.randn(3650).cumsum() * 0.25
+            else: df_final['import_yoy'] = float('nan')
             
             # 线性插值
             df_final['export_yoy'] = df_final['export_yoy'].interpolate(method='linear').ffill().bfill()
             df_final['import_yoy'] = df_final['import_yoy'].interpolate(method='linear').ffill().bfill()
             
+            if df_final['export_yoy'].isna().all() and df_final['import_yoy'].isna().all():
+                return None
+            
             return df_final.sort_values('date')
         except Exception as e:
-            self.logger.error(f"Trade Disaster Fallback: {e}")
-            dr = pd.date_range(end=pd.Timestamp.now(), periods=3650, freq='D')
-            return pd.DataFrame({'date': dr, 'export_yoy': 5 + np.random.randn(3650).cumsum()*0.1, 'import_yoy': 3 + np.random.randn(3650).cumsum()*0.12})
+            self.logger.error(f"Trade Fetch Error: {e}")
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
