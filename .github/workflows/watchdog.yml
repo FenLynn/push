@@ -1,9 +1,9 @@
 name: Watchdog Sentinel
 
 on:
-  schedule:
-    # 每天北京时间 09:15 运行一次 (01:15 UTC)
-    - cron: '15 1 * * *'
+  # schedule:
+  #   # 每天北京时间 09:15 运行一次 (01:15 UTC)
+  #   - cron: '15 1 * * *'
   workflow_dispatch:
 
 jobs:
