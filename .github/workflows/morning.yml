@@ -1,9 +1,9 @@
 name: "Module: Morning Push"
 
 on:
-  schedule:
-    # 23:00 UTC = 07:00 CST
-    - cron: '0 23 * * *'
+  # schedule:
+  #   # 23:00 UTC = 07:00 CST
+  #   - cron: '0 23 * * *'
   workflow_dispatch:
 
 jobs:

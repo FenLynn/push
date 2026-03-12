@@ -1,9 +1,9 @@
 name: RSS Fetch to Cloudflare D1
 
 on:
-  schedule:
-    # Run every hour
-    - cron: '0 * * * *'
+  # schedule:
+  #   # Run every hour
+  #   - cron: '0 * * * *'
   workflow_dispatch:
     # Allow manual trigger
 

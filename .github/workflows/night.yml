@@ -1,9 +1,9 @@
 name: "Module: US Night Market"
 
 on:
-  schedule:
-    # 22:00 UTC = 06:00 CST (Tue-Sat CST / Mon-Fri UTC)
-    - cron: '0 22 * * 1-5'
+  # schedule:
+  #   # 22:00 UTC = 06:00 CST (Tue-Sat CST / Mon-Fri UTC)
+  #   - cron: '0 22 * * 1-5'
   workflow_dispatch:
 
 jobs:

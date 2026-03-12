@@ -1,9 +1,9 @@
 name: "Module: Finance Report"
 
 on:
-  schedule:
-    # 12:30 UTC = 20:30 CST
-    - cron: '00 13 * * *'
+  # schedule:
+  #   # 12:30 UTC = 20:30 CST
+  #   - cron: '00 13 * * *'
   workflow_dispatch:
 
 jobs:
