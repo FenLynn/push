@@ -6,7 +6,7 @@ import sys
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from string import Template
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -54,9 +54,9 @@ class PaperSource(BaseSource):
     
     # 单个期刊默认最大展示文章数（可通过环境变量覆盖）
     MAX_ARTICLES_PER_JOURNAL = int(os.getenv('PAPER_MAX_ARTICLES_PER_JOURNAL', 15))
-    MAX_PAGE_SIZE = 18000  # Safe limit for PushPlus (max 20k)
+    MAX_PAGE_SIZE = 19800  # PushPlus 限制 20000，留 200 chars 安全余量
     TTRSS_CAT_ID = None
-    PAST_HOURS = int(os.getenv('PAPER_PAST_HOURS', 48))
+    PAST_HOURS = int(os.getenv('PAPER_PAST_HOURS', 25))
     
     TEST_MODE = False
     TEST_JOURNALS = ['Optics Express', 'Optics Letters', 'Applied Optics', 'Photonics Research']
@@ -126,44 +126,56 @@ class PaperSource(BaseSource):
     
 
     def _estimate_article_size(self, article: dict) -> int:
-        """估算单篇文章的 HTML 字符大小"""
-        # 统计标题、作者、摘要和链接的字符数
-        size = len(article.get('title', '')) + len(article.get('author', ''))
-        size += len(article.get('description', '')) or len(article.get('summary', '')) or 0
-        size += len(article.get('link', ''))
-        return size + 300  # 加上 HTML 标签的开销
-
-    MAX_PAGE_SIZE = 19500 # 极限逼近 20k
+        """估算单篇文章渲染后的 HTML 字符大小
+        
+        注意：只计算模板中实际会渲染的字段。
+        content/abstract 字段不在模板中显示（除非有 LLM summary），不能计入。
+        """
+        size = len(article.get('title', ''))   # 标题（显示）
+        size += len(article.get('link', ''))   # 链接（显示）
+        # 关键词标签（仅命中时显示）
+        kws = article.get('keywords', [])
+        if kws:
+            size += sum(len(k) + 40 for k in kws)  # 每个 tag 约 40 chars HTML
+        # LLM 摘要（仅有 summary 时显示）
+        if article.get('summary'):
+            size += len(article['summary']) + 60
+        return size + 110  # 固定 HTML 标签开销（div.ar/div.ac/span.ix/a.lk 等）
 
     def run(self) -> list:
         """运行获取流程并返回消息列表"""
         today_info = self._get_data()
         # Remove early return to allow "No Update" message generation
             
-        # 分段逻辑 - 动态长度适配
+        # ── 分页逻辑 ─────────────────────────────────────────────────────────
+        # TEMPLATE_OVERHEAD: CSS(~1500) + banner/footer(~500) + 缓冲
+        # 注意：每个期刊标题行约 180 chars，也必须算入，否则实际 HTML > PushPlus 20000 限制
+        TEMPLATE_OVERHEAD = 2000
+        JOURNAL_HEADER_COST = 180   # <div class="jg"><div class="jn">...的 HTML 开销
         all_pages = []
         current_papers = []
-        current_page_size = 500
-        
-        # Helper to settle current page
+        current_page_size = TEMPLATE_OVERHEAD  # 从框架开销开始计算
+
         def settle_page():
             nonlocal current_papers, current_page_size
             if current_papers:
                 all_pages.append(current_papers)
                 current_papers = []
-                current_page_size = 500
+                current_page_size = TEMPLATE_OVERHEAD
 
         for feed in today_info['paper']:
             articles = feed['data']
-            if not articles: continue
-            
+            if not articles:
+                continue
+
             journal_articles_to_page = []
             for art in articles:
                 est_size = self._estimate_article_size(art)
-                
-                # 如果加上当前文章超过页限制
-                if current_page_size + est_size > self.MAX_PAGE_SIZE:
-                    # 先结算当前期刊已经在攒的文章（如果有）
+                # 新期刊的第一篇需要额外计算期刊标题行开销
+                is_first_of_journal = not journal_articles_to_page
+                header_cost = JOURNAL_HEADER_COST if is_first_of_journal else 0
+
+                if current_page_size + header_cost + est_size > self.MAX_PAGE_SIZE:
                     if journal_articles_to_page:
                         current_papers.append({
                             'journal': feed['journal'],
@@ -171,14 +183,16 @@ class PaperSource(BaseSource):
                             'articles_nu': len(journal_articles_to_page)
                         })
                         journal_articles_to_page = []
-                    
-                    # 结算当前页
                     settle_page()
-                
+                    # 新页上，这个期刊仍需要标题行
+                    header_cost = JOURNAL_HEADER_COST
+
+                if not journal_articles_to_page:
+                    # 计入本期刊标题行开销（正式开始此期刊在当前页）
+                    current_page_size += JOURNAL_HEADER_COST
                 journal_articles_to_page.append(art)
                 current_page_size += est_size
-            
-            # 期刊遍历完，如果还有剩余文章，存入 current_papers
+
             if journal_articles_to_page:
                 current_papers.append({
                     'journal': feed['journal'],
@@ -186,9 +200,7 @@ class PaperSource(BaseSource):
                     'articles_nu': len(journal_articles_to_page)
                 })
 
-        # 1.3 Add ArXiv and S2 sections if available
-        # Attempts to merge into last page if space allows
-        
+        # ArXiv / S2 优先尝试并入当前未结算页（current_papers）
         extra_feeds = []
         arxiv_data = today_info.get('arxiv', [])
         if arxiv_data:
@@ -197,7 +209,7 @@ class PaperSource(BaseSource):
                 'data': arxiv_data,
                 'articles_nu': len(arxiv_data)
             })
-            
+
         s2_data = today_info.get('s2', [])
         if s2_data:
             extra_feeds.append({
@@ -205,24 +217,20 @@ class PaperSource(BaseSource):
                 'data': s2_data,
                 'articles_nu': len(s2_data)
             })
-            
+
         for feed in extra_feeds:
-            # Estimate size
-            feed_size = 0
-            for art in feed['data']:
-                feed_size += self._estimate_article_size(art)
-            
-            # Check if fits in current page
+            feed_size = sum(self._estimate_article_size(a) for a in feed['data'])
             if current_page_size + feed_size <= self.MAX_PAGE_SIZE:
+                # 并入当前页
                 current_papers.append(feed)
                 current_page_size += feed_size
             else:
-                # Settle current page and start new
+                # 当前页没位置：先结算，再开新页
                 settle_page()
                 current_papers.append(feed)
-                current_page_size = 500 + feed_size # Reset + feed
+                current_page_size = TEMPLATE_OVERHEAD + feed_size
 
-        # 全天处理完，手动结算最后一页
+        # 全部期刊和附加源处理完毕，结算最后一页
         settle_page()
 
         # Update total counts for metadata and UI header
@@ -249,14 +257,17 @@ class PaperSource(BaseSource):
                 metadata={'date': today_info['today'], 'count': 0}
             )]
 
+        # 注：split_oversized_pages 已移除（会导致分割页丢失CSS）
+        # 估算已修正为只统计渲染字段，精度足够
+
         # 生成消息列表
-        # 重写 run() 的分页循环部分
         messages = []
-        global_idx = 1
-        journal_page_tracker = {} # j_name -> current_page_index
-        
-        # 预先计算每个期刊在总分页中出现的次数，用于决定是否显示罗马数字
-        journal_total_pages = {} # j_name -> total_occurrences
+        global_idx = 1       # 文章全局序号（跨页连续）
+        journal_global_idx = 1  # 期刊全局序号（跨页连续，用于模板徽章）
+        journal_page_tracker = {}  # j_name -> 当前出现次数
+
+        # 预先计算每个期刊在总分页中出现的次数（跨页被拆分时需要分卷标签）
+        journal_total_pages = {}
         for pg in all_pages:
             for f in pg:
                 journal_total_pages[f['journal']] = journal_total_pages.get(f['journal'], 0) + 1
@@ -264,29 +275,27 @@ class PaperSource(BaseSource):
         total_pages = len(all_pages)
         for idx, page_papers in enumerate(all_pages):
             is_first_page = (idx == 0)
-            
-            # 处理分页标签和全局序号
+
             for f_item in page_papers:
                 j_name = f_item['journal']
                 count = journal_page_tracker.get(j_name, 0) + 1
                 journal_page_tracker[j_name] = count
-                
-                # 如果这个期刊总共会出现多次，则打上罗马数字标签
-                if journal_total_pages[j_name] > 1:
-                    f_item['page_label'] = self.to_roman_num(count)
-                else:
-                    f_item['page_label'] = ""
-                
-                # 设置全天总文章数
+
+                # 跨页被拆分的期刊加罗马数字分卷标签
+                f_item['page_label'] = self.to_roman_num(count) if journal_total_pages[j_name] > 1 else ""
+
+                # 全天该期刊总文章数（用于显示 x/y 篇）
                 if j_name in ['ArXiv Preprints (领域追踪)', 'Scholar Updates (学者动态)']:
                     f_item['total_nu'] = f_item['articles_nu']
-                    # 为特殊模块设置专属中文序号或放在最后
-                    f_item['chinese_idx'] = "补" if "ArXiv" in j_name else "专"
                 else:
-                    f_item['total_nu'] = next(p['articles_nu'] for p in today_info['paper'] if p['journal'] == j_name)
-                    # 设置中文序号 (基于原始期刊列表的顺序)
-                    original_idx = next(i for i, p in enumerate(today_info['paper']) if p['journal'] == j_name) + 1
-                    f_item['chinese_idx'] = self.to_chinese_num(original_idx)
+                    f_item['total_nu'] = next(
+                        (p['articles_nu'] for p in today_info['paper'] if p['journal'] == j_name),
+                        f_item['articles_nu']
+                    )
+
+                # 连续全局期刊序号（不随分页重置，模板使用此值而非 loop.index）
+                f_item['journal_global_idx'] = journal_global_idx
+                journal_global_idx += 1
 
                 for article in f_item['data']:
                     article['global_idx'] = global_idx
@@ -561,42 +570,59 @@ class PaperSource(BaseSource):
         return all_arxiv
 
     def _get_data_from_s2(self) -> list:
-        """从 Semantic Scholar 获取学者动态"""
-        authors = config.get_section('paper.authors')
+        """从 Semantic Scholar 获取学者动态（仅推送从未推过的新论文，基于 D1 去重）"""
+        # 暂时禁用，避免产生额外页面和学科外论文
+        return []
+
         if not authors:
             return []
-            
+        
         all_s2 = []
+        now = datetime.now()
+        # 用 1 年作为宽松兜底，避免拉不到数据；真正去重靠 D1
+        cutoff = now - timedelta(days=365)
+
         for name, author_id in authors.items():
             self.logger.info(f"[Paper] Tracking Scholar {name} (ID: {author_id})")
             try:
-                # API: /graph/v1/author/{author_id}/papers
                 url = f"https://api.semanticscholar.org/graph/v1/author/{author_id}/papers"
-                params = {'fields': 'title,url,year,publicationDate,authors,abstract', 'limit': 3}
+                params = {'fields': 'title,url,year,publicationDate,authors,abstract', 'limit': 10}
                 r = requests.get(url, params=params, timeout=15,
-                                 proxies={"http": None, "https": None})  # 直连，不走本地代理
+                                 proxies={"http": None, "https": None})
                 data = r.json()
                 
                 if 'data' in data:
                     for p in data['data']:
-                        # Filtering by date: Only if publicationDate is recent (within last 30 days for scholarship)
-                        # Or if we haven't seen it
-                        pub_date = p.get('publicationDate') or f"{p.get('year')}-01-01"
+                        pub_date_str = p.get('publicationDate') or f"{p.get('year', '2000')}-01-01"
                         
+                        # 宽松日期兜底过滤（防止太古老的文章）
+                        try:
+                            pub_dt = datetime.strptime(pub_date_str[:10], '%Y-%m-%d')
+                            if pub_dt < cutoff:
+                                continue
+                        except Exception:
+                            pass
+
                         art = {
                             'title': p['title'],
                             'link': p['url'],
                             'author': ", ".join([a['name'] for a in p.get('authors', [])]),
                             'content': p.get('abstract') or "(无摘要)",
                             'journal': f"Scholar: {name}",
-                            'date': pub_date
+                            'date': pub_date_str
                         }
-                        
-                        # 直接收录（无需逐条 D1 去重）
+
+                        # D1 去重：只推送从未推过的论文
+                        if not self._is_new_paper(art):
+                            self.logger.debug(f"[Paper] S2 skip (already sent): {p['title'][:60]}")
+                            continue
+
                         all_s2.append(art)
+
             except Exception as e:
-                 self.logger.error(f"S2 search error ({name}): {e}")
+                self.logger.error(f"S2 search error ({name}): {e}")
         return all_s2
+
 
     def _is_new_paper(self, paper: dict) -> bool:
         """通过 D1 检查是否是新论文"""
@@ -624,9 +650,6 @@ class PaperSource(BaseSource):
         except Exception as e:
             print(f"[Paper] Cache check failed: {e}")
             return True
-        
-        # Local fallback if D1 disabled
-        return True
 
     def _get_data_from_d1(self) -> dict:
         """从 D1 数据库获取数据"""
@@ -740,63 +763,75 @@ class PaperSource(BaseSource):
             return {"journals": 0, "today": datetime.now().strftime("%Y-%m-%d"), 
                     "articles_sum": 0, "journals_title": [], "paper": []}
 
-        # 并行抓取加速
+        # 并行抓取，但保持原始 feeds_info 的顺序
         print(f"[Paper] Starting parallel fetch for {len(feeds_info)} feeds...")
-        final_paper_data = []
         total_articles_sum = 0
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_feed = {executor.submit(self._fetch_feed, f): f for f in feeds_info}
-            for future in concurrent.futures.as_completed(future_to_feed):
-                res = future.result()
-                if not res: continue
+            # 按原始顺序提交，用列表保留顺序（不用 as_completed 以避免乱序）
+            futures = [executor.submit(self._fetch_feed, f) for f in feeds_info]
+            results = [f.result() for f in futures]  # 按提交顺序等待
+        
+        # 按原始顺序处理结果
+        raw_results = []
+        for res in results:
+            if not res:
+                continue
+            journal_title = res['journal']
+            raw_articles = res['articles']
+            f_type = res.get('type', 'journal')
+            raw_results.append((journal_title, raw_articles, f_type))
+        
+        # 过滤：研究人员在前，期刊保持原始顺序
+        researcher_data = []
+        journal_data = []
+        
+        for journal_title, raw_articles, f_type in raw_results:
+            # 限流：每个期刊超过最大数量则截断
+            raw_articles = raw_articles[:self.MAX_ARTICLES_PER_JOURNAL]
+            
+            filtered_list = []
+            ino = 1
+            for art in raw_articles:
+                # 1. 时间过滤
+                if not self._filter_date(art, journal_title):
+                    continue
                 
-                journal_title = res['journal']
-                raw_articles = res['articles']
-                f_type = res.get('type', 'journal')
+                # 2. 关键词检测
+                art['is_include_keyword'], art['keywords'] = self._include_keywords(art)
                 
-                # 限流：每个期刊超过最大数量则截断
-                raw_articles = raw_articles[:self.MAX_ARTICLES_PER_JOURNAL]
+                # 3. 期刊筛选逻辑 (通用期刊必须包含关键词)
+                if f_type == 'journal' and journal_title.lower() in self._general_journals_lower and not art['is_include_keyword']:
+                    continue
                 
-                # 过滤逻辑
-                filtered_list = []
-                ino = 1
-                for art in raw_articles:
-                    # 1. 时间过滤
-                    if not self._filter_date(art, journal_title):
-                        continue
-                    
-                    # 2. 关键词检测
-                    art['is_include_keyword'], art['keywords'] = self._include_keywords(art)
-                    
-                    # 3. 期刊筛选逻辑 (通用期刊必须包含关键词)
-                    # 研究人员订阅 (researcher) 通常不强制要求关键词
-                    if f_type == 'journal' and journal_title.lower() in self._general_journals_lower and not art['is_include_keyword']:
-                        continue
-                    
-                    # 4. LLM 摘要 (如果有)
-                    if self.llm_provider and (art['is_include_keyword'] or self.test_mode):
-                        try:
-                            clean_text = re.sub(r'<[^>]+>', '', art['content']).strip()
-                            txt_input = f"Title: {art['title']}\nAbstract: {clean_text[:2000]}"
-                            art['summary'] = self.llm_provider.summarize(txt_input)
-                        except: pass
-                    
-                    art['id'] = ino
-                    filtered_list.append(art)
-                    ino += 1
+                # 4. LLM 摘要 (如果有)
+                if self.llm_provider and (art['is_include_keyword'] or self.test_mode):
+                    try:
+                        clean_text = re.sub(r'<[^>]+>', '', art['content']).strip()
+                        txt_input = f"Title: {art['title']}\nAbstract: {clean_text[:2000]}"
+                        art['summary'] = self.llm_provider.summarize(txt_input)
+                    except:
+                        pass
                 
-                if filtered_list:
-                    final_paper_data.append({
-                        "journal": journal_title,
-                        "data": filtered_list,
-                        "articles_nu": len(filtered_list),
-                        "type": f_type
-                    })
-                    total_articles_sum += len(filtered_list)
-
-        # 排序：研究人员在前，期刊在后
-        final_paper_data.sort(key=lambda x: (0 if x['type'] == 'researcher' else 1, x['journal']))
+                art['id'] = ino
+                filtered_list.append(art)
+                ino += 1
+            
+            if filtered_list:
+                entry = {
+                    "journal": journal_title,
+                    "data": filtered_list,
+                    "articles_nu": len(filtered_list),
+                    "type": f_type
+                }
+                if f_type == 'researcher':
+                    researcher_data.append(entry)
+                else:
+                    journal_data.append(entry)
+                total_articles_sum += len(filtered_list)
+        
+        # 研究人员在前，期刊按原始 INI 顺序
+        final_paper_data = researcher_data + journal_data
 
         return {
             "journals": len(final_paper_data),
@@ -823,7 +858,7 @@ class PaperSource(BaseSource):
         # 准备渲染内容
         context = {
             'today': today_info.get('today'),
-            'update_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'update_time': datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S"),
             'is_first_page': today_info.get('is_first_page', True),
             'total_journals': today_info.get('total_journals') or today_info.get('journals', 0),
             'total_articles_sum': today_info.get('total_articles_sum') or today_info.get('articles_sum', 0),
@@ -831,7 +866,12 @@ class PaperSource(BaseSource):
             'in_docker': self.in_docker
         }
         
-        return template.render(**context)
+        try:
+            return template.render(**context)
+        except Exception as e:
+            print(f"[Paper] WARNING: Template render failed: {e}")
+            import traceback; traceback.print_exc()
+            return self._generate_html_legacy(today_info)
 
     def _generate_html_legacy(self, today_info) -> str:
         """简易版 HTML 生成（备用）"""

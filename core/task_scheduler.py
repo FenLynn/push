@@ -8,8 +8,6 @@ Daily Task Scheduler & Execution Tracker
 3. 提供每日摘要
 """
 import json
-# Database path
-import json
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path

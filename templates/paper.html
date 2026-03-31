@@ -1,70 +1,48 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>光学文献日报</title><style>
-/* UI Refinements Rev. 4 (Compact) */
-:root{--bg:#fff;--text:#222;--hl:#d61c4e;--date:#555}
-body{margin:0;font-family:-apple-system,sans-serif;color:var(--text);font-size:13px;line-height:1.4;padding:0;background:#f9f9f9}
-.meta{padding:12px 14px;background:#fff;border-bottom:1px solid #e5e5e5;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.meta-l{flex:1}
-.meta-r{text-align:right;font-family:monospace;font-size:12px;color:#999}
-.date-str{font-size:18px;font-weight:800;color:#000;display:block}
-.stat{font-size:13px;color:#666;margin-top:2px}
-.stat b{color:var(--hl);margin:0 2px}
-.j-grp{margin-bottom:10px;background:#fff;border-top:1px solid #eee;border-bottom:1px solid #eee}
-.j-h{font-size:14px;font-weight:700;margin:0;color:#000;background:#f4f4f5;padding:6px 12px;border-bottom:1px solid #eee}
-.j-h span{font-weight:400;font-size:12px;color:#666;margin-left:6px}
-.res-h{background:#f3e8ff;color:#4c1d95}
-.art-ul{list-style:none;padding:0;margin:0}
-.art-li{margin:0;position:relative;padding:3px 12px;border-bottom:1px solid #f8f8f8;display:flex;align-items:baseline}
-.art-li:last-child{border-bottom:none}
-.art-li.hl{border-left:4px solid var(--hl);padding-left:8px;background:#fff1f2}
-.idx{color:#aaa;font-size:11px;min-width:18px;margin-right:4px;font-family:monospace;text-align:right;flex-shrink:0}
-.cnt{flex:1;overflow:hidden}
-.art-link{text-decoration:none;color:#1d4ed8 !important;font-weight:500;font-size:13px;line-height:1.3}
-.art-link:visited{color:#1d4ed8 !important}
-.kw{display:inline-block;font-size:10px;color:var(--hl);background:rgba(214,28,78,0.08);padding:0 3px;border-radius:2px;margin-left:4px;line-height:1.3;vertical-align:middle;border:0.5px solid rgba(214,28,78,0.15)}
-.ai{font-size:11px;color:#555;background:#f8fafc;border-left:2px solid #3b82f6;padding:3px 8px;margin:2px 0 0 0}
-.ft{font-size:10px;text-align:center;color:#ccc;margin-top:15px;padding-bottom:15px}
-.cont-tag{background:#fff;border:1px solid #eee;color:#999;font-size:11px;padding:2px 8px;border-radius:10px;margin-bottom:6px;display:inline-block}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #000; --text: #d1d5db; }
-  body { background: #000; }
-  .meta { background: #111; border-color: #222; }
-  .date-str { color: #fff; }
-  .j-grp { background: #111; border-color: #222; }
-  .j-h { background: #1a1a1a; color: #fff; border-color: #222; }
-  .res-h { background: #2e1065; color: #ddd6fe; }
-  .art-li { border-color: #1a1a1a; }
-  .art-li.hl { background: #1c0a0d; }
-  .art-link { color: #60a5fa !important; }
-  .kw { background: rgba(214,28,78,0.2); border-color: rgba(214,28,78,0.3); }
-  .ai { background: #0f172a; color: #94a3b8; }
-  .cont-tag { background: #111; border-color: #222; }
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>学术文献</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.45 -apple-system,sans-serif;background:#fff;color:#222;padding:4px 2px 12px}
+.hd{padding:3px 1px 5px;border-bottom:1.5px solid #c8ddf5;margin-bottom:6px}
+.hd-d{font-size:17px;font-weight:800;color:#111}
+.hd-d small{font-size:11.5px;font-weight:400;color:#999;margin-left:5px}
+.hd-s{font-size:11.5px;color:#888;display:flex;justify-content:space-between;margin-top:2px}
+.hd-s b{color:#1c6cb5;font-weight:700}
+.jg{margin-top:8px}
+.jn{display:flex;justify-content:space-between;align-items:center;padding:2px 0 3px;border-bottom:1.5px solid #daeaf8}
+.jt{display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;color:#1a3660}
+.ji{background:#dce9f8;color:#1a3660;font-size:13px;font-weight:800;padding:1px 5px;border-radius:9px;flex-shrink:0}
+.jc{font-size:11px;color:#ccc;flex-shrink:0}
+.ar{display:flex;align-items:baseline;padding:4px 0 3px;border-bottom:1px dashed #f0f0f0}
+.ar:last-child{border-bottom:none}
+.ix{font-size:11px;color:#bbb;width:20px;flex-shrink:0;text-align:right;padding-right:4px;font-family:monospace;font-weight:700}
+.ac{flex:1;min-width:0;overflow:hidden}
+a.lk{display:inline;color:#2a3a4e;text-decoration:none;font-size:12.5px;line-height:1.4;word-break:break-word}
+a.hl{color:#c2006e;font-weight:600}
+.kws{float:right;white-space:nowrap;margin-left:5px;line-height:1.45}
+.t{font-size:10px;color:#1a6b4a;background:#d4f0e4;padding:1px 4px;border-radius:3px;border:1px solid #9fd4bc;display:inline-block;margin-left:2px}
+.ft{font-size:10px;color:#ccc;text-align:center;margin-top:12px;padding-top:5px;border-top:1px solid #eee}
+@media(prefers-color-scheme:dark){
+ body{background:transparent;color:#ccc}
+ .hd{border-bottom-color:#1a2a3a}
+ .hd-d{color:#eee}
+ .hd-s{color:#888}
+ .hd-s b{color:#5aa3e8}
+ .jt{color:#7abde8}
+ .ji{background:#112030;color:#7abde8}
+ .jn{border-color:#1a2a3a}
+ .ar{border-color:#181818}
+ .ix{color:#484848}
+ a.lk{color:#b8cce0}
+ a.hl{color:#e840a0;font-weight:600}
+ .t{color:#5dccaa;background:#0c2820;border-color:#2a6048}
+ .ft{border-color:#1a1a1a;color:#444}
 }
 </style></head><body>
-<div class="meta">
-<div class="meta-l">
-    <span class="date-str">{{ today }}</span>
-    <div class="stat"><b>{{ total_journals }}</b> 刊 / <b>{{ total_articles_sum }}</b> 文</div>
+<div class="hd">
+  <div class="hd-d">{{ today }}<small>光学文献{% if not is_first_page %} · 续{% endif %}</small></div>
+  <div class="hd-s"><span><b>{{ total_journals }}</b> 刊&ensp;<b>{{ total_articles_sum }}</b> 文</span><span>{{ update_time[11:16] }} BJT</span></div>
 </div>
-<div class="meta-r">
-    {% if not is_first_page %}<div class="cont-tag">续接上页 ({{ page_idx }}/{{ total_pages }})</div>{% endif %}
-    <div>{{ update_time.split(' ')[1][:5] }} 更新</div>
-</div>
-</div>
-{% if not paper %}<div style="text-align:center;padding:40px;color:#999">📭 无更新</div>{% else %}
-{% for f in paper %}
-<div class="j-grp">
-<div class="j-h {{ 'res-h' if f.type == 'researcher' else '' }}">{{ f.journal }}<span style="font-weight:normal;color:#666;font-size:13px;margin-left:4px">({{ f.articles_nu }})</span></div>
-<ul class="art-ul">
-{% for p in f.data %}<li class="art-li {{ 'hl' if p.is_include_keyword else '' }}">
-<span class="idx">{{ p.global_idx }}.</span>
-<div class="cnt">
-<a href="{{ p.link }}" class="art-link">{{ p.title }}</a>
-{% if p.is_include_keyword and p.keywords %}{% for k in p.keywords %}<span class="kw">{{ k }}</span>{% endfor %}{% endif %}
-{% if p.summary %}<div class="ai">{{ p.summary }}</div>{% endif %}
-</div>
-</li>{% endfor %}
-</ul>
-</div>
-{% endfor %}
-{% endif %}
-<div class="ft">Push · {{ update_time }}</div></body></html>
+{% if not paper %}<p style="color:#bbb;text-align:center;padding:20px 0">📭 无更新</p>{% else %}
+{% for f in paper %}<div class="jg"><div class="jn"><div class="jt"><span class="ji">{{ f.journal_global_idx if f.journal_global_idx is defined else loop.index }}</span>{{ f.journal }}{% if f.page_label %}<small style="font-weight:400;color:#aaa"> [{{ f.page_label }}]</small>{% endif %}</div><span class="jc">{{ f.articles_nu }}{% if f.articles_nu != f.total_nu %}/{{ f.total_nu }}{% endif %} 篇</span></div>{% for p in f.data %}<div class="ar"><span class="ix">{{ p.global_idx }}</span><div class="ac"><a href="{{ p.link }}" class="lk{% if p.is_include_keyword %} hl{% endif %}">{{ p.title }}</a>{% if p.is_include_keyword and p.keywords %}<span class="kws">{% for k in p.keywords %}<span class="t">{{ k }}</span>{% endfor %}</span>{% endif %}</div></div>{% endfor %}</div>
+{% endfor %}{% endif %}
+<div class="ft">Push · {{ update_time }}</div>
+</body></html>

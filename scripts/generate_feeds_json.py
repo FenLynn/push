@@ -36,6 +36,18 @@ def main():
                 'type': 'researcher'
             })
             
+    # 去重（按 title+url 组合，防止 configparser 或手动编辑引入重复）
+    seen = set()
+    unique_feeds = []
+    for feed in feeds:
+        key = (feed['title'].strip().lower(), feed['url'].strip())
+        if key not in seen:
+            seen.add(key)
+            unique_feeds.append(feed)
+    if len(unique_feeds) < len(feeds):
+        print(f"Warning: Removed {len(feeds) - len(unique_feeds)} duplicate feed(s).")
+    feeds = unique_feeds
+
     # Output
     out_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'feeds.json')
     with open(out_path, 'w', encoding='utf-8') as f:
