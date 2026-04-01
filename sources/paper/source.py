@@ -740,12 +740,13 @@ class PaperSource(BaseSource):
         total_articles_sum = 0
         for j_name, info in grouped.items():
             if not info['data']: continue
-            top_n = info['data'][:self.MAX_ARTICLES_PER_JOURNAL]
+            # 不截断：光学期刊不允许丢文章，综合期刊已由关键词过滤。每页容量由 MAX_PAGE_SIZE 控制
+            articles = info['data']
             final_paper_data.append({
-                "journal": j_name, "data": top_n,
-                "articles_nu": len(top_n), "type": info['type']
+                "journal": j_name, "data": articles,
+                "articles_nu": len(articles), "type": info['type']
             })
-            total_articles_sum += len(top_n)
+            total_articles_sum += len(articles)
 
         final_paper_data.sort(key=lambda x: (0 if x['type'] == 'researcher' else 1, x['journal']))
         return {
@@ -787,8 +788,7 @@ class PaperSource(BaseSource):
         journal_data = []
         
         for journal_title, raw_articles, f_type in raw_results:
-            # 限流：每个期刊超过最大数量则截断
-            raw_articles = raw_articles[:self.MAX_ARTICLES_PER_JOURNAL]
+            # 不截断：光学期刊不允许丢文章，综合期刊已由关键词过滤，每页容量由 MAX_PAGE_SIZE 控制
             
             filtered_list = []
             ino = 1
