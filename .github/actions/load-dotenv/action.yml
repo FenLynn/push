@@ -1,5 +1,5 @@
 name: Load Push Dotenv
-description: Materialize a full push .env file from one GitHub Actions secret and export it to the job environment.
+description: Materialize a sanitized push .env file from one GitHub Actions secret without exporting the full file to the job environment.
 
 inputs:
   env_text:
@@ -20,22 +20,15 @@ runs:
           exit 1
         fi
 
-        printf '%s\n' "$ENV_TEXT" | tr -d '\r' > .env
+        tmp_file="$(mktemp)"
+        printf '%s\n' "$ENV_TEXT" | tr -d '\r' > "$tmp_file"
 
-        while IFS= read -r line || [ -n "$line" ]; do
-          case "$line" in
-            ''|'#'*)
-              continue
-              ;;
-          esac
+        if grep -Eq '^(HTTP_PROXY|HTTPS_PROXY|http_proxy|https_proxy|ALL_PROXY|all_proxy|NO_PROXY|no_proxy)=' "$tmp_file"; then
+          echo "Removing local proxy variables from PUSH_ENV_FILE for GitHub Actions."
+        fi
 
-          if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-            key="${line%%=*}"
-            value="${line#*=}"
-            value="${value%%[[:space:]]#*}"
-            printf '%s=%s\n' "$key" "$value" >> "$GITHUB_ENV"
-          fi
-        done < .env
+        grep -Ev '^(HTTP_PROXY|HTTPS_PROXY|http_proxy|https_proxy|ALL_PROXY|all_proxy|NO_PROXY|no_proxy)=' "$tmp_file" > .env || true
+        rm -f "$tmp_file"
 
         printf 'RUN_MODE=cloud\n' >> "$GITHUB_ENV"
         printf 'TZ=Asia/Shanghai\n' >> "$GITHUB_ENV"
