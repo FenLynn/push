@@ -1,19 +1,22 @@
-import os
-import sys
-import asyncio
-import json
-from datetime import datetime
-import hashlib
 import concurrent.futures
+import hashlib
+import html
+import json
+import os
+import re
+import sys
+from datetime import datetime
 
 # Add project root to sys.path to import core modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    import feedparser
     import requests
-    from core.d1_client import D1Client
+    import feedparser
     from dotenv import load_dotenv
+    from core.config import config
+    from core.d1_client import D1Client
+    from core.kv_client import CloudflareKVClient
     
     # Load .env explicitly for local run
     load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
@@ -23,6 +26,26 @@ except ImportError:
 
 # Configuration from env or default
 D1_TABLE = "articles"
+SNAPSHOT_OUTPUT_KEY = os.getenv('OPTICS_SNAPSHOT_KV_KEY', 'snapshot:paper:optics:latest')
+SNAPSHOT_MAX_ITEMS = max(200, int(os.getenv('PAPER_SNAPSHOT_MAX_ITEMS', '1200')))
+SNAPSHOT_RETENTION_DAYS = max(1, int(os.getenv('PAPER_SNAPSHOT_RETENTION_DAYS', '7')))
+
+DOI_PATTERN = re.compile(r'(10\.\d{4,9}/[-._;()/:A-Z0-9]+)', re.IGNORECASE)
+TAG_RE = re.compile(r'<[^>]+>')
+
+
+def query_rows(d1_client, sql, params=None):
+    result = d1_client.query(sql, params or [])
+    if not result.get('success'):
+        raise RuntimeError(result.get('error') or 'D1 query failed')
+
+    data = result.get('data') or []
+    if not data:
+        return []
+
+    first = data[0] if isinstance(data, list) else {}
+    rows = first.get('results') if isinstance(first, dict) else []
+    return rows if isinstance(rows, list) else []
 
 def get_feeds():
     """
@@ -35,6 +58,262 @@ def get_feeds():
     
     with open(feeds_path, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+
+def get_keyword_pool():
+    keywords = []
+    for key in ('chn', 'eng'):
+        raw = config.get('paper.keywords', key, fallback='') or ''
+        keywords.extend([item.strip() for item in raw.split(',') if item.strip()])
+    deduped = []
+    seen = set()
+    for keyword in keywords:
+        token = keyword.lower()
+        if token in seen:
+            continue
+        seen.add(token)
+        deduped.append(keyword)
+    return deduped
+
+
+def normalize_source_name(value):
+    text = str(value or '').strip()
+    if not text:
+        return '未命名来源'
+
+    upper_words = {'ieee', 'optica', 'mdpi', 'aps', 'osa', 'iop', 'oa', 'rss'}
+    small_words = {'a', 'an', 'the', 'and', 'or', 'for', 'of', 'in', 'on', 'to', 'with'}
+    words = [part for part in re.split(r'\s+', text) if part]
+    formatted = []
+    for idx, word in enumerate(words):
+        lower = word.lower()
+        if re.match(r'^[\u4e00-\u9fff]', word):
+            formatted.append(word)
+        elif lower in upper_words:
+            formatted.append(lower.upper())
+        elif 0 < idx < len(words) - 1 and lower in small_words:
+            formatted.append(lower)
+        elif re.match(r'^[A-Za-z]', word):
+            formatted.append(word[:1].upper() + word[1:].lower())
+        else:
+            formatted.append(word)
+    return ' '.join(formatted)
+
+
+def strip_html_text(value):
+    text = str(value or '')
+    text = re.sub(r'<script[\s\S]*?</script>', ' ', text, flags=re.IGNORECASE)
+    text = re.sub(r'<style[\s\S]*?</style>', ' ', text, flags=re.IGNORECASE)
+    text = re.sub(r'<\s*br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</(p|div|section|article|h\d|li|ul|ol|tr)>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<(li|ul|ol)[^>]*>', ' ', text, flags=re.IGNORECASE)
+    text = TAG_RE.sub(' ', text)
+    text = html.unescape(text)
+    text = text.replace('\r', '')
+    text = re.sub(r'[^\S\n]+', ' ', text)
+    text = re.sub(r' *\n+ *', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def normalize_url(value, base=''):
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    if raw.startswith('//'):
+        return f'https:{raw}'
+    if raw.startswith('http://') or raw.startswith('https://'):
+        return raw
+    if base and (base.startswith('http://') or base.startswith('https://')):
+        if raw.startswith('/'):
+            match = re.match(r'^(https?://[^/]+)', base)
+            return f"{match.group(1)}{raw}" if match else raw
+        return f"{base.rstrip('/')}/{raw.lstrip('/')}"
+    return raw
+
+
+def extract_image_url(content, link=''):
+    html_text = str(content or '')
+    patterns = [
+        r'<img[^>]+src\s*=\s*["\']([^"\']+)["\']',
+        r'<meta[^>]+property\s*=\s*["\']og:image["\'][^>]+content\s*=\s*["\']([^"\']+)["\']',
+        r'<meta[^>]+content\s*=\s*["\']([^"\']+)["\'][^>]+property\s*=\s*["\']og:image["\']'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html_text, flags=re.IGNORECASE)
+        if match:
+            return normalize_url(match.group(1), link)
+    return ''
+
+
+def clean_authors_text(value):
+    text = strip_html_text(value)
+    text = re.sub(r'^(authors?|by|作者)\s*[:：\-]?\s*', '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+
+def extract_authors_text(row):
+    direct = clean_authors_text(row.get('authors') or row.get('author') or '')
+    if direct:
+        return direct
+
+    html_text = str(row.get('content') or '')
+    candidates = [
+        re.search(r'(?:^|>|\n)\s*(?:authors?|by|作者)\s*[:：\-]?\s*([^<\n]{3,220})', html_text, flags=re.IGNORECASE),
+        re.search(r'<strong>\s*(?:authors?|作者)\s*</strong>\s*[:：\-]?\s*([^<\n]{3,220})', html_text, flags=re.IGNORECASE),
+        re.search(r'<p[^>]*class=["\'][^"\']*author[^"\']*["\'][^>]*>([\s\S]*?)</p>', html_text, flags=re.IGNORECASE),
+    ]
+    for candidate in candidates:
+        if candidate and candidate.group(1):
+            cleaned = clean_authors_text(candidate.group(1))
+            if cleaned:
+                return cleaned
+    return ''
+
+
+def split_authors(value):
+    seen = set()
+    authors = []
+    for item in re.split(r'(?:,|;|，|；|、|\band\b|\s&\s)', clean_authors_text(value), flags=re.IGNORECASE):
+        token = item.strip()
+        if not token or len(token) > 80 or re.match(r'^et\.?\s*al\.?$', token, flags=re.IGNORECASE):
+            continue
+        lowered = token.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        authors.append(token)
+    return authors
+
+
+def extract_doi(row):
+    candidates = [
+        str(row.get('doi') or ''),
+        str(row.get('link') or ''),
+        str(row.get('content') or ''),
+        str(row.get('title') or '')
+    ]
+    for candidate in candidates:
+        match = DOI_PATTERN.search(html.unescape(candidate))
+        if match:
+            return match.group(1).rstrip(').,;]')
+    return ''
+
+
+def match_keywords(title, abstract, keywords):
+    haystack = f"{title} {abstract}".lower()
+    matched = []
+    for keyword in keywords:
+        token = keyword.lower()
+        if token and token in haystack:
+            matched.append(keyword)
+    return matched[:8]
+
+
+def normalize_snapshot_row(row, keywords):
+    link = normalize_url(row.get('link') or '')
+    abstract = strip_html_text(row.get('content') or '') or '暂无摘要'
+    authors_text = extract_authors_text(row)
+    display_date = str(row.get('published_at') or row.get('created_at') or '').strip()
+    title = str(row.get('title') or '未命名文章').strip() or '未命名文章'
+    doi = extract_doi(row)
+    keyword_hits = match_keywords(title, abstract, keywords)
+
+    return {
+        'id': str(row.get('id') or row.get('link') or row.get('title') or '').strip(),
+        'title': title,
+        'link': link,
+        'journal': normalize_source_name(row.get('source_name') or ''),
+        'journalRaw': str(row.get('source_name') or '').strip(),
+        'sourceType': str(row.get('source_type') or 'journal').strip() or 'journal',
+        'publishedAt': str(row.get('published_at') or '').strip(),
+        'createdAt': str(row.get('created_at') or '').strip(),
+        'displayDate': display_date,
+        'dateKey': display_date[:10] if display_date else '',
+        'abstract': abstract,
+        'excerpt': abstract[:220].strip() + '...' if len(abstract) > 220 else abstract,
+        'authors': split_authors(authors_text),
+        'authorsText': authors_text,
+        'imageUrl': extract_image_url(row.get('content') or '', link),
+        'doi': doi,
+        'keywords': keyword_hits
+    }
+
+
+def build_optics_snapshot(d1_client):
+    rows = query_rows(
+        d1_client,
+        """
+        SELECT id, title, link, published_at, created_at, source_name, source_type, content
+        FROM articles
+        WHERE source_type = ?
+          AND datetime(COALESCE(NULLIF(published_at, ''), created_at)) >= datetime('now', ?)
+        ORDER BY datetime(COALESCE(NULLIF(published_at, ''), created_at)) DESC, datetime(created_at) DESC
+        LIMIT ?
+        """,
+        ['journal', f'-{SNAPSHOT_RETENTION_DAYS} days', SNAPSHOT_MAX_ITEMS]
+    )
+
+    keyword_pool = get_keyword_pool()
+    items = []
+    journal_counts = {}
+    for row in rows:
+        item = normalize_snapshot_row(row, keyword_pool)
+        if not item['id'] or not item['title']:
+            continue
+        items.append(item)
+        journal_counts[item['journalRaw']] = journal_counts.get(item['journalRaw'], 0) + 1
+
+    journals = [
+        {
+            'name': name,
+            'label': normalize_source_name(name),
+            'count': count,
+        }
+        for name, count in sorted(journal_counts.items(), key=lambda entry: entry[0].lower())
+        if name
+    ]
+
+    snapshot = {
+        'items': items,
+        'journals': journals,
+        'meta': {
+            'total': len(items),
+            'journalCount': len(journals),
+            'generatedAt': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'retentionDays': SNAPSHOT_RETENTION_DAYS,
+            'limit': SNAPSHOT_MAX_ITEMS,
+            'source': 'push-rss-d1'
+        }
+    }
+
+    payload_text = json.dumps(snapshot, ensure_ascii=False, separators=(',', ':'))
+    snapshot['meta']['etag'] = hashlib.md5(payload_text.encode('utf-8')).hexdigest()
+    return snapshot
+
+
+def save_snapshot_file(snapshot):
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output', 'paper')
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, 'optics_snapshot.json')
+    with open(out_path, 'w', encoding='utf-8') as file_obj:
+        json.dump(snapshot, file_obj, ensure_ascii=False, indent=2)
+    return out_path
+
+
+def export_optics_snapshot(snapshot, kv_client):
+    payload_text = json.dumps(snapshot, ensure_ascii=False, separators=(',', ':'))
+    if kv_client.enabled:
+        result = kv_client.put(SNAPSHOT_OUTPUT_KEY, payload_text)
+        if result.get('success'):
+            print(f"Optics snapshot exported to KV key: {SNAPSHOT_OUTPUT_KEY}")
+        else:
+            print(f"Optics snapshot export skipped/failed: {result.get('error')}")
+    else:
+        print('Optics snapshot KV export skipped (KV client not configured).')
+
+    out_path = save_snapshot_file(snapshot)
+    print(f"Optics snapshot saved locally: {out_path}")
 
 def fetch_feed(feed_url, max_retries=3):
     """Fetch a single feed with retries"""
@@ -171,6 +450,12 @@ def main():
     # 4. Cleanup Old Data (Retention: 7 days)
     print("Cleaning up old articles...")
     d1.query("DELETE FROM articles WHERE published_at < datetime('now', '-7 days')")
+
+    # 5. Export optics snapshot (optional, but runs in the same hourly RSS task)
+    print('Building optics snapshot...')
+    snapshot = build_optics_snapshot(d1)
+    kv_client = CloudflareKVClient()
+    export_optics_snapshot(snapshot, kv_client)
     
     print("Done.")
 
