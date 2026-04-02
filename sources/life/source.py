@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.template import TemplateEngine
+from core.dashboard_snapshot import export_dashboard_snapshot
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from core.legacy import *
 from core.utils.lib import *
@@ -19,6 +20,15 @@ class LifeSource(BaseSource):
     
     def run(self) -> Message:
         data = self._get_combined_data()
+        export_dashboard_snapshot('life', {
+            'boxReal': data.get('box_real', [])[:6],
+            'boxYear': data.get('box_year', [])[:6],
+            'tvList': data.get('tv_list', [])[:6],
+            'showList': data.get('show_list', [])[:6],
+            'doubanList': data.get('douban_list', [])[:6],
+            'doubanHighRate': data.get('douban_high_rate', [])[:6],
+            'bookList': data.get('book_list', [])[:6],
+        })
         
         # Render HTML
         html = self.template.render('life.html', {

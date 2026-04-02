@@ -26,7 +26,7 @@ except ImportError:
 
 # Configuration from env or default
 D1_TABLE = "articles"
-SNAPSHOT_OUTPUT_KEY = os.getenv('OPTICS_SNAPSHOT_KV_KEY', 'snapshot:paper:optics:latest')
+SNAPSHOT_OUTPUT_KEY = os.getenv('OPTICS_SNAPSHOT_KV_KEY', 'dashboard:snapshot:optics:latest')
 SNAPSHOT_MAX_ITEMS = max(200, int(os.getenv('PAPER_SNAPSHOT_MAX_ITEMS', '1200')))
 SNAPSHOT_RETENTION_DAYS = max(1, int(os.getenv('PAPER_SNAPSHOT_RETENTION_DAYS', '7')))
 

@@ -1,0 +1,41 @@
+name: Load Push Dotenv
+description: Materialize a full push .env file from one GitHub Actions secret and export it to the job environment.
+
+inputs:
+  env_text:
+    description: Full .env content stored in the PUSH_ENV_FILE secret.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        ENV_TEXT: ${{ inputs.env_text }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${ENV_TEXT:-}" ]; then
+          echo "::error::PUSH_ENV_FILE secret is empty. Please paste the full push .env content into that secret."
+          exit 1
+        fi
+
+        printf '%s\n' "$ENV_TEXT" | tr -d '\r' > .env
+
+        while IFS= read -r line || [ -n "$line" ]; do
+          case "$line" in
+            ''|'#'*)
+              continue
+              ;;
+          esac
+
+          if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            key="${line%%=*}"
+            value="${line#*=}"
+            value="${value%%[[:space:]]#*}"
+            printf '%s=%s\n' "$key" "$value" >> "$GITHUB_ENV"
+          fi
+        done < .env
+
+        printf 'RUN_MODE=cloud\n' >> "$GITHUB_ENV"
+        printf 'TZ=Asia/Shanghai\n' >> "$GITHUB_ENV"

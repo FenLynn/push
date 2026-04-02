@@ -16,6 +16,7 @@ from core import Message, ContentType
 from core.env import EnvironmentDetector
 from zhdate import ZhDate
 from core.health_checker import check_health
+from core.dashboard_snapshot import export_dashboard_snapshot
 
 # 导入原有辅助函数
 # 导入原有辅助函数
@@ -59,6 +60,18 @@ class MorningSource(BaseSource):
         """运行获取流程并生成 HTML"""
         self.logger.info(f"Gathering morning data for topic: {self.topic}")
         context = self._gather_data()
+        export_dashboard_snapshot('morning', {
+            'dateInfo': context.get('date_info') or {},
+            'holidays': context.get('holidays') or [],
+            'weather': context.get('weather') or [],
+            'market': context.get('market') or {},
+            'macro': context.get('macro') or {},
+            'finance': context.get('finance') or {},
+            'quota': context.get('quota') or {},
+            'calendar': context.get('calendar') or [],
+            'english': context.get('english') or [],
+            'healthStatus': context.get('health_status') or '',
+        })
         
         # 渲染 HTML
         html_content = self.render_template('morning.html', context)

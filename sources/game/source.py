@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.template import TemplateEngine
+from core.dashboard_snapshot import export_dashboard_snapshot
 
 # 导入原有的 cloud 库
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
@@ -41,6 +42,11 @@ class GameSource(BaseSource):
             days_data = self._get_formatted_data()
             # 挑选 Hero Match (推荐赛事)
             hero_match = self._pick_hero_match(days_data)
+            export_dashboard_snapshot('game', {
+                'heroMatch': hero_match,
+                'days': days_data[:4],
+                'highlightedTeams': self.HIGHLIGHTED_TEAMS,
+            })
 
             # --- Smart Truncation Logic ---
             # Try to fit content into one page by progressively reducing days/matches

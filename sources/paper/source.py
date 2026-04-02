@@ -263,7 +263,6 @@ class PaperSource(BaseSource):
         # 生成消息列表
         messages = []
         global_idx = 1       # 文章全局序号（跨页连续）
-        journal_global_idx = 1  # 期刊全局序号（跨页连续，用于模板徽章）
         journal_page_tracker = {}  # j_name -> 当前出现次数
 
         # 预先计算每个期刊在总分页中出现的次数（跨页被拆分时需要分卷标签）
@@ -271,6 +270,15 @@ class PaperSource(BaseSource):
         for pg in all_pages:
             for f in pg:
                 journal_total_pages[f['journal']] = journal_total_pages.get(f['journal'], 0) + 1
+
+        # 预分配期刊唯一序号：按首次出现顺序，跨页续篇复用同一序号
+        journal_idx_map = {}   # j_name -> 唯一期刊序号
+        _jidx = 1
+        for pg in all_pages:
+            for f in pg:
+                if f['journal'] not in journal_idx_map:
+                    journal_idx_map[f['journal']] = _jidx
+                    _jidx += 1
 
         total_pages = len(all_pages)
         for idx, page_papers in enumerate(all_pages):
@@ -293,13 +301,13 @@ class PaperSource(BaseSource):
                         f_item['articles_nu']
                     )
 
-                # 连续全局期刊序号（不随分页重置，模板使用此值而非 loop.index）
-                f_item['journal_global_idx'] = journal_global_idx
-                journal_global_idx += 1
+                # 跨页续篇复用同一序号（不再递增），确保同一期刊始终是同一个数字
+                f_item['journal_global_idx'] = journal_idx_map[j_name]
 
                 for article in f_item['data']:
                     article['global_idx'] = global_idx
                     global_idx += 1
+
             
             # 准备渲染上下文，始终保留全天指标
             page_info = {
