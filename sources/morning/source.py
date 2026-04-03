@@ -70,6 +70,7 @@ class MorningSource(BaseSource):
             'quota': context.get('quota') or {},
             'calendar': context.get('calendar') or [],
             'english': context.get('english') or [],
+            'images': context.get('images') or [],
             'healthStatus': context.get('health_status') or '',
         })
         

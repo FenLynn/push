@@ -21,13 +21,20 @@ class LifeSource(BaseSource):
     def run(self) -> Message:
         data = self._get_combined_data()
         export_dashboard_snapshot('life', {
-            'boxReal': data.get('box_real', [])[:6],
-            'boxYear': data.get('box_year', [])[:6],
-            'tvList': data.get('tv_list', [])[:6],
-            'showList': data.get('show_list', [])[:6],
-            'doubanList': data.get('douban_list', [])[:6],
-            'doubanHighRate': data.get('douban_high_rate', [])[:6],
-            'bookList': data.get('book_list', [])[:6],
+            'boxReal': data.get('box_real', [])[:10],
+            'boxYear': data.get('box_year', [])[:10],
+            'tvList': data.get('tv_list', [])[:10],
+            'showList': data.get('show_list', [])[:10],
+            'doubanList': data.get('douban_list', [])[:10],
+            'doubanHighRate': data.get('douban_high_rate', [])[:10],
+            'bookList': data.get('book_list', [])[:10],
+            'summary': {
+                'boxRealCount': len(data.get('box_real', []) or []),
+                'tvCount': len(data.get('tv_list', []) or []),
+                'showCount': len(data.get('show_list', []) or []),
+                'movieCount': len(data.get('douban_list', []) or []),
+                'bookCount': len(data.get('book_list', []) or []),
+            },
         })
         
         # Render HTML

@@ -200,6 +200,92 @@ def extract_doi(row):
     return ''
 
 
+def extract_entry_text(entry, key):
+    value = entry.get(key) if hasattr(entry, 'get') else getattr(entry, key, '')
+    if isinstance(value, list) and value:
+      candidate = value[0]
+      if isinstance(candidate, dict):
+        return str(candidate.get('value') or candidate.get('content') or '').strip()
+      return str(candidate or '').strip()
+    if isinstance(value, dict):
+      return str(value.get('value') or value.get('content') or '').strip()
+    return str(value or '').strip()
+
+
+def extract_entry_authors(entry):
+    authors = []
+    if hasattr(entry, 'get'):
+        author_entries = entry.get('authors') or []
+        for item in author_entries:
+            if isinstance(item, dict):
+                name = str(item.get('name') or '').strip()
+                if name:
+                    authors.append(name)
+
+    fallback_candidates = [
+        extract_entry_text(entry, 'author'),
+        extract_entry_text(entry, 'dc_creator'),
+        extract_entry_text(entry, 'creator')
+    ]
+    for candidate in fallback_candidates:
+        if candidate:
+            authors.extend(split_authors(candidate) or [candidate])
+
+    deduped = []
+    seen = set()
+    for item in authors:
+        token = str(item or '').strip()
+        if not token:
+            continue
+        lowered = token.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        deduped.append(token)
+    return ', '.join(deduped[:12])
+
+
+def extract_entry_doi(entry):
+    candidates = [
+        extract_entry_text(entry, 'doi'),
+        extract_entry_text(entry, 'prism_doi'),
+        extract_entry_text(entry, 'dc_identifier'),
+        extract_entry_text(entry, 'identifier'),
+        extract_entry_text(entry, 'id'),
+        extract_entry_text(entry, 'link'),
+        extract_entry_text(entry, 'summary'),
+        extract_entry_text(entry, 'description'),
+        extract_entry_text(entry, 'title')
+    ]
+    for candidate in candidates:
+        match = DOI_PATTERN.search(html.unescape(candidate))
+        if match:
+            return match.group(1).rstrip(').,;]')
+    return ''
+
+
+def extract_entry_content(entry):
+    for key in ('content', 'summary', 'description', 'summary_detail', 'subtitle'):
+        text = extract_entry_text(entry, key)
+        if text:
+            return text
+    return ''
+
+
+def build_entry_content(entry):
+    body = extract_entry_content(entry)
+    doi = extract_entry_doi(entry)
+    authors = extract_entry_authors(entry)
+    prefix_parts = []
+    if authors:
+        prefix_parts.append(f'<p>Authors: {html.escape(authors)}</p>')
+    if doi:
+        prefix_parts.append(f'<p>DOI: {html.escape(doi)}</p>')
+    if body:
+        prefix_parts.append(body)
+    return ''.join(prefix_parts), doi, authors
+
+
 def match_keywords(title, abstract, keywords):
     haystack = f"{title} {abstract}".lower()
     matched = []
@@ -362,9 +448,7 @@ def process_feed_and_insert(feed, d1_client):
             aid = hashlib.md5(link.encode('utf-8')).hexdigest()
             title = entry.title
             
-            content = ""
-            if hasattr(entry, 'summary'): content = entry.summary
-            if hasattr(entry, 'content'): content = entry.content[0].value
+            content, doi, authors = build_entry_content(entry)
             
             # Insert into D1 (Upsert logic: OR IGNORE)
             sql = """
@@ -379,7 +463,7 @@ def process_feed_and_insert(feed, d1_client):
                 dt.strftime('%Y-%m-%d %H:%M:%S'), 
                 feed['title'], 
                 feed.get('type', 'journal'), 
-                content[:5000], 
+                content[:16000], 
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             ]
             

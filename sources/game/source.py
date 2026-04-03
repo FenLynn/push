@@ -42,9 +42,12 @@ class GameSource(BaseSource):
             days_data = self._get_formatted_data()
             # 挑选 Hero Match (推荐赛事)
             hero_match = self._pick_hero_match(days_data)
+            total_matches = sum(len(day.get('matches', [])) for day in days_data)
             export_dashboard_snapshot('game', {
                 'heroMatch': hero_match,
-                'days': days_data[:4],
+                'days': days_data,
+                'totalDays': len(days_data),
+                'totalMatches': total_matches,
                 'highlightedTeams': self.HIGHLIGHTED_TEAMS,
             })
 
@@ -101,6 +104,14 @@ class GameSource(BaseSource):
         except Exception as e:
             import traceback
             traceback.print_exc()
+            export_dashboard_snapshot('game', {
+                'heroMatch': None,
+                'days': [],
+                'totalDays': 0,
+                'totalMatches': 0,
+                'highlightedTeams': self.HIGHLIGHTED_TEAMS,
+                'error': str(e),
+            })
             return Message(
                 title='Game Error',
                 content=f"Error: {str(e)}",
@@ -163,13 +174,18 @@ class GameSource(BaseSource):
         if df.empty:
             return []
 
-        # 获取未来6天
-        target_dates = [(datetime.now() + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
         today = datetime.now().strftime('%Y-%m-%d')
+        target_dates = sorted(
+            {
+                str(value)
+                for value in df['date'].dropna().astype(str).tolist()
+                if str(value) >= today
+            }
+        )
         
         res_days = []
         
-        # 按日期分组处理
+        # 按抓取结果中的全部未来日期分组处理
         for date_str in target_dates:
             day_games = df[df['date'] == date_str]
             if day_games.empty:
