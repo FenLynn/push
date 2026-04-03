@@ -16,6 +16,7 @@ const ROUTE_CONFIG = {
   "06:00_1-5": [{ repo: "push", workflow: "night.yml" }],
   "07:00": [{ repo: "push", workflow: "morning.yml" }],
   "07:10": [{ repo: "push", workflow: "damai.yml" }],
+  "07:20": [{ repo: "push", workflow: "game.yml" }],
   "09:15": [{ repo: "push", workflow: "watchdog.yml" }],
   "10:30_1-5": [{ repo: "push", workflow: "etf.yml" }],
   "11:30_1-5": [{ repo: "push", workflow: "stock.yml" }],

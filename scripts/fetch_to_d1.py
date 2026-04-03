@@ -32,6 +32,7 @@ SNAPSHOT_RETENTION_DAYS = max(1, int(os.getenv('PAPER_SNAPSHOT_RETENTION_DAYS', 
 
 DOI_PATTERN = re.compile(r'(10\.\d{4,9}/[-._;()/:A-Z0-9]+)', re.IGNORECASE)
 TAG_RE = re.compile(r'<[^>]+>')
+ARTICLE_META_CACHE = {}
 
 
 def query_rows(d1_client, sql, params=None):
@@ -272,10 +273,16 @@ def extract_entry_content(entry):
     return ''
 
 
-def build_entry_content(entry):
+def build_entry_content(entry, link=''):
     body = extract_entry_content(entry)
     doi = extract_entry_doi(entry)
     authors = extract_entry_authors(entry)
+    if link and (not doi or not strip_html_text(body)):
+        article_meta = fetch_article_metadata(link)
+        if not doi:
+            doi = article_meta.get('doi') or ''
+        if not strip_html_text(body) and article_meta.get('abstract'):
+            body = f'<p>{html.escape(article_meta["abstract"])}</p>'
     prefix_parts = []
     if authors:
         prefix_parts.append(f'<p>Authors: {html.escape(authors)}</p>')
@@ -284,6 +291,75 @@ def build_entry_content(entry):
     if body:
         prefix_parts.append(body)
     return ''.join(prefix_parts), doi, authors
+
+
+def extract_page_doi(html_text):
+    candidates = []
+    patterns = [
+        r'<meta[^>]+name=["\']citation_doi["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']citation_doi["\']',
+        r'<meta[^>]+name=["\']dc\.identifier["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']dc\.identifier["\']',
+        r'<meta[^>]+name=["\']prism\.doi["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']prism\.doi["\']',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html_text, flags=re.IGNORECASE)
+        if match and match.group(1):
+            candidates.append(match.group(1))
+
+    candidates.append(html_text)
+    for candidate in candidates:
+        match = DOI_PATTERN.search(html.unescape(candidate or ''))
+        if match:
+            return match.group(1).rstrip(').,;]')
+    return ''
+
+
+def extract_page_abstract(html_text):
+    patterns = [
+        r'<meta[^>]+name=["\']citation_abstract["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']citation_abstract["\']',
+        r'<meta[^>]+name=["\']dc\.description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']dc\.description["\']',
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']',
+        r'<section[^>]*class=["\'][^"\']*abstract[^"\']*["\'][^>]*>([\s\S]*?)</section>',
+        r'<div[^>]*class=["\'][^"\']*abstract[^"\']*["\'][^>]*>([\s\S]*?)</div>',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html_text, flags=re.IGNORECASE)
+        if not match or not match.group(1):
+            continue
+        text = strip_html_text(match.group(1))
+        if text and len(text) >= 40:
+            return text
+    return ''
+
+
+def fetch_article_metadata(link):
+    normalized_link = normalize_url(link)
+    if not normalized_link:
+        return {'doi': '', 'abstract': ''}
+    if normalized_link in ARTICLE_META_CACHE:
+        return ARTICLE_META_CACHE[normalized_link]
+
+    result = {'doi': '', 'abstract': ''}
+    try:
+        response = requests.get(normalized_link, timeout=20, headers={
+            'User-Agent': 'Mozilla/5.0 (GitHub Actions; Cloud Native Fetcher)'
+        })
+        if response.status_code == 200:
+            html_text = response.text[:220000]
+            result = {
+                'doi': extract_page_doi(html_text),
+                'abstract': extract_page_abstract(html_text)
+            }
+    except Exception:
+        result = {'doi': '', 'abstract': ''}
+
+    ARTICLE_META_CACHE[normalized_link] = result
+    return result
 
 
 def match_keywords(title, abstract, keywords):
@@ -448,7 +524,7 @@ def process_feed_and_insert(feed, d1_client):
             aid = hashlib.md5(link.encode('utf-8')).hexdigest()
             title = entry.title
             
-            content, doi, authors = build_entry_content(entry)
+            content, doi, authors = build_entry_content(entry, link)
             
             # Insert into D1 (Upsert logic: OR IGNORE)
             sql = """

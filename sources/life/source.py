@@ -21,13 +21,13 @@ class LifeSource(BaseSource):
     def run(self) -> Message:
         data = self._get_combined_data()
         export_dashboard_snapshot('life', {
-            'boxReal': data.get('box_real', [])[:10],
-            'boxYear': data.get('box_year', [])[:10],
-            'tvList': data.get('tv_list', [])[:10],
-            'showList': data.get('show_list', [])[:10],
-            'doubanList': data.get('douban_list', [])[:10],
-            'doubanHighRate': data.get('douban_high_rate', [])[:10],
-            'bookList': data.get('book_list', [])[:10],
+            'boxReal': data.get('box_real', []),
+            'boxYear': data.get('box_year', []),
+            'tvList': data.get('tv_list', []),
+            'showList': data.get('show_list', []),
+            'doubanList': data.get('douban_list', []),
+            'doubanHighRate': data.get('douban_high_rate', []),
+            'bookList': data.get('book_list', []),
             'summary': {
                 'boxRealCount': len(data.get('box_real', []) or []),
                 'tvCount': len(data.get('tv_list', []) or []),

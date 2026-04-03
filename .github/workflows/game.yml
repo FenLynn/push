@@ -30,4 +30,4 @@ jobs:
         run: pip install -r requirements.txt
         
       - name: Run Game
-        run: python main.py run game --topic stock
+        run: python main.py run game --topic baobao
