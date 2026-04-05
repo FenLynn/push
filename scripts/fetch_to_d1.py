@@ -277,10 +277,12 @@ def build_entry_content(entry, link=''):
     body = extract_entry_content(entry)
     doi = extract_entry_doi(entry)
     authors = extract_entry_authors(entry)
-    if link and (not doi or not strip_html_text(body)):
+    if link and (not doi or not strip_html_text(body) or not authors):
         article_meta = fetch_article_metadata(link)
         if not doi:
             doi = article_meta.get('doi') or ''
+        if not authors:
+            authors = article_meta.get('authors') or ''
         if not strip_html_text(body) and article_meta.get('abstract'):
             body = f'<p>{html.escape(article_meta["abstract"])}</p>'
     prefix_parts = []
@@ -337,14 +339,54 @@ def extract_page_abstract(html_text):
     return ''
 
 
+def extract_page_authors(html_text):
+    candidates = []
+    meta_patterns = [
+        r'<meta[^>]+name=["\']citation_author["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']citation_author["\']',
+        r'<meta[^>]+name=["\']dc\.creator["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']dc\.creator["\']',
+        r'<meta[^>]+name=["\']author["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']author["\']',
+    ]
+    block_patterns = [
+        r'<p[^>]*class=["\'][^"\']*author[^"\']*["\'][^>]*>([\s\S]*?)</p>',
+        r'<div[^>]*class=["\'][^"\']*author[^"\']*["\'][^>]*>([\s\S]*?)</div>',
+        r'(?:^|>|\n)\s*(?:authors?|by|作者)\s*[:：\-]?\s*([^<\n]{3,220})',
+    ]
+
+    for pattern in meta_patterns:
+        candidates.extend(re.findall(pattern, html_text, flags=re.IGNORECASE))
+
+    for pattern in block_patterns:
+        match = re.search(pattern, html_text, flags=re.IGNORECASE)
+        if match and match.group(1):
+            candidates.append(match.group(1))
+
+    authors = []
+    seen = set()
+    for candidate in candidates:
+        cleaned = clean_authors_text(candidate)
+        if not cleaned:
+            continue
+        for item in split_authors(cleaned) or [cleaned]:
+            lowered = item.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            authors.append(item)
+
+    return ', '.join(authors)
+
+
 def fetch_article_metadata(link):
     normalized_link = normalize_url(link)
     if not normalized_link:
-        return {'doi': '', 'abstract': ''}
+        return {'doi': '', 'abstract': '', 'authors': ''}
     if normalized_link in ARTICLE_META_CACHE:
         return ARTICLE_META_CACHE[normalized_link]
 
-    result = {'doi': '', 'abstract': ''}
+    result = {'doi': '', 'abstract': '', 'authors': ''}
     try:
         response = requests.get(normalized_link, timeout=20, headers={
             'User-Agent': 'Mozilla/5.0 (GitHub Actions; Cloud Native Fetcher)'
@@ -353,10 +395,11 @@ def fetch_article_metadata(link):
             html_text = response.text[:220000]
             result = {
                 'doi': extract_page_doi(html_text),
-                'abstract': extract_page_abstract(html_text)
+                'abstract': extract_page_abstract(html_text),
+                'authors': extract_page_authors(html_text)
             }
     except Exception:
-        result = {'doi': '', 'abstract': ''}
+        result = {'doi': '', 'abstract': '', 'authors': ''}
 
     ARTICLE_META_CACHE[normalized_link] = result
     return result
@@ -379,6 +422,16 @@ def normalize_snapshot_row(row, keywords):
     display_date = str(row.get('published_at') or row.get('created_at') or '').strip()
     title = str(row.get('title') or '未命名文章').strip() or '未命名文章'
     doi = extract_doi(row)
+
+    if link and (not authors_text or not doi or abstract == '暂无摘要'):
+        article_meta = fetch_article_metadata(link)
+        if not authors_text:
+            authors_text = clean_authors_text(article_meta.get('authors') or '')
+        if not doi:
+            doi = article_meta.get('doi') or ''
+        if abstract == '暂无摘要' and article_meta.get('abstract'):
+            abstract = article_meta.get('abstract')
+
     keyword_hits = match_keywords(title, abstract, keywords)
 
     return {
