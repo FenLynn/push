@@ -143,7 +143,13 @@ class GameSource(BaseSource):
                 if 'LPL' in content or 'LCK' in content: score += 5
                 
                 if score > 0:
-                    candidates.append({'match': m, 'score': score, 'date': day['date_label'], 'weekday': day['weekday']})
+                    candidates.append({
+                        'match': m,
+                        'score': score,
+                        'date': day.get('date', ''),
+                        'date_label': day['date_label'],
+                        'weekday': day['weekday']
+                    })
         
         if candidates:
             # Sort by score desc
@@ -158,7 +164,10 @@ class GameSource(BaseSource):
 
             return {
                 'league': m['league'],
-                'time': f"{top['date']} {m['time']}",
+                'time': f"{top['date_label']} {m['time']}",
+                'date': top.get('date', ''),
+                'date_label': top.get('date_label', ''),
+                'weekday': top.get('weekday', ''),
                 'team_a': strip_tags(m['team_a']),
                 'team_b': strip_tags(m['team_b']),
                 'type': m['type']
@@ -240,6 +249,7 @@ class GameSource(BaseSource):
                 label = date_obj.strftime("%m-%d")
 
             res_days.append({
+                'date': date_str,
                 'date_label': label,
                 'weekday': weekday,
                 'is_today': is_today,
