@@ -167,6 +167,12 @@ class Engine:
                 
                 if success_count > 0:
                     total_success += 1
+
+            if total_success == len(results) and hasattr(source, 'after_send_success'):
+                try:
+                    source.after_send_success()
+                except Exception as hook_error:
+                    self.logger.warning(f"after_send_success hook failed for '{source_name}': {hook_error}")
                     
             return total_success > 0
             

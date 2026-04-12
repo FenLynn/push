@@ -154,7 +154,7 @@ def gen_modules(modules_to_run, topic='me', token=None):
             engine.register_source(name, source)
             path = engine.run_source_only(name)
             if path:
-                logger.info(f"✅ Generated: {path}")
+                logger.info(f"Generated: {path}")
         except Exception as e:
             logger.error(f"Failed to generate {name}: {e}")
 
@@ -232,6 +232,12 @@ def run_modules(modules_to_run, topic='me', token=None, title=None, **kwargs):
                 # Use None to send to all registered channels
                 if engine.run_with_message(message, name, channel_names=None):
                     module_msg_success += 1
+
+            if module_msg_success == len(results) and hasattr(source, 'after_send_success'):
+                try:
+                    source.after_send_success()
+                except Exception as hook_error:
+                    logger.warning(f"after_send_success hook failed for {module_key}: {hook_error}")
             
             # Record success (even if some messages failed to send via channel, the module itself "ran")
             # But for CI/CD, we might want to know if everything was sent.

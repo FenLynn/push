@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""Paper 去重逻辑测试。"""
+
+import os
+import sys
+from types import SimpleNamespace
+from datetime import datetime, timedelta
+
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
+
+import scripts.fetch_to_d1 as fetch_to_d1_module
+from core.config import config
+from core.llm_factory import LLMFactory
+from scripts.fetch_to_d1 import ARTICLE_RETENTION_DAYS, is_entry_within_retention
+from sources.paper import PaperSource
+
+
+def test_retention_window_filter():
+    now = datetime(2026, 4, 12, 19, 0, 0)
+    assert is_entry_within_retention(now - timedelta(days=ARTICLE_RETENTION_DAYS - 1), now)
+    assert not is_entry_within_retention(now - timedelta(days=ARTICLE_RETENTION_DAYS + 1), now)
+
+
+def test_dedupe_key_ignores_tracking_params():
+    source = PaperSource(topic='me', test_mode=True)
+    article_a = {
+        'title': 'Navigating optical skyrmions-from historical origins to applications: tutorial',
+        'link': 'https://example.org/paper?id=42&utm_source=rss&utm_campaign=test',
+        'content': '',
+        'published_at': '2025-12-23 05:00:00',
+        'created_at': '2026-04-12 19:00:00',
+    }
+    article_b = {
+        'title': 'Navigating optical skyrmions-from historical origins to applications: tutorial',
+        'link': 'https://example.org/paper?id=42&utm_medium=mail',
+        'content': '',
+        'published_at': '2025-12-23 05:00:00',
+        'created_at': '2026-04-12 20:00:00',
+    }
+
+    key_a = source._build_push_dedupe_identity(article_a, 'Advances in Optics and Photonics')
+    key_b = source._build_push_dedupe_identity(article_b, 'Advances in Optics and Photonics')
+    assert key_a['dedupe_key'] == key_b['dedupe_key']
+    assert key_a['dedupe_kind'] == 'title'
+
+
+def test_dedupe_key_separates_same_title_across_sources():
+    source = PaperSource(topic='me', test_mode=True)
+    article = {
+        'title': 'Editorial',
+        'link': '',
+        'content': '',
+        'published_at': '2026-04-06 05:00:00',
+        'created_at': '2026-04-09 20:01:24',
+    }
+
+    key_a = source._build_push_dedupe_identity(article, 'Journal of Lightwave Technology')
+    key_b = source._build_push_dedupe_identity(article, 'Optics Express')
+    assert key_a['dedupe_key'] != key_b['dedupe_key']
+
+
+def test_process_feed_skips_old_entries_before_insert():
+    class FakeD1Client:
+        def __init__(self):
+            self.calls = []
+
+        def query(self, sql, params):
+            self.calls.append({'sql': sql, 'params': params})
+            return {'success': True, 'data': [{'results': []}]}
+
+    class Entry(SimpleNamespace):
+        def get(self, key, default=''):
+            return getattr(self, key, default)
+
+    now = datetime.now()
+    old_entry = Entry(
+        link='https://example.org/old-paper',
+        title='Old paper',
+        published_parsed=(now - timedelta(days=ARTICLE_RETENTION_DAYS + 1)).timetuple(),
+        summary='<p>Old abstract</p>',
+        author='Old Author',
+        doi='10.1000/old-paper'
+    )
+    recent_entry = Entry(
+        link='https://example.org/recent-paper',
+        title='Recent paper',
+        published_parsed=(now - timedelta(hours=2)).timetuple(),
+        summary='<p>Recent abstract</p>',
+        author='Recent Author',
+        doi='10.1000/recent-paper'
+    )
+
+    original_fetch_feed = fetch_to_d1_module.fetch_feed
+    fetch_to_d1_module.fetch_feed = lambda url: SimpleNamespace(entries=[old_entry, recent_entry])
+    try:
+        fake_d1 = FakeD1Client()
+        result = fetch_to_d1_module.process_feed_and_insert(
+            {'title': 'Test Feed', 'url': 'https://example.org/feed.xml', 'type': 'journal'},
+            fake_d1,
+            batch_id='batch-1',
+        )
+    finally:
+        fetch_to_d1_module.fetch_feed = original_fetch_feed
+
+    assert result['inserted'] == 1
+    assert result['skipped_old'] == 1
+    assert result['fetch_failed'] is False
+    assert len(fake_d1.calls) == 2
+    article_call = fake_d1.calls[-1]
+    assert article_call['params'][15] == 'batch-1'
+    assert article_call['params'][16] is None
+    assert article_call['params'][-1] is not None
+
+
+def test_keyword_rendering_only_keeps_abstract_tail_tags():
+    source = PaperSource(topic='me', test_mode=True)
+    source.CHN_KEYWORDS = []
+    source.ENG_KEYWORDS = ['fiber laser', 'optical']
+
+    article = {
+        'title': 'A compact fiber laser cavity for sensing',
+        'content': '<p>Optical control is discussed in the abstract.</p>',
+    }
+
+    source._decorate_keyword_rendering(article)
+
+    assert '<span class="kh">fiber laser</span>' in article['title_html']
+    assert 'fiber laser' not in [item.lower() for item in article['display_keywords']]
+    assert [item.lower() for item in article['display_keywords']] == ['optical']
+
+
+def test_title_rendering_inserts_soft_hyphen_breaks():
+    source = PaperSource(topic='me', test_mode=True)
+    rendered = source._render_title_keyword_html('Microstructuredwaveguides for nonlinear optics', [])
+    assert '&shy;' in rendered
+
+
+def test_paper_llm_disabled_by_default():
+    source = PaperSource(topic='me', test_mode=True)
+    assert source.paper_llm_enabled is False
+    assert source.llm_provider is None
+
+
+def test_llm_config_strips_inline_env_comments():
+    keys = ['LLM_PROVIDER', 'LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL', 'LLM_PROXY']
+    old_values = {key: os.environ.get(key) for key in keys}
+    try:
+        os.environ['LLM_PROVIDER'] = 'zhipu       # zhipu | gemini | openai'
+        os.environ['LLM_API_KEY'] = '             # missing key'
+        os.environ['LLM_BASE_URL'] = '            # 可选:自定义API地址(反向代理)'
+        os.environ['LLM_MODEL'] = 'glm-4-flash   # model hint'
+        os.environ['LLM_PROXY'] = '               # proxy hint'
+
+        llm_conf = config.get_llm_config()
+        assert llm_conf['provider'] == 'zhipu'
+        assert llm_conf['api_key'] == ''
+        assert llm_conf['base_url'] == ''
+        assert llm_conf['model'] == 'glm-4-flash'
+        assert llm_conf['proxy'] == ''
+    finally:
+        for key, value in old_values.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def test_llm_factory_ignores_invalid_base_url_override():
+    provider = LLMFactory.create_provider({
+        'provider': 'zhipu',
+        'api_key': 'demo-key',
+        'base_url': '# invalid',
+        'model': 'glm-4-flash',
+    })
+    assert provider is not None
+    assert provider.base_url == 'https://open.bigmodel.cn/api/paas/v4'
+
+
+def test_crossref_exact_title_fallback(monkeypatch=None):
+    item = {
+        'title': 'Intelligent metrology of grating microstructures via fusion of diffraction spectra and a hybrid MaLSTM deep learning model',
+        'journal': 'Optics & Laser Technology',
+        'authors_text': '',
+        'published_at': '2026-04-11 09:01:14',
+    }
+
+    exact_payload = {
+        'message': {
+            'items': [
+                {
+                    'title': [item['title']],
+                    'container-title': ['Optics & Laser Technology'],
+                    'DOI': '10.1016/j.optlastec.2026.115237',
+                    'volume': '201',
+                    'page': '115237',
+                    'published-print': {'date-parts': [[2026, 9, 1]]},
+                }
+            ]
+        }
+    }
+
+    original_fetch_crossref_json = fetch_to_d1_module.fetch_crossref_json
+    calls = []
+
+    def fake_fetch_crossref_json(url, params=None):
+        calls.append(params or {})
+        if params and params.get('query.bibliographic'):
+            return {'message': {'items': []}}
+        if params and params.get('query.title'):
+            return exact_payload
+        return None
+
+    fetch_to_d1_module.fetch_crossref_json = fake_fetch_crossref_json
+    try:
+        result = fetch_to_d1_module.resolve_crossref_metadata(item)
+    finally:
+        fetch_to_d1_module.fetch_crossref_json = original_fetch_crossref_json
+
+    assert result is not None
+    assert result['doi'] == '10.1016/J.OPTLASTEC.2026.115237'
+    assert any(call.get('query.title') for call in calls)
+
+
+def test_paper_d1_query_uses_only_finalized_rows():
+    source = PaperSource(topic='me', test_mode=True)
+    sql = source._build_d1_article_sql(limit=20)
+    assert "COALESCE(ingest_finalized_at, '') != ''" in sql
+    assert "COALESCE(NULLIF(first_seen_at, ''), created_at)" in sql
+    assert sql.endswith(' LIMIT 20')
+
+
+def test_window_dedup_keeps_one_row_per_identity():
+    source = PaperSource(topic='me', test_mode=True)
+    rows = [
+        {
+            'title': 'Navigating optical skyrmions-from historical origins to applications: tutorial',
+            'link': 'https://example.org/paper?id=42&utm_source=rss',
+            'content': 'short',
+            'published_at': '2026-04-12 09:00:00',
+            'created_at': '2026-04-12 09:00:01',
+            'first_seen_at': '2026-04-12 09:00:01',
+            'last_seen_at': '2026-04-12 09:00:01',
+            'source_name': 'Advances in Optics and Photonics',
+            'doi': '',
+            'authors': '',
+        },
+        {
+            'title': 'Navigating optical skyrmions-from historical origins to applications: tutorial',
+            'link': 'https://example.org/paper?id=42&utm_medium=mail',
+            'content': 'much richer content',
+            'published_at': '2026-04-12 09:00:00',
+            'created_at': '2026-04-12 09:05:01',
+            'first_seen_at': '2026-04-12 09:00:01',
+            'last_seen_at': '2026-04-12 09:05:01',
+            'source_name': 'Advances in Optics and Photonics',
+            'doi': '10.1000/skyrmions',
+            'authors': 'Alice',
+        },
+    ]
+
+    deduped = source._dedupe_current_window_rows(rows)
+    assert len(deduped) == 1
+    assert deduped[0]['row']['doi'] == '10.1000/skyrmions'
+    assert source._run_audit['skippedDuplicateRows'] == 1
+
+
+def test_crossref_scoring_prefers_exact_candidate():
+    item = {
+        'title': 'Narrow-linewidth fiber laser with tunable output',
+        'journal': 'Optics Express',
+        'authors_text': 'Alice Zhang, Bob Li',
+        'published_at': '2026-04-12 07:01:00',
+    }
+    exact = {
+        'title': 'Narrow-linewidth fiber laser with tunable output',
+        'journal': 'Optics Express',
+        'authors': ['Alice Zhang'],
+        'doi': '10.1000/exact',
+        'published_at': '2026-04-12',
+    }
+    weak = {
+        'title': 'Broadband photonic filter for imaging',
+        'journal': 'Nature Communications',
+        'authors': ['Charlie Wang'],
+        'doi': '10.1000/weak',
+        'published_at': '2024-03-01',
+    }
+
+    assert fetch_to_d1_module.score_crossref_search_candidate(item, exact) > fetch_to_d1_module.score_crossref_search_candidate(item, weak)
+
+
+if __name__ == '__main__':
+    test_retention_window_filter()
+    test_dedupe_key_ignores_tracking_params()
+    test_dedupe_key_separates_same_title_across_sources()
+    test_process_feed_skips_old_entries_before_insert()
+    test_keyword_rendering_only_keeps_abstract_tail_tags()
+    test_crossref_scoring_prefers_exact_candidate()
+    test_crossref_exact_title_fallback()
+    test_paper_d1_query_uses_only_finalized_rows()
+    print('paper dedupe tests passed')

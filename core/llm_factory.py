@@ -4,6 +4,20 @@ import json
 import time
 from abc import ABC, abstractmethod
 from typing import Optional, Dict
+from urllib.parse import urlparse
+
+
+def normalize_provider_base_url(base_url: str, default: str, provider_name: str) -> str:
+    candidate = str(base_url or '').strip()
+    if not candidate:
+        return default
+
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        print(f"[LLM] Ignoring invalid {provider_name} base_url override: {candidate}")
+        return default
+
+    return candidate.rstrip('/')
 
 class AIProvider(ABC):
     @abstractmethod
@@ -16,7 +30,7 @@ class OpenAIProvider(AIProvider):
     """
     def __init__(self, api_key: str, base_url: str, model: str, system_prompt: str = None):
         self.api_key = api_key
-        self.base_url = base_url.rstrip('/')
+        self.base_url = str(base_url or '').rstrip('/')
         self.model = model
         self.system_prompt = system_prompt or "You are a helpful assistant. Please summarize the following text into a concise Chinese summary (within 100 words)."
 
@@ -53,7 +67,7 @@ class GeminiProvider(AIProvider):
         self.api_key = api_key
         self.model = model
         # Default: https://generativelanguage.googleapis.com/v1beta/models/
-        self.base_url = base_url or "https://generativelanguage.googleapis.com/v1beta/models"
+        self.base_url = str(base_url or "https://generativelanguage.googleapis.com/v1beta/models").rstrip('/')
         self.proxy = {'https': proxy} if proxy else None
 
     def summarize(self, text: str) -> str:
@@ -91,12 +105,20 @@ class LLMFactory:
 
         if provider_type == 'zhipu' or provider_type == 'openai':
             # Defaults for Zhipu
-            base_url = config.get('base_url') or "https://open.bigmodel.cn/api/paas/v4"
+            base_url = normalize_provider_base_url(
+                config.get('base_url'),
+                "https://open.bigmodel.cn/api/paas/v4",
+                provider_type,
+            )
             model = config.get('model') or "glm-4-flash"
             return OpenAIProvider(api_key, base_url, model)
             
         elif provider_type == 'gemini':
-            base_url = config.get('base_url') # Optional override for CF Worker
+            base_url = normalize_provider_base_url(
+                config.get('base_url'),
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                provider_type,
+            )
             model = config.get('model') or "gemini-1.5-flash"
             proxy = config.get('proxy')
             return GeminiProvider(api_key, model=model, base_url=base_url, proxy=proxy)

@@ -11,7 +11,7 @@ A unified TTRSS + Push Notification system running on Docker.
   - `push.db`: Local application cache.
 - `scripts/`: System management scripts.
   - `backup_r2.py`: **R2 Backup**.
-  - `cleanup.py`: **Stateless Cleanup**.
+  - `fetch_to_d1.py`: **RSS ingest + 7-day retention cleanup + optics snapshot export**.
   - `docker_entrypoint.sh`: Container entrypoint.
 - `.env`: Environment variables (Secrets).
 - `docker-compose.yml`: Service definition.
@@ -50,7 +50,8 @@ docker compose up -d
 ## ☁️ Cloud Native Architecture
 - **Backup**: Automated to **Cloudflare R2** (`scripts/backup_r2.py`).
 - **CI/CD**: GitHub Actions auto-builds Docker images to GHCR.
-- **Stateless**: `scripts/cleanup.py` enforces 7-day retention for output/backups.
+- **Stateless paper ingest**: `scripts/fetch_to_d1.py` enforces D1 article retention and exports the optics snapshot.
 
 ## 🧹 Maintenance
 Files in `../push.bak` are legacy backups/junk and can be deleted after verification.
+Runtime artifacts under `logs/`, `output/`, and `data/` are intentionally ignored by Git and should be treated as generated files.

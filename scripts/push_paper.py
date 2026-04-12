@@ -24,7 +24,7 @@ def main():
     # 运行
     success = engine.run_source('paper', ['pushplus'])
     
-    print(f"\n{'✅ 推送成功!' if success else '❌ 推送失败'}")
+    print(f"\n推送{'成功' if success else '失败'}")
 
 
 if __name__ == '__main__':

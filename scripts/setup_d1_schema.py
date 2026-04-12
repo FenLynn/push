@@ -35,9 +35,41 @@ def main():
         source_name TEXT,
         source_type TEXT,
         content TEXT,
-        created_at TEXT
+        created_at TEXT,
+        doi TEXT,
+        authors TEXT,
+        volume TEXT,
+        issue TEXT,
+        pages TEXT,
+        metadata_source TEXT,
+        crossref_updated_at TEXT,
+        ingest_batch_id TEXT,
+        ingest_finalized_at TEXT,
+        first_seen_at TEXT,
+        last_seen_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_published ON articles(published_at);
+    CREATE INDEX IF NOT EXISTS idx_articles_doi ON articles(doi);
+    CREATE INDEX IF NOT EXISTS idx_articles_ingest_finalized ON articles(ingest_finalized_at);
+    CREATE INDEX IF NOT EXISTS idx_articles_ingest_batch ON articles(ingest_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_articles_first_seen ON articles(first_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_articles_last_seen ON articles(last_seen_at);
+    CREATE TABLE IF NOT EXISTS paper_article_state (
+        dedupe_key TEXT PRIMARY KEY,
+        dedupe_kind TEXT,
+        source_name TEXT,
+        title TEXT,
+        link TEXT,
+        doi TEXT,
+        first_seen_at TEXT,
+        last_seen_at TEXT,
+        first_published_at TEXT,
+        last_published_at TEXT,
+        seen_count INTEGER DEFAULT 1,
+        updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_article_state_first_seen ON paper_article_state(first_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_article_state_last_seen ON paper_article_state(last_seen_at);
     
     CREATE TABLE IF NOT EXISTS system_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

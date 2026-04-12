@@ -26,7 +26,10 @@ const ROUTE_CONFIG = {
   "15:05_1-5": [{ repo: "push", workflow: "stock.yml" }],
   "15:03_1-5": [{ repo: "push", workflow: "etf.yml" }],
   "19:00": [
-    { repo: "push", workflow: "estate.yml" },
+    { repo: "push", workflow: "estate.yml" }
+  ],
+  // paper 与整点 rss_fetch 错开 30 分钟，避免 ingest/cleanup/push 并发窗口
+  "19:30": [
     { repo: "push", workflow: "paper.yml" }
   ],
   "20:00": [

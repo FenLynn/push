@@ -5,7 +5,11 @@ Paper Source - 学术论文推送
 import sys
 import os
 import re
+import json
+import hashlib
+import html as html_lib
 import time
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from datetime import datetime, timedelta, timezone
 from string import Template
 
@@ -30,6 +34,18 @@ from core.llm_factory import LLMFactory
 
 class PaperSource(BaseSource):
     """论文数据源"""
+
+    PUSH_SEEN_TABLE = 'paper_push_seen'
+    PUSH_AUDIT_DIR = os.path.join(os.path.dirname(__file__), '../../output/paper/audit')
+    DEDUPE_QUERY_PARAM_BLOCKLIST = {
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+        'gclid', 'fbclid', 'mc_cid', 'mc_eid', 'ref', 'source'
+    }
+    DOI_PATTERN = re.compile(r'(10\.\d{4,9}/[-._;()/:A-Z0-9]+)', re.IGNORECASE)
+    LONG_ASCII_TOKEN_RE = re.compile(r'[A-Za-z][A-Za-z0-9]{11,}')
+    MIN_JOURNAL_ARTICLES_AT_PAGE_START = 2
+    LEGACY_FINALIZE_DELAY_MINUTES = max(5, int(os.getenv('PAPER_LEGACY_FINALIZE_DELAY_MINUTES', '30') or '30'))
+    TITLE_SOFT_BREAK_INTERVAL = 10
     
     # 关键词配置 (Fallback values if not in INI)
     CHN_KEYWORDS = []
@@ -83,6 +99,22 @@ class PaperSource(BaseSource):
         super().__init__(**kwargs)
         self.topic = topic
         self.test_mode = test_mode if test_mode is not None else self.TEST_MODE
+        self._pending_seen_records = []
+        self._run_audit = {
+            'startedAt': datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S'),
+            'sourceMode': '',
+            'rawRows': 0,
+            'includedArticles': 0,
+            'includedJournals': 0,
+            'inflightRowsSkipped': 0,
+            'skippedSeen': 0,
+            'skippedDuplicateRows': 0,
+            'skippedKeyword': 0,
+            'seenExamples': [],
+            'duplicateExamples': [],
+            'keywordExamples': [],
+            'pendingSeen': 0,
+        }
         
         # Docker 环境自适应
         self.in_docker = self._is_docker()
@@ -92,16 +124,456 @@ class PaperSource(BaseSource):
         # Initialize Keywords from Config
         self._load_keywords()
         
-        # Initialize LLM Provider
-        llm_conf = config.get_llm_config()
-        self.llm_provider = LLMFactory.create_provider(llm_conf)
-        if self.llm_provider:
-            print(f"[Paper] LLM Provider Initialized: {llm_conf.get('provider')}")
+        # Paper 摘要默认关闭，避免 push 主流程依赖外部 LLM 可用性。
+        self.paper_llm_enabled = self._is_truthy(os.getenv('PAPER_ENABLE_LLM', config.get('paper', 'enable_llm', fallback='false')))
+        if self.paper_llm_enabled:
+            llm_conf = config.get_llm_config()
+            self.llm_provider = LLMFactory.create_provider(llm_conf)
+            if self.llm_provider:
+                print(f"[Paper] LLM Provider Initialized: {llm_conf.get('provider')}")
+            else:
+                print("[Paper] LLM Provider NOT initialized")
         else:
-            print("[Paper] LLM Provider NOT initialized")
+            self.llm_provider = None
+            print("[Paper] LLM summaries disabled")
             
         # Normalize GENERAL_JOURNALS for case-insensitive check
         self._general_journals_lower = [j.lower() for j in self.GENERAL_JOURNALS]
+
+    def _append_audit_example(self, key: str, payload: dict, limit: int = 12):
+        items = self._run_audit.setdefault(key, [])
+        if len(items) < limit:
+            items.append(payload)
+
+    @staticmethod
+    def _is_truthy(value) -> bool:
+        return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+    def _write_run_audit(self):
+        self._run_audit['finishedAt'] = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+        self._run_audit['pendingSeen'] = len(self._pending_seen_records)
+
+        try:
+            out_dir = os.path.normpath(self.PUSH_AUDIT_DIR)
+            os.makedirs(out_dir, exist_ok=True)
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            latest_path = os.path.join(out_dir, 'latest_run.json')
+            archive_path = os.path.join(out_dir, f'run_{stamp}.json')
+            payload = json.dumps(self._run_audit, ensure_ascii=False, indent=2)
+            with open(latest_path, 'w', encoding='utf-8') as file_obj:
+                file_obj.write(payload)
+            with open(archive_path, 'w', encoding='utf-8') as file_obj:
+                file_obj.write(payload)
+            self.logger.info('Paper audit written: %s', archive_path)
+        except Exception as exc:
+            self.logger.warning('Failed to write paper audit: %s', exc)
+
+    def _extract_doi_from_article(self, article: dict) -> str:
+        for candidate in (
+            article.get('doi'),
+            article.get('link'),
+            article.get('content'),
+            article.get('title'),
+        ):
+            match = self.DOI_PATTERN.search(str(candidate or ''))
+            if match:
+                return match.group(1).rstrip(').,;]').upper()
+        return ''
+
+    def _normalize_link_for_dedupe(self, link: str) -> str:
+        raw_link = str(link or '').strip()
+        if not raw_link:
+            return ''
+
+        try:
+            parts = urlsplit(raw_link)
+            filtered_query = []
+            for key, value in parse_qsl(parts.query, keep_blank_values=True):
+                if key.lower() in self.DEDUPE_QUERY_PARAM_BLOCKLIST:
+                    continue
+                filtered_query.append((key, value))
+            normalized = urlunsplit((
+                parts.scheme.lower(),
+                parts.netloc.lower(),
+                parts.path.rstrip('/'),
+                urlencode(filtered_query, doseq=True),
+                ''
+            ))
+            return normalized.strip()
+        except Exception:
+            return raw_link
+
+    def _normalize_title_for_dedupe(self, title: str) -> str:
+        text = re.sub(r'<[^>]+>', ' ', str(title or ''))
+        text = text.replace('—', '-').replace('–', '-')
+        text = re.sub(r'\s+', ' ', text).strip().lower()
+        return text
+
+    def _dedupe_keywords(self, keywords: list) -> list:
+        ordered = []
+        seen = set()
+        for keyword in sorted((str(item or '').strip() for item in keywords or [] if str(item or '').strip()), key=lambda item: (-len(item), item.lower())):
+            token = keyword.lower()
+            if token in seen:
+                continue
+            seen.add(token)
+            ordered.append(keyword)
+        return ordered
+
+    def _find_keywords(self, text: str, keywords: list) -> list:
+        ordered_keywords = self._dedupe_keywords(keywords)
+        if not ordered_keywords:
+            return []
+
+        pattern = re.compile('|'.join(re.escape(keyword) for keyword in ordered_keywords), re.IGNORECASE)
+        found = []
+        seen = set()
+        for match in pattern.finditer(text or ''):
+            token = match.group(0).strip()
+            key = token.lower()
+            if not token or key in seen:
+                continue
+            seen.add(key)
+            found.append(token)
+        return found
+
+    def _analyze_keywords(self, paper) -> dict:
+        total_keywords = self.CHN_KEYWORDS + self.ENG_KEYWORDS
+        if not total_keywords:
+            return {
+                'has_keyword': True,
+                'all': [],
+                'title': [],
+                'abstract_only': [],
+            }
+
+        title_text = str(paper.get('title') or '')
+        abstract_text = re.sub(r'<[^>]+>', ' ', str(paper.get('content') or ''))
+        found_title = self._find_keywords(title_text, total_keywords)
+        found_abstract = self._find_keywords(abstract_text, total_keywords)
+
+        found_all = []
+        seen = set()
+        for item in found_title + found_abstract:
+            token = item.lower()
+            if token in seen:
+                continue
+            seen.add(token)
+            found_all.append(item)
+
+        title_tokens = {item.lower() for item in found_title}
+        abstract_only = [item for item in found_all if item.lower() not in title_tokens]
+        return {
+            'has_keyword': bool(found_all),
+            'all': found_all,
+            'title': found_title,
+            'abstract_only': abstract_only,
+        }
+
+    def _render_title_keyword_html(self, title: str, title_keywords: list) -> str:
+        raw_title = str(title or '').strip()
+        if not raw_title:
+            return '--'
+
+        keyword_hits = self._dedupe_keywords(title_keywords)
+        pattern = re.compile('|'.join(re.escape(keyword) for keyword in keyword_hits), re.IGNORECASE) if keyword_hits else None
+        allowed_tags = {'sub', 'sup', 'i', 'em', 'b', 'strong'}
+        rendered = []
+
+        for part in re.split(r'(<[^>]+>)', raw_title):
+            if not part:
+                continue
+
+            if part.startswith('<') and part.endswith('>'):
+                match = re.match(r'^<\s*(/?)\s*([a-zA-Z0-9]+)[^>]*>$', part)
+                if match and match.group(2).lower() in allowed_tags:
+                    slash = '/' if match.group(1) else ''
+                    rendered.append(f'<{slash}{match.group(2).lower()}>')
+                else:
+                    rendered.append(html_lib.escape(part))
+                continue
+
+            text = html_lib.unescape(part)
+            if not pattern:
+                rendered.append(html_lib.escape(text))
+                continue
+
+            last_index = 0
+            for hit in pattern.finditer(text):
+                start, end = hit.span()
+                if start > last_index:
+                    rendered.append(html_lib.escape(text[last_index:start]))
+                rendered.append(f'<span class="kh">{html_lib.escape(hit.group(0))}</span>')
+                last_index = end
+
+            if last_index < len(text):
+                rendered.append(html_lib.escape(text[last_index:]))
+
+        title_html = ''.join(rendered) or html_lib.escape(html_lib.unescape(raw_title))
+        return self._apply_title_soft_breaks(title_html)
+
+    def _insert_soft_hyphens(self, text: str) -> str:
+        def replace(match):
+            token = match.group(0)
+            if len(token) <= self.TITLE_SOFT_BREAK_INTERVAL + 2:
+                return token
+
+            pieces = [token[idx:idx + self.TITLE_SOFT_BREAK_INTERVAL] for idx in range(0, len(token), self.TITLE_SOFT_BREAK_INTERVAL)]
+            return '&shy;'.join(pieces)
+
+        return self.LONG_ASCII_TOKEN_RE.sub(replace, text)
+
+    def _apply_title_soft_breaks(self, title_html: str) -> str:
+        if not title_html:
+            return title_html
+
+        rendered = []
+        for part in re.split(r'(<[^>]+>)', title_html):
+            if not part:
+                continue
+
+            if part.startswith('<') and part.endswith('>'):
+                rendered.append(part)
+                continue
+
+            for chunk in re.split(r'(&[#A-Za-z0-9]+;)', part):
+                if not chunk:
+                    continue
+                if re.fullmatch(r'&[#A-Za-z0-9]+;', chunk):
+                    rendered.append(chunk)
+                    continue
+
+                chunk = re.sub(r'(?<=[/\-+_])(?=[A-Za-z0-9])', '&#8203;', chunk)
+                rendered.append(self._insert_soft_hyphens(chunk))
+
+        return ''.join(rendered)
+
+    def _decorate_keyword_rendering(self, article: dict):
+        keyword_info = self._analyze_keywords(article)
+        article['is_include_keyword'] = keyword_info['has_keyword']
+        article['keywords'] = keyword_info['all']
+        article['display_keywords'] = keyword_info['abstract_only']
+        article['title_html'] = self._render_title_keyword_html(article.get('title', ''), keyword_info['title'])
+
+    def _build_push_dedupe_identity(self, article: dict, source_name: str) -> dict:
+        doi = self._extract_doi_from_article(article)
+        title_norm = self._normalize_title_for_dedupe(article.get('title', ''))
+        source_norm = self._normalize_title_for_dedupe(source_name)
+        link_norm = self._normalize_link_for_dedupe(article.get('link', ''))
+
+        if source_norm and title_norm:
+            raw_key = f'title|{source_norm}|{title_norm}'
+            kind = 'title'
+        elif doi:
+            raw_key = f'doi|{doi}'
+            kind = 'doi'
+        elif link_norm:
+            raw_key = f'link|{link_norm}'
+            kind = 'link'
+        else:
+            raw_key = f'fallback|{source_norm}|{title_norm}|{article.get("link", "")}'
+            kind = 'fallback'
+
+        digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+        return {
+            'dedupe_key': f'{kind}:{digest}',
+            'dedupe_kind': kind,
+            'title': str(article.get('title') or '').strip(),
+            'link': str(article.get('link') or '').strip(),
+            'doi': doi,
+            'source_name': str(source_name or '').strip(),
+            'published_at': str(article.get('published_at') or '').strip(),
+            'created_at': str(article.get('created_at') or '').strip(),
+        }
+
+    def _ensure_push_seen_table(self, d1):
+        schema = f"""
+        CREATE TABLE IF NOT EXISTS {self.PUSH_SEEN_TABLE} (
+            dedupe_key TEXT PRIMARY KEY,
+            dedupe_kind TEXT,
+            source_name TEXT,
+            title TEXT,
+            link TEXT,
+            doi TEXT,
+            published_at TEXT,
+            first_seen_created_at TEXT,
+            first_pushed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_pushed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            push_count INTEGER DEFAULT 1,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_paper_push_seen_last ON {self.PUSH_SEEN_TABLE}(last_pushed_at);
+        CREATE INDEX IF NOT EXISTS idx_paper_push_seen_source ON {self.PUSH_SEEN_TABLE}(source_name, last_pushed_at);
+        """
+        d1.ensure_table(self.PUSH_SEEN_TABLE, schema)
+
+    def _fetch_seen_push_keys(self, d1, identities: list) -> set:
+        keys = [item['dedupe_key'] for item in identities if item.get('dedupe_key')]
+        if not keys:
+            return set()
+
+        seen_keys = set()
+        chunk_size = 80
+        for start in range(0, len(keys), chunk_size):
+            batch = keys[start:start + chunk_size]
+            placeholders = ','.join('?' for _ in batch)
+            sql = f"SELECT dedupe_key FROM {self.PUSH_SEEN_TABLE} WHERE dedupe_key IN ({placeholders})"
+            res = d1.query(sql, batch)
+            if not res.get('success'):
+                self.logger.warning('Failed to fetch paper seen keys: %s', res.get('error'))
+                return set()
+
+            rows = res.get('data', [])
+            results = rows[0].get('results', []) if rows and isinstance(rows[0], dict) else []
+            seen_keys.update(str(item.get('dedupe_key') or '').strip() for item in results if item.get('dedupe_key'))
+
+        return seen_keys
+
+    def _ensure_article_batch_columns(self, d1):
+        res = d1.query("PRAGMA table_info(articles)")
+        rows = res.get('data', []) if res.get('success') else []
+        results = rows[0].get('results', []) if rows and isinstance(rows[0], dict) else []
+        existing = {str(item.get('name') or '').strip().lower() for item in results}
+        for column_name, column_type in {
+            'ingest_batch_id': 'TEXT',
+            'ingest_finalized_at': 'TEXT',
+            'first_seen_at': 'TEXT',
+            'last_seen_at': 'TEXT',
+        }.items():
+            if column_name in existing:
+                continue
+            d1.query(f"ALTER TABLE articles ADD COLUMN {column_name} {column_type}")
+
+        d1.query("CREATE INDEX IF NOT EXISTS idx_articles_ingest_finalized ON articles(ingest_finalized_at)")
+        d1.query("CREATE INDEX IF NOT EXISTS idx_articles_ingest_batch ON articles(ingest_batch_id)")
+        d1.query("CREATE INDEX IF NOT EXISTS idx_articles_first_seen ON articles(first_seen_at)")
+        d1.query("CREATE INDEX IF NOT EXISTS idx_articles_last_seen ON articles(last_seen_at)")
+
+    def _backfill_legacy_article_finalization(self, d1):
+        cutoff = f'-{self.LEGACY_FINALIZE_DELAY_MINUTES} minutes'
+        d1.query(
+            """
+            UPDATE articles
+            SET ingest_batch_id = COALESCE(NULLIF(ingest_batch_id, ''), 'legacy'),
+                ingest_finalized_at = COALESCE(NULLIF(ingest_finalized_at, ''), created_at),
+                first_seen_at = COALESCE(NULLIF(first_seen_at, ''), created_at),
+                last_seen_at = COALESCE(NULLIF(last_seen_at, ''), created_at)
+            WHERE COALESCE(ingest_finalized_at, '') = ''
+              AND datetime(created_at) <= datetime('now', ?)
+            """,
+            [cutoff],
+        )
+
+    def _build_d1_article_sql(self, limit: int = 0) -> str:
+        limit_clause = f" LIMIT {limit}" if limit > 0 else ""
+        return (
+            f"SELECT * FROM articles WHERE datetime(COALESCE(NULLIF(first_seen_at, ''), created_at)) > datetime('now', '-{self.PAST_HOURS} hours') "
+            "AND COALESCE(ingest_finalized_at, '') != '' ORDER BY datetime(COALESCE(NULLIF(first_seen_at, ''), created_at)) DESC, datetime(created_at) DESC"
+            f"{limit_clause}"
+        )
+
+    def _count_inflight_rows(self, d1) -> int:
+        sql = f"SELECT COUNT(*) AS cnt FROM articles WHERE datetime(COALESCE(NULLIF(first_seen_at, ''), created_at)) > datetime('now', '-{self.PAST_HOURS} hours') AND COALESCE(ingest_finalized_at, '') = ''"
+        res = d1.query(sql)
+        if not res.get('success'):
+            return 0
+        rows = res.get('data', [])
+        results = rows[0].get('results', []) if rows and isinstance(rows[0], dict) else []
+        return int((results[0] if results else {}).get('cnt', 0) or 0)
+
+    def _rank_window_row(self, row: dict) -> tuple:
+        return (
+            1 if str(row.get('doi') or '').strip() else 0,
+            1 if str(row.get('authors') or '').strip() else 0,
+            len(str(row.get('content') or '')),
+            str(row.get('last_seen_at') or row.get('created_at') or '').strip(),
+            str(row.get('created_at') or '').strip(),
+        )
+
+    def _dedupe_current_window_rows(self, rows: list) -> list:
+        deduped = {}
+        for row in rows:
+            identity = self._build_push_dedupe_identity({
+                'title': row.get('title'),
+                'link': row.get('link'),
+                'content': row.get('content', ''),
+                'published_at': row.get('published_at') or '',
+                'created_at': row.get('created_at') or '',
+                'doi': row.get('doi') or '',
+            }, row.get('source_name', 'Unknown'))
+            current = deduped.get(identity['dedupe_key'])
+            if current is not None:
+                self._run_audit['skippedDuplicateRows'] += 1
+                self._append_audit_example('duplicateExamples', {
+                    'source': row.get('source_name'),
+                    'title': row.get('title'),
+                    'createdAt': row.get('created_at'),
+                    'publishedAt': row.get('published_at'),
+                    'dedupeKind': identity['dedupe_kind'],
+                })
+                if self._rank_window_row(row) <= self._rank_window_row(current['row']):
+                    continue
+
+            deduped[identity['dedupe_key']] = {'row': row, 'identity': identity}
+
+        return sorted(
+            deduped.values(),
+            key=lambda item: (
+                str(item['row'].get('first_seen_at') or item['row'].get('created_at') or '').strip(),
+                str(item['row'].get('created_at') or '').strip(),
+            ),
+            reverse=True,
+        )
+
+    def after_send_success(self):
+        if not self._pending_seen_records:
+            return
+
+        from core.d1_client import D1Client
+        d1 = D1Client()
+        if not d1.enabled:
+            self.logger.warning('Skip persisting paper seen ledger because D1 is disabled.')
+            self._pending_seen_records = []
+            return
+
+        self._ensure_push_seen_table(d1)
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        success = 0
+
+        unique_records = {}
+        for item in self._pending_seen_records:
+            dedupe_key = item.get('dedupe_key')
+            if dedupe_key and dedupe_key not in unique_records:
+                unique_records[dedupe_key] = item
+
+        for item in unique_records.values():
+            sql = f"""
+            INSERT INTO {self.PUSH_SEEN_TABLE}
+            (dedupe_key, dedupe_kind, source_name, title, link, doi, published_at, first_seen_created_at, first_pushed_at, last_pushed_at, push_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(dedupe_key) DO UPDATE SET
+                dedupe_kind = excluded.dedupe_kind,
+                source_name = COALESCE(NULLIF(excluded.source_name, ''), {self.PUSH_SEEN_TABLE}.source_name),
+                title = COALESCE(NULLIF(excluded.title, ''), {self.PUSH_SEEN_TABLE}.title),
+                link = COALESCE(NULLIF(excluded.link, ''), {self.PUSH_SEEN_TABLE}.link),
+                doi = COALESCE(NULLIF(excluded.doi, ''), {self.PUSH_SEEN_TABLE}.doi),
+                published_at = COALESCE(NULLIF(excluded.published_at, ''), {self.PUSH_SEEN_TABLE}.published_at),
+                last_pushed_at = excluded.last_pushed_at,
+                push_count = {self.PUSH_SEEN_TABLE}.push_count + 1,
+                updated_at = excluded.updated_at
+            """
+            params = [
+                item['dedupe_key'], item['dedupe_kind'], item['source_name'], item['title'], item['link'],
+                item['doi'], item['published_at'], item['created_at'], now_text, now_text, now_text
+            ]
+            res = d1.query(sql, params)
+            if res.get('success'):
+                success += 1
+            else:
+                self.logger.warning('Failed to persist paper seen ledger for %s: %s', item['title'], res.get('error'))
+
+        self.logger.info('Paper seen ledger persisted: %s/%s', success, len(unique_records))
+        self._pending_seen_records = []
 
     def _load_keywords(self):
         """从配置文件加载关键词"""
@@ -123,6 +595,9 @@ class PaperSource(BaseSource):
         )
     
     MAX_ARTICLES_PER_PAGE = 35
+
+    def _estimate_article_window_size(self, articles: list, count: int) -> int:
+        return sum(self._estimate_article_size(article) for article in articles[:count])
     
 
     def _estimate_article_size(self, article: dict) -> int:
@@ -134,7 +609,7 @@ class PaperSource(BaseSource):
         size = len(article.get('title', ''))   # 标题（显示）
         size += len(article.get('link', ''))   # 链接（显示）
         # 关键词标签（仅命中时显示）
-        kws = article.get('keywords', [])
+        kws = article.get('display_keywords') or article.get('keywords', [])
         if kws:
             size += sum(len(k) + 40 for k in kws)  # 每个 tag 约 40 chars HTML
         # LLM 摘要（仅有 summary 时显示）
@@ -144,6 +619,20 @@ class PaperSource(BaseSource):
 
     def run(self) -> list:
         """运行获取流程并返回消息列表"""
+        self._pending_seen_records = []
+        self._run_audit.update({
+            'startedAt': datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S'),
+            'includedArticles': 0,
+            'includedJournals': 0,
+            'inflightRowsSkipped': 0,
+            'skippedSeen': 0,
+            'skippedDuplicateRows': 0,
+            'skippedKeyword': 0,
+            'seenExamples': [],
+            'duplicateExamples': [],
+            'keywordExamples': [],
+            'pendingSeen': 0,
+        })
         today_info = self._get_data()
         # Remove early return to allow "No Update" message generation
             
@@ -169,7 +658,14 @@ class PaperSource(BaseSource):
                 continue
 
             journal_articles_to_page = []
-            for art in articles:
+            for art_idx, art in enumerate(articles):
+                remaining_articles = articles[art_idx:]
+                if not journal_articles_to_page and current_papers and len(remaining_articles) >= self.MIN_JOURNAL_ARTICLES_AT_PAGE_START:
+                    preview_count = min(self.MIN_JOURNAL_ARTICLES_AT_PAGE_START, len(remaining_articles))
+                    preview_cost = JOURNAL_HEADER_COST + self._estimate_article_window_size(remaining_articles, preview_count)
+                    if current_page_size + preview_cost > self.MAX_PAGE_SIZE:
+                        settle_page()
+
                 est_size = self._estimate_article_size(art)
                 # 新期刊的第一篇需要额外计算期刊标题行开销
                 is_first_of_journal = not journal_articles_to_page
@@ -249,6 +745,9 @@ class PaperSource(BaseSource):
                 <p style="font-size: 14px; color: #6b7280;">由于所监测的 RSS 源在过去 {self.PAST_HOURS} 小时内未发布新文章，或未命中您的关键词，因此今日无摘要生成。</p>
             </div>
             """
+            self._run_audit['includedArticles'] = 0
+            self._run_audit['includedJournals'] = 0
+            self._write_run_audit()
             return [Message(
                 title=base_title,
                 content=html_content,
@@ -313,6 +812,9 @@ class PaperSource(BaseSource):
             page_info = {
                 'today': today_info['today'],
                 'is_first_page': is_first_page,
+                'current_page': idx + 1,
+                'total_pages': total_pages,
+                'full_report': False,
                 'total_journals': today_info['journals'],
                 'total_articles_sum': today_info['articles_sum'],
                 'paper': page_papers,
@@ -340,7 +842,10 @@ class PaperSource(BaseSource):
             'total_journals': today_info['journals'],
             'total_articles_sum': today_info['articles_sum'],
             'paper': today_info['paper'], # ALL data
-            'is_first_page': True
+            'is_first_page': True,
+            'current_page': 1,
+            'total_pages': 1,
+            'full_report': True,
         }
         full_html = self._generate_html(full_info)
         out_path = os.path.join(os.path.dirname(__file__), '../../output/paper/latest.html')
@@ -348,6 +853,10 @@ class PaperSource(BaseSource):
         with open(out_path, 'w', encoding='utf-8') as f:
             f.write(full_html)
         print(f"[Paper] Unified full report saved to: {out_path} ({len(full_html)} bytes)")
+
+        self._run_audit['includedArticles'] = today_info['articles_sum']
+        self._run_audit['includedJournals'] = today_info['journals']
+        self._write_run_audit()
 
         return messages
     
@@ -450,27 +959,8 @@ class PaperSource(BaseSource):
     
     def _include_keywords(self, paper) -> tuple:
         """检查论文是否包含关键词"""
-        total_keywords = self.CHN_KEYWORDS + self.ENG_KEYWORDS
-        
-        # 如果未配置任何关键词，则默认认为“不过滤”，全部通过
-        if not total_keywords:
-            return True, []
-        
-        def find_keywords(text, keywords):
-            # 使用 re.escape 避免关键词中包含正则特殊字符导致误匹配
-            pattern = "|".join(re.escape(k) for k in keywords if k)
-            if not pattern:
-                return []
-            keyword_pattern = re.compile(pattern, re.IGNORECASE)
-            return keyword_pattern.findall(text or "")
-        
-        found_title = find_keywords(paper.get('title', ''), total_keywords)
-        found_abstract = find_keywords(paper.get('content', ''), total_keywords)
-        
-        found_unique = list({i.lower() for i in (found_title + found_abstract)})
-        
-        has_keyword = bool(found_title or found_abstract)
-        return has_keyword, found_unique
+        keyword_info = self._analyze_keywords(paper)
+        return keyword_info['has_keyword'], keyword_info['all']
     
     def _filter_date(self, paper, journal_title) -> bool:
         """根据时间过滤论文 - 严格 25 小时"""
@@ -515,6 +1005,7 @@ class PaperSource(BaseSource):
 
         # 支持环境变量 PAPER_SOURCE_MODE 或 INI 配置 [paper] source = d1
         _source_mode = os.getenv('PAPER_SOURCE_MODE') or config.get('paper', 'source', fallback='rss')
+        self._run_audit['sourceMode'] = _source_mode
         if _source_mode == 'd1':
             res = self._get_data_from_d1()
         else:
@@ -667,9 +1158,12 @@ class PaperSource(BaseSource):
             print("[Paper] D1 is disabled. Falling back to RSS.")
             return self._get_data_from_rss()
             
+        self._ensure_article_batch_columns(d1)
+        self._backfill_legacy_article_finalization(d1)
+        self._run_audit['inflightRowsSkipped'] = self._count_inflight_rows(d1)
+
         limit = int(os.getenv('PAPER_ARTICLE_LIMIT', 0))
-        limit_clause = f" LIMIT {limit}" if limit > 0 else ""
-        sql = f"SELECT * FROM articles WHERE created_at > datetime('now', '-{self.PAST_HOURS} hours') ORDER BY created_at DESC{limit_clause}"
+        sql = self._build_d1_article_sql(limit)
         res = d1.query(sql)
         if not res.get('success'):
             print(f"[Paper] D1 Query failed: {res.get('error')}")
@@ -683,10 +1177,13 @@ class PaperSource(BaseSource):
             else:
                 real_rows = rows
         
-        print(f"[Paper] D1 returned {len(real_rows)} raw articles (based on created_at).")
+        print(f"[Paper] D1 returned {len(real_rows)} raw articles (based on first_seen_at).")
+        self._run_audit['rawRows'] = len(real_rows)
         if not real_rows:
             return {"journals": 0, "today": datetime.now().strftime("%Y-%m-%d"), 
                     "articles_sum": 0, "journals_title": [], "paper": []}
+
+        current_rows = self._dedupe_current_window_rows(real_rows)
 
         grouped = {} 
         
@@ -711,7 +1208,9 @@ class PaperSource(BaseSource):
                     new_words.append(w.capitalize())
             return " ".join(new_words)
 
-        for row in real_rows:
+        for item in current_rows:
+            row = item['row']
+            identity = item['identity']
             # Format Journal Name
             raw_j_name = row.get('source_name', 'Unknown')
             j_name = smart_title(raw_j_name)
@@ -724,15 +1223,27 @@ class PaperSource(BaseSource):
                 'link': row.get('link'),
                 'datetime': datetime.strptime(row.get('published_at'), '%Y-%m-%d %H:%M:%S') if row.get('published_at') else datetime.now(),
                 'content': row.get('content', ''),
-                'id': row.get('id')
+                'id': row.get('id'),
+                'published_at': row.get('published_at') or '',
+                'created_at': row.get('created_at') or '',
+                'dedupe_key': identity['dedupe_key'],
+                'dedupe_kind': identity['dedupe_kind'],
+                'doi': identity['doi'],
             }
             
-            art['is_include_keyword'], art['keywords'] = self._include_keywords(art)
+            self._decorate_keyword_rendering(art)
             # 只有 GENERAL_JOURNALS 中的期刊才需要强制关键词命中
             # D1 模式已通过 SQL created_at 时间窗口过滤，无需再用 published_at 二次过滤
             j_name_lower = j_name.lower()
             in_general = any(j_name_lower == g.lower() for g in self.GENERAL_JOURNALS)
             if j_type == 'journal' and in_general and not art['is_include_keyword']:
+                self._run_audit['skippedKeyword'] += 1
+                self._append_audit_example('keywordExamples', {
+                    'source': raw_j_name,
+                    'title': art['title'],
+                    'publishedAt': art['published_at'],
+                    'createdAt': art['created_at'],
+                })
                 continue
             
             if self.llm_provider and (art['is_include_keyword'] or self.test_mode):
@@ -806,7 +1317,7 @@ class PaperSource(BaseSource):
                     continue
                 
                 # 2. 关键词检测
-                art['is_include_keyword'], art['keywords'] = self._include_keywords(art)
+                self._decorate_keyword_rendering(art)
                 
                 # 3. 期刊筛选逻辑 (通用期刊必须包含关键词)
                 if f_type == 'journal' and journal_title.lower() in self._general_journals_lower and not art['is_include_keyword']:
@@ -868,6 +1379,9 @@ class PaperSource(BaseSource):
             'today': today_info.get('today'),
             'update_time': datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S"),
             'is_first_page': today_info.get('is_first_page', True),
+            'current_page': today_info.get('current_page', 1),
+            'total_pages': today_info.get('total_pages', 1),
+            'full_report': today_info.get('full_report', False),
             'total_journals': today_info.get('total_journals') or today_info.get('journals', 0),
             'total_articles_sum': today_info.get('total_articles_sum') or today_info.get('articles_sum', 0),
             'paper': today_info.get('paper', []),

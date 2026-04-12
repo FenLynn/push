@@ -1,9 +1,24 @@
 import configparser
 import os
+import re
 from typing import Dict, List, Any
 
 class ConfigLoader:
     _instance = None
+
+    @staticmethod
+    def _sanitize_env_value(value) -> str:
+        text = str(value or '').strip()
+        if not text:
+            return ''
+        if text.startswith('#'):
+            return ''
+
+        match = re.match(r'^(.*?)\s+#.*$', text)
+        if match:
+            text = match.group(1).strip()
+
+        return '' if text.startswith('#') else text
     
     def __new__(cls):
         if cls._instance is None:
@@ -77,11 +92,11 @@ class ConfigLoader:
     def get_llm_config(self) -> Dict[str, str]:
         conf = self.get_section('llm')
         return {
-            'provider': os.getenv('LLM_PROVIDER', conf.get('provider', 'zhipu')),
-            'api_key': os.getenv('LLM_API_KEY', conf.get('api_key', '')),
-            'base_url': os.getenv('LLM_BASE_URL', conf.get('base_url', '')),
-            'model': os.getenv('LLM_MODEL', conf.get('model', '')),
-            'proxy': os.getenv('LLM_PROXY', conf.get('proxy', ''))
+            'provider': self._sanitize_env_value(os.getenv('LLM_PROVIDER', conf.get('provider', 'zhipu'))),
+            'api_key': self._sanitize_env_value(os.getenv('LLM_API_KEY', conf.get('api_key', ''))),
+            'base_url': self._sanitize_env_value(os.getenv('LLM_BASE_URL', conf.get('base_url', ''))),
+            'model': self._sanitize_env_value(os.getenv('LLM_MODEL', conf.get('model', ''))),
+            'proxy': self._sanitize_env_value(os.getenv('LLM_PROXY', conf.get('proxy', '')))
         }
 
     @property

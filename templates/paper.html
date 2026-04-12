@@ -11,15 +11,19 @@ body{font:13px/1.45 -apple-system,sans-serif;background:#fff;color:#222;padding:
 .jt{display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;color:#1a3660}
 .ji{background:#dce9f8;color:#1a3660;font-size:13px;font-weight:800;padding:1px 5px;border-radius:9px;flex-shrink:0}
 .jc{font-size:11px;color:#ccc;flex-shrink:0}
-.ar{display:flex;align-items:baseline;padding:4px 0 3px;border-bottom:1px dashed #f0f0f0}
+.ar{display:flex;align-items:flex-start;padding:4px 0 3px;border-bottom:1px dashed #f0f0f0}
+.ar{text-decoration:none;color:inherit}
 .ar:last-child{border-bottom:none}
 .ix{font-size:11px;color:#bbb;min-width:28px;flex-shrink:0;text-align:right;padding-right:4px;font-family:monospace;font-weight:700;white-space:nowrap}
 .ac{flex:1;min-width:0;overflow:hidden}
-a.lk{display:inline;color:#2a3a4e;text-decoration:none;font-size:12.5px;line-height:1.4;word-break:break-word}
-a.hl{color:#c2006e;font-weight:600}
-.kws{float:right;white-space:nowrap;margin-left:5px;line-height:1.45}
+.lk{display:inline;min-width:0;color:#516070;font-size:12.5px;line-height:1.4;word-break:normal;overflow-wrap:break-word;word-wrap:break-word;hyphens:auto;-webkit-hyphens:auto}
+.kh{background:none !important;background-color:transparent !important;color:#c2006e;font-weight:700;padding:0;border-radius:0}
+.kws{float:right;white-space:nowrap;margin-left:6px;line-height:1.4;text-align:right}
 .t{font-size:10px;color:#1a6b4a;background:#d4f0e4;padding:1px 4px;border-radius:3px;border:1px solid #9fd4bc;display:inline-block;margin-left:2px}
 .ft{font-size:10px;color:#ccc;text-align:center;margin-top:12px;padding-top:5px;border-top:1px solid #eee}
+.ar:hover .lk{color:#284e7a}
+@media(max-width:420px){
+}
 @media(prefers-color-scheme:dark){
  body{background:transparent;color:#ccc}
  .hd{border-bottom-color:#1a2a3a}
@@ -31,18 +35,19 @@ a.hl{color:#c2006e;font-weight:600}
  .jn{border-color:#1a2a3a}
  .ar{border-color:#181818}
  .ix{color:#484848}
- a.lk{color:#b8cce0}
- a.hl{color:#e840a0;font-weight:600}
+ .lk{color:#b8cce0}
+ .kh{color:#ff7ebc}
+ .ar:hover .lk{color:#d5e6f7}
  .t{color:#5dccaa;background:#0c2820;border-color:#2a6048}
  .ft{border-color:#1a1a1a;color:#444}
 }
 </style></head><body>
 <div class="hd">
-  <div class="hd-d">{{ today }}<small>光学文献{% if not is_first_page %} · 续{% endif %}</small></div>
+  <div class="hd-d">{{ today }}<small>光学文献{% if full_report %} · 总览{% elif total_pages > 1 %} · 第 {{ current_page }}/{{ total_pages }} 页{% endif %}</small></div>
   <div class="hd-s"><span><b>{{ total_journals }}</b> 刊&ensp;<b>{{ total_articles_sum }}</b> 文</span><span>{{ update_time[11:16] }} BJT</span></div>
 </div>
 {% if not paper %}<p style="color:#bbb;text-align:center;padding:20px 0">📭 无更新</p>{% else %}
-{% for f in paper %}<div class="jg"><div class="jn"><div class="jt"><span class="ji">{{ f.journal_global_idx if f.journal_global_idx is defined else loop.index }}</span>{{ f.journal }}{% if f.page_label %}<small style="font-weight:400;color:#aaa"> [{{ f.page_label }}]</small>{% endif %}</div><span class="jc">{{ f.articles_nu }}{% if f.articles_nu != f.total_nu %}/{{ f.total_nu }}{% endif %} 篇</span></div>{% for p in f.data %}<div class="ar"><span class="ix">{{ p.global_idx }}</span><div class="ac"><a href="{{ p.link }}" class="lk{% if p.is_include_keyword %} hl{% endif %}">{{ p.title }}</a>{% if p.is_include_keyword and p.keywords %}<span class="kws">{% for k in p.keywords %}<span class="t">{{ k }}</span>{% endfor %}</span>{% endif %}</div></div>{% endfor %}</div>
+{% for f in paper %}<div class="jg"><div class="jn"><div class="jt"><span class="ji">{{ f.journal_global_idx if f.journal_global_idx is defined else loop.index }}</span>{{ f.journal }}{% if f.page_label %}<small style="font-weight:400;color:#aaa"> [{{ f.page_label }}]</small>{% endif %}</div><span class="jc">{{ f.articles_nu }}{% if f.articles_nu != f.total_nu %}/{{ f.total_nu }}{% endif %} 篇</span></div>{% for p in f.data %}<a href="{{ p.link }}" class="ar"><span class="ix">{{ p.global_idx }}</span><span class="ac"><span class="lk" lang="en">{{ p.title_html or p.title }}</span>{% if p.display_keywords %}<span class="kws">{% for k in p.display_keywords %}<span class="t">{{ k }}</span>{% endfor %}</span>{% endif %}</span></a>{% endfor %}</div>
 {% endfor %}{% endif %}
 <div class="ft">Push · {{ update_time }}</div>
 </body></html>
