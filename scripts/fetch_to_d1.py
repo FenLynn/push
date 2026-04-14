@@ -1607,7 +1607,7 @@ def process_feed_and_insert(feed, d1_client, batch_id=''):
                 doi, authors, volume, issue, pages, metadata_source, crossref_updated_at,
                 ingest_batch_id, ingest_finalized_at, first_seen_at, last_seen_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     COALESCE((SELECT first_seen_at FROM paper_article_state WHERE dedupe_key = ?), ?), ?)
             ON CONFLICT(id) DO UPDATE SET
                 title = COALESCE(NULLIF(excluded.title, ''), articles.title),

@@ -109,6 +109,7 @@ def test_process_feed_skips_old_entries_before_insert():
     assert result['fetch_failed'] is False
     assert len(fake_d1.calls) == 2
     article_call = fake_d1.calls[-1]
+    assert article_call['sql'].count('?') == len(article_call['params'])
     assert article_call['params'][15] == 'batch-1'
     assert article_call['params'][16] is None
     assert article_call['params'][-1] is not None
