@@ -44,6 +44,7 @@ CROSSREF_SEARCH_ROWS = max(3, int(os.getenv('PAPER_CROSSREF_SEARCH_ROWS', '8') o
 CROSSREF_TITLE_ROWS = max(3, int(os.getenv('PAPER_CROSSREF_TITLE_ROWS', '6') or '6'))
 CROSSREF_RETRY_COUNT = max(0, int(os.getenv('PAPER_CROSSREF_RETRY_COUNT', '2') or '2'))
 CROSSREF_MAILTO = str(os.getenv('CROSSREF_MAILTO', '') or '').strip()
+INGEST_STALE_ALERT_HOURS = max(24, int(os.getenv('PAPER_INGEST_STALE_ALERT_HOURS', '36') or '36'))
 ARTICLE_EXTRA_COLUMNS = {
     'doi': 'TEXT',
     'authors': 'TEXT',
@@ -236,6 +237,83 @@ def query_rows(d1_client, sql, params=None):
     first = data[0] if isinstance(data, list) else {}
     rows = first.get('results') if isinstance(first, dict) else []
     return rows if isinstance(rows, list) else []
+
+
+def parse_datetime_text(value=''):
+    text = str(value or '').strip()
+    if not text:
+        return None
+
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def get_ingest_time_markers(d1_client):
+    rows = query_rows(
+        d1_client,
+        f"""
+        SELECT MAX(created_at) AS latest_created,
+               MAX(first_seen_at) AS latest_first_seen,
+               MAX(last_seen_at) AS latest_last_seen
+        FROM {D1_TABLE}
+        """
+    )
+    row = rows[0] if rows else {}
+    return {
+        'latest_created': str(row.get('latest_created') or '').strip(),
+        'latest_first_seen': str(row.get('latest_first_seen') or '').strip(),
+        'latest_last_seen': str(row.get('latest_last_seen') or '').strip(),
+    }
+
+
+def compute_staleness_hours(value='', now=None):
+    dt = parse_datetime_text(value)
+    if dt is None:
+        return None
+    reference = now or datetime.now()
+    return round((reference - dt).total_seconds() / 3600, 2)
+
+
+def evaluate_ingest_health(before_markers, after_markers, total_new, fetch_failed_total, now=None):
+    reference = now or datetime.now()
+    latest_last_seen = after_markers.get('latest_last_seen') or after_markers.get('latest_created') or ''
+    stale_hours = compute_staleness_hours(latest_last_seen, reference)
+    no_change = bool(after_markers and before_markers and after_markers == before_markers)
+    reasons = []
+    status = 'ok'
+
+    if fetch_failed_total:
+        reasons.append(f'fetch_failed_total={fetch_failed_total}')
+
+    if stale_hours is None:
+        status = 'stale'
+        reasons.append('latest_last_seen_missing')
+    elif stale_hours >= INGEST_STALE_ALERT_HOURS:
+        status = 'stale'
+        reasons.append(f'latest_last_seen_stale={stale_hours}h')
+    elif total_new == 0 and no_change:
+        status = 'warning'
+        reasons.append('no_new_articles_and_no_d1_change')
+
+    return {
+        'status': status,
+        'reasons': reasons,
+        'staleHours': stale_hours,
+        'beforeMarkers': before_markers,
+        'afterMarkers': after_markers,
+    }
+
+
+def extract_entry_datetime(entry):
+    if hasattr(entry, 'published_parsed') and entry.published_parsed:
+        return datetime(*entry.published_parsed[:6]), 'published'
+    if hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+        return datetime(*entry.updated_parsed[:6]), 'updated'
+    return datetime.now(), 'fallback_now'
 
 
 def ensure_articles_schema(d1_client):
@@ -1479,8 +1557,19 @@ def process_feed_and_insert(feed, d1_client, batch_id=''):
             'inserted': 0,
             'skipped_old': 0,
             'fetch_failed': True,
+            'latest_entry_at': '',
+            'latest_entry_date_source': '',
+            'latest_entry_title': '',
             'errors': [],
         }
+
+    latest_entry = parsed.entries[0] if getattr(parsed, 'entries', None) else None
+    latest_entry_dt = None
+    latest_entry_date_source = ''
+    latest_entry_title = ''
+    if latest_entry is not None:
+        latest_entry_dt, latest_entry_date_source = extract_entry_datetime(latest_entry)
+        latest_entry_title = str(getattr(latest_entry, 'title', '') or '').strip()
         
     count = 0
     skipped_old = 0
@@ -1488,11 +1577,7 @@ def process_feed_and_insert(feed, d1_client, batch_id=''):
     for entry in parsed.entries:
         try:
             # Parse Date
-            dt = datetime.now()
-            if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                dt = datetime(*entry.published_parsed[:6])
-            elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                dt = datetime(*entry.updated_parsed[:6])
+            dt, _date_source = extract_entry_datetime(entry)
 
             # 与 cleanup 保持一致：保留窗口之外的旧文章不再写入 D1，避免整点并发时被 paper 当成新 created_at 误推。
             if not is_entry_within_retention(dt):
@@ -1599,6 +1684,9 @@ def process_feed_and_insert(feed, d1_client, batch_id=''):
         'inserted': count,
         'skipped_old': skipped_old,
         'fetch_failed': False,
+        'latest_entry_at': latest_entry_dt.strftime('%Y-%m-%d %H:%M:%S') if latest_entry_dt else '',
+        'latest_entry_date_source': latest_entry_date_source,
+        'latest_entry_title': latest_entry_title,
         'errors': errors[:10],
     }
 
@@ -1608,6 +1696,8 @@ def main():
     if not d1.enabled:
         print("D1 Client not enabled. Check CLOUDFLARE_D1_* env vars.")
         sys.exit(1)
+
+    before_markers = get_ingest_time_markers(d1)
 
     # 2. Ensure Table Exists (Fast check)
     schema = """
@@ -1677,6 +1767,7 @@ def main():
     
     total_new = 0
     total_skipped_old = 0
+    fetch_failed_total = 0
     per_feed_stats = []
     
     # Use ThreadPoolExecutor for I/O bound tasks
@@ -1691,12 +1782,14 @@ def main():
                 per_feed_stats.append(result)
                 cnt = int(result.get('inserted', 0))
                 skipped_old = int(result.get('skipped_old', 0))
+                fetch_failed_total += 1 if result.get('fetch_failed') else 0
                 total_new += cnt
                 total_skipped_old += skipped_old
                 if cnt > 0 or skipped_old > 0:
                     print(f"[{feed['title']}] Inserted {cnt} articles, skipped old {skipped_old}.")
             except Exception as exc:
                 print(f"[{feed['title']}] Generated an exception: {exc}")
+                fetch_failed_total += 1
 
     print(f"Total articles inserted/checked: {total_new}")
     print(f"Total old articles skipped before insert: {total_skipped_old}")
@@ -1726,6 +1819,9 @@ def main():
     kv_client = CloudflareKVClient()
     export_optics_snapshot(snapshot, kv_client)
 
+    after_markers = get_ingest_time_markers(d1)
+    ingest_health = evaluate_ingest_health(before_markers, after_markers, total_new, fetch_failed_total)
+
     ingest_summary = {
         'generatedAt': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'batchId': batch_id,
@@ -1733,6 +1829,8 @@ def main():
         'feedsTotal': len(feeds),
         'insertedTotal': total_new,
         'skippedOldTotal': total_skipped_old,
+        'fetchFailedTotal': fetch_failed_total,
+        'health': ingest_health,
         'articleSeenBackfill': article_seen_backfill_summary,
         'articleStateSync': article_state_sync_summary,
         'staleInflightCleanup': stale_inflight_summary,
@@ -1744,6 +1842,10 @@ def main():
     }
     audit_path = write_ingest_audit(ingest_summary)
     print(f'Ingest audit saved: {audit_path}')
+    print(f"Ingest health: {ingest_health['status']} ({', '.join(ingest_health['reasons']) or 'ok'})")
+
+    if ingest_health['status'] == 'stale':
+        raise SystemExit('RSS ingest completed but D1 latest_last_seen is stale; marking workflow as failed for investigation.')
     
     print("Done.")
 

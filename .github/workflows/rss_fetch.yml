@@ -33,3 +33,8 @@ jobs:
 
     - name: Run Fetch Script
       run: python scripts/fetch_to_d1.py
+
+    - name: Print Ingest Audit Summary
+      if: always()
+      run: |
+        python -c "import json, pathlib; p = pathlib.Path('output/paper/audit/latest_ingest_audit.json'); print('latest_ingest_audit_exists=', p.exists()); data = json.loads(p.read_text(encoding='utf-8')) if p.exists() else {}; print(json.dumps({'generatedAt': data.get('generatedAt'), 'insertedTotal': data.get('insertedTotal'), 'skippedOldTotal': data.get('skippedOldTotal'), 'fetchFailedTotal': data.get('fetchFailedTotal'), 'health': data.get('health')}, ensure_ascii=False, indent=2))"

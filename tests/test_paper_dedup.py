@@ -178,6 +178,40 @@ def test_llm_factory_ignores_invalid_base_url_override():
     assert provider.base_url == 'https://open.bigmodel.cn/api/paas/v4'
 
 
+def test_extract_entry_datetime_prefers_published_over_updated():
+    entry = SimpleNamespace(
+        published_parsed=datetime(2026, 4, 14, 8, 0, 0).timetuple(),
+        updated_parsed=datetime(2026, 4, 14, 9, 0, 0).timetuple(),
+    )
+    dt, source = fetch_to_d1_module.extract_entry_datetime(entry)
+    assert dt == datetime(2026, 4, 14, 8, 0, 0)
+    assert source == 'published'
+
+
+def test_evaluate_ingest_health_marks_stale_when_last_seen_too_old():
+    health = fetch_to_d1_module.evaluate_ingest_health(
+        {'latest_last_seen': '2026-04-12 19:01:31'},
+        {'latest_last_seen': '2026-04-12 19:01:31'},
+        total_new=0,
+        fetch_failed_total=0,
+        now=datetime(2026, 4, 14, 14, 30, 0),
+    )
+    assert health['status'] == 'stale'
+    assert any('latest_last_seen_stale' in item for item in health['reasons'])
+
+
+def test_evaluate_ingest_health_warns_on_zero_insert_without_change():
+    health = fetch_to_d1_module.evaluate_ingest_health(
+        {'latest_last_seen': '2026-04-14 10:00:00'},
+        {'latest_last_seen': '2026-04-14 10:00:00'},
+        total_new=0,
+        fetch_failed_total=0,
+        now=datetime(2026, 4, 14, 14, 30, 0),
+    )
+    assert health['status'] == 'warning'
+    assert 'no_new_articles_and_no_d1_change' in health['reasons']
+
+
 def test_crossref_exact_title_fallback(monkeypatch=None):
     item = {
         'title': 'Intelligent metrology of grating microstructures via fusion of diffraction spectra and a hybrid MaLSTM deep learning model',

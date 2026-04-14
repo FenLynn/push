@@ -14,6 +14,7 @@ class D1Client:
 
     def __init__(self, account_id: str = None, database_id: str = None, api_token: str = None):
         self.logger = logging.getLogger('Push.Core.D1')
+        self.timeout_seconds = max(10, int(os.getenv('CLOUDFLARE_D1_TIMEOUT_SECONDS', '30') or '30'))
         
         # Load from init args or env vars (Standard 'CLOUDFLARE_D1_*' prefix)
         self.account_id = account_id or os.getenv('CLOUDFLARE_D1_ACCOUNT_ID')
@@ -53,7 +54,7 @@ class D1Client:
         }
 
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=10,
+            resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout_seconds,
                                  proxies={"http": None, "https": None})  # D1 直连，绕过本地代理
             data = resp.json()
             
