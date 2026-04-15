@@ -15,6 +15,7 @@ from channels.pushplus import PushPlusChannel
 from core import ContentType, Message
 from core.config import config
 from core.engine import Engine
+from core.image_upload import R2Uploader
 from core.llm_factory import LLMFactory
 from scripts.fetch_to_d1 import ARTICLE_RETENTION_DAYS, is_entry_within_retention
 from sources.paper import PaperSource
@@ -240,6 +241,46 @@ def test_split_page_by_render_length_rebalances_oversized_page():
     assert all(sum(len(feed['data']) for feed in page) == 1 for page in pages)
 
 
+def test_flatten_paginated_segments_merges_same_journal_across_boundaries():
+    source = PaperSource(topic='me', test_mode=True)
+    flattened = source._flatten_paginated_segments([
+        [{'journal': 'Journal A', 'data': [{'title': 'A1'}, {'title': 'A2'}], 'articles_nu': 2}],
+        [
+            {'journal': 'Journal A', 'data': [{'title': 'A3'}], 'articles_nu': 1},
+            {'journal': 'Journal B', 'data': [{'title': 'B1'}], 'articles_nu': 1},
+        ],
+    ])
+
+    assert [feed['journal'] for feed in flattened] == ['Journal A', 'Journal B']
+    assert len(flattened[0]['data']) == 3
+    assert len(flattened[1]['data']) == 1
+
+
+def test_global_render_rebalance_can_merge_small_tail_pages():
+    source = PaperSource(topic='me', test_mode=True)
+    original_max_page_size = source.MAX_PAGE_SIZE
+    original_generate_html = source._generate_html
+
+    source.MAX_PAGE_SIZE = 150
+    source._generate_html = lambda page_info: 'x' * (20 + 25 * sum(len(feed['data']) for feed in page_info['paper']))
+    try:
+        flattened = source._flatten_paginated_segments([
+            [{'journal': 'Journal A', 'data': [{'title': 'A1'}, {'title': 'A2'}, {'title': 'A3'}], 'articles_nu': 3}],
+            [{'journal': 'Journal A', 'data': [{'title': 'A4'}], 'articles_nu': 1}],
+            [{'journal': 'Journal B', 'data': [{'title': 'B1'}, {'title': 'B2'}, {'title': 'B3'}], 'articles_nu': 3}],
+            [{'journal': 'Journal B', 'data': [{'title': 'B4'}], 'articles_nu': 1}],
+        ])
+        pages = source._split_page_by_render_length(
+            {'today': '2026-04-15', 'journals': 2, 'articles_sum': 8},
+            flattened,
+        )
+    finally:
+        source.MAX_PAGE_SIZE = original_max_page_size
+        source._generate_html = original_generate_html
+
+    assert [sum(len(feed['data']) for feed in page) for page in pages] == [5, 3]
+
+
 def test_engine_respects_disable_split_metadata():
     class StaticSource:
         def run(self):
@@ -286,6 +327,33 @@ def test_pushplus_send_respects_disable_split_metadata():
 
     assert success is True
     assert len(sent_messages) == 1
+
+
+def test_r2_uploader_accepts_standard_cloudflare_account_id_env():
+    keys = {
+        'CLOUDFLARE_R2_ACCOUNT_ID': os.environ.get('CLOUDFLARE_R2_ACCOUNT_ID'),
+        'CLOUDFLARE_ACCOUNT_ID': os.environ.get('CLOUDFLARE_ACCOUNT_ID'),
+        'CLOUDFLARE_AccountId': os.environ.get('CLOUDFLARE_AccountId'),
+        'CLOUDFLARE_R2_ACCESS_KEY_ID': os.environ.get('CLOUDFLARE_R2_ACCESS_KEY_ID'),
+        'CLOUDFLARE_R2_SECRET_ACCESS_KEY': os.environ.get('CLOUDFLARE_R2_SECRET_ACCESS_KEY'),
+        'CLOUDFLARE_R2_BUCKET_NAME': os.environ.get('CLOUDFLARE_R2_BUCKET_NAME'),
+    }
+    try:
+        os.environ.pop('CLOUDFLARE_R2_ACCOUNT_ID', None)
+        os.environ.pop('CLOUDFLARE_AccountId', None)
+        os.environ['CLOUDFLARE_ACCOUNT_ID'] = 'account-123'
+        os.environ['CLOUDFLARE_R2_ACCESS_KEY_ID'] = 'access-key'
+        os.environ['CLOUDFLARE_R2_SECRET_ACCESS_KEY'] = 'secret-key'
+        os.environ['CLOUDFLARE_R2_BUCKET_NAME'] = 'bucket-name'
+
+        assert R2Uploader.has_credentials() is True
+        assert R2Uploader._resolve_account_id() == 'account-123'
+    finally:
+        for key, value in keys.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def test_crossref_exact_title_fallback(monkeypatch=None):

@@ -3,77 +3,110 @@ import os
 sys.path.insert(0, os.getcwd())
 
 import logging
-from datetime import datetime
-from core.d1_client import D1Client
-from core.trading_calendar import is_a_share_trading_day
+import requests
+from datetime import datetime, timedelta, timezone
 from core import Message, ContentType
-from core.engine import Engine
-from channels.pushplus import PushPlusChannel
-import os
 
 logger = logging.getLogger('Push.Watchdog')
 
-# 监控配置: (模块名, 截止时间HH:MM, 是否仅交易日)
-MONITOR_CONFIG = [
-    ('morning', '08:45', False),
-    ('finance', '08:50', False),
-    ('paper', '09:00', False),
-    ('stock', '12:00', True),
-    ('stock', '15:45', True),
-]
+WATCHDOG_WORKFLOW_NAME = 'Watchdog Sentinel'
+WORKFLOW_IDLE_ALERT_MINUTES = max(70, int(os.getenv('WATCHDOG_WORKFLOW_IDLE_MINUTES', '95') or '95'))
+
+
+def _github_headers(token: str) -> dict:
+    return {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': f'Bearer {token}',
+        'User-Agent': 'Push-Watchdog',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+
+
+def _parse_github_time(value: str):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _fetch_recent_workflow_runs(limit: int = 20):
+    token = os.getenv('GITHUB_TOKEN')
+    repository = os.getenv('GITHUB_REPOSITORY')
+    if not token or not repository:
+        logger.warning('Watchdog missing GITHUB_TOKEN or GITHUB_REPOSITORY; skipping workflow idle check.')
+        return []
+
+    url = f'https://api.github.com/repos/{repository}/actions/runs'
+    response = requests.get(
+        url,
+        headers=_github_headers(token),
+        params={'per_page': limit},
+        timeout=20,
+    )
+    response.raise_for_status()
+    payload = response.json() or {}
+    return payload.get('workflow_runs', []) or []
+
+
+def _check_workflow_idle(now_utc: datetime):
+    try:
+        runs = _fetch_recent_workflow_runs(limit=30)
+    except Exception as exc:
+        return f'❓ GitHub Actions 最近运行记录检查失败: {exc}'
+
+    business_runs = []
+    for run in runs:
+        name = str(run.get('name') or '').strip()
+        if not name or name == WATCHDOG_WORKFLOW_NAME:
+            continue
+        started_at = _parse_github_time(run.get('run_started_at') or run.get('created_at') or '')
+        if not started_at:
+            continue
+        business_runs.append({
+            'name': name,
+            'status': run.get('status') or '',
+            'conclusion': run.get('conclusion') or '',
+            'started_at': started_at,
+            'html_url': run.get('html_url') or '',
+        })
+
+    if not business_runs:
+        return '💤 GitHub Actions 最近没有业务 workflow 运行记录（排除了 Watchdog 自身）。'
+
+    latest_run = max(business_runs, key=lambda item: item['started_at'])
+    idle_minutes = (now_utc - latest_run['started_at']).total_seconds() / 60.0
+    if idle_minutes <= WORKFLOW_IDLE_ALERT_MINUTES:
+        logger.info(
+            'Watchdog idle check ok: latest workflow=%s, idle=%.1f min',
+            latest_run['name'],
+            idle_minutes,
+        )
+        return None
+
+    started_bjt = latest_run['started_at'].astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+    return (
+        f"🚨 GitHub Actions 业务 workflow 空窗过长：最近一次是 [{latest_run['name']}]，"
+        f"开始于 {started_bjt} BJT，距今约 {idle_minutes:.1f} 分钟。"
+    )
 
 def run_watchdog():
     """
-    实时自检心跳：检查当前时间点应该已经运行完毕的任务。
+    自检心跳：检查 GitHub Actions 业务 workflow 是否出现异常空窗。
     """
-    now = datetime.now()
-    now_str = now.strftime("%H:%M")
-    today_date = now.strftime("%Y-%m-%d")
-    
-    d1 = D1Client()
-    if not d1.enabled:
-        logger.error("Watchdog: D1 is disabled, cannot check logs.")
-        return
-
-    is_trading = is_a_share_trading_day(now)
+    now_utc = datetime.now(timezone.utc)
+    now_bjt = now_utc.astimezone(timezone(timedelta(hours=8)))
     alerts = []
 
-    for module, deadline, only_trading in MONITOR_CONFIG:
-        if only_trading and not is_trading:
-            continue
-            
-        if now_str > deadline:
-            # 针对股市下午盘做特殊判断（检测 12:00 之后的记录）
-            if module == 'stock' and deadline == '15:45':
-                sql_check = "SELECT status FROM task_logs WHERE module = ? AND created_at > ? AND status = 'success' LIMIT 1"
-                params = [module, f"{today_date} 12:00:00"]
-            else:
-                sql_check = "SELECT status FROM task_logs WHERE module = ? AND created_at LIKE ? AND status = 'success' LIMIT 1"
-                params = [module, f"{today_date}%"]
-                
-            try:
-                res = d1.query(sql_check, params)
-                if not res or 'data' not in res or not res['data'] or not res['data'][0]['results']:
-                    # 并未成功，尝试寻找最近的一条错误记录
-                    fail_sql = "SELECT status, error_msg, created_at FROM task_logs WHERE module = ? AND created_at LIKE ? ORDER BY created_at DESC LIMIT 1"
-                    fail_res = d1.query(fail_sql, [module, f"{today_date}%"])
-                    
-                    if fail_res and 'data' in fail_res and fail_res['data'] and fail_res['data'][0]['results']:
-                        error = fail_res['data'][0]['results'][0]
-                        if error['status'] != 'success':
-                            alerts.append(f"❌ 模块 [{module}] 运行失败 (记录时间: {error['created_at']}): {error.get('error_msg', '未知错误')}")
-                        else:
-                            # 理论上不会走到这里，因为上面成功的 query 没查到
-                            alerts.append(f"⚠️ 模块 [{module}] 状态异常 (预期 {deadline})")
-                    else:
-                        alerts.append(f"💤 模块 [{module}] 缺失运行记录 (逾期自 {deadline})")
-            except Exception as e:
-                logger.error(f"Watchdog error querying {module}: {e}")
+    idle_alert = _check_workflow_idle(now_utc)
+    if idle_alert:
+        alerts.append(idle_alert)
 
     if alerts:
         send_critical_alert("\n".join(alerts))
     else:
-        logger.info(f"Watchdog: All systems nominal at {now_str}.")
+        logger.info("Watchdog: workflow heartbeat nominal at %s.", now_bjt.strftime('%H:%M'))
 
 def send_critical_alert(content):
     """发送加急告警 (直接通过通道)"""

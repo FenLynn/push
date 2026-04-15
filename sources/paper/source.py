@@ -631,6 +631,24 @@ class PaperSource(BaseSource):
             })
         return cloned
 
+    def _flatten_paginated_segments(self, pages: list) -> list:
+        flattened = []
+        for page in pages or []:
+            for feed in page or []:
+                articles = list(feed.get('data') or [])
+                if not articles:
+                    continue
+                if flattened and flattened[-1]['journal'] == feed['journal']:
+                    flattened[-1]['data'].extend(articles)
+                    flattened[-1]['articles_nu'] = len(flattened[-1]['data'])
+                else:
+                    flattened.append({
+                        'journal': feed['journal'],
+                        'data': articles,
+                        'articles_nu': len(articles),
+                    })
+        return flattened
+
     def _build_page_info(self, today_info: dict, page_papers: list, *, current_page: int = 1,
                          total_pages: int = 1, is_first_page: bool = True, full_report: bool = False) -> dict:
         return {
@@ -822,21 +840,21 @@ class PaperSource(BaseSource):
         today_info['journals'] += virtual_journals
         today_info['articles_sum'] += virtual_articles
 
-        safe_pages = []
-        for page_papers in all_pages:
-            normalized_page = self._clone_page_papers(page_papers)
-            rendered_length = self._render_page_length(today_info, normalized_page)
-            if rendered_length <= self.MAX_PAGE_SIZE:
-                safe_pages.append(normalized_page)
-                continue
+        flattened_segments = self._flatten_paginated_segments(all_pages)
+        if flattened_segments:
+            rough_lengths = []
+            for page_papers in all_pages:
+                normalized_page = self._clone_page_papers(page_papers)
+                rough_lengths.append(self._render_page_length(today_info, normalized_page))
 
-            self.logger.warning(
-                "Estimated paper page overflowed after render (%s chars); re-splitting with actual HTML length.",
-                rendered_length,
-            )
-            safe_pages.extend(self._split_page_by_render_length(today_info, normalized_page))
+            if any(length > self.MAX_PAGE_SIZE for length in rough_lengths):
+                overflow_lengths = [length for length in rough_lengths if length > self.MAX_PAGE_SIZE]
+                self.logger.warning(
+                    "Estimated paper pages overflowed after render (%s); rebuilding pagination with global actual-length packing.",
+                    ', '.join(str(length) for length in overflow_lengths),
+                )
 
-        all_pages = safe_pages
+            all_pages = self._split_page_by_render_length(today_info, flattened_segments)
 
         base_title = f'学术文献{time.strftime("%m-%d", time.localtime())}'
 

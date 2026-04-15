@@ -27,14 +27,32 @@ logger = logging.getLogger('Push.ImageUpload')
 
 class R2Uploader:
     """Cloudflare R2 Uploader (S3 Compatible)"""
+    @staticmethod
+    def _resolve_account_id() -> str:
+        return (
+            os.getenv('CLOUDFLARE_R2_ACCOUNT_ID')
+            or os.getenv('CLOUDFLARE_ACCOUNT_ID')
+            or os.getenv('CLOUDFLARE_AccountId')
+            or ''
+        ).strip()
+
+    @classmethod
+    def has_credentials(cls) -> bool:
+        return all([
+            cls._resolve_account_id(),
+            str(os.getenv('CLOUDFLARE_R2_ACCESS_KEY_ID') or '').strip(),
+            str(os.getenv('CLOUDFLARE_R2_SECRET_ACCESS_KEY') or '').strip(),
+            str(os.getenv('CLOUDFLARE_R2_BUCKET_NAME') or '').strip(),
+        ])
+
     def __init__(self):
-        self.account_id = os.getenv('CLOUDFLARE_AccountId')
+        self.account_id = self._resolve_account_id()
         self.access_key = os.getenv('CLOUDFLARE_R2_ACCESS_KEY_ID')
         self.secret_key = os.getenv('CLOUDFLARE_R2_SECRET_ACCESS_KEY')
         self.bucket_name = os.getenv('CLOUDFLARE_R2_BUCKET_NAME')
         
         if not all([self.account_id, self.access_key, self.secret_key, self.bucket_name]):
-            logger.error("❌ R2 Credentials missing! Check CLOUDFLARE_R2_* env vars.")
+            logger.warning("R2 credentials missing; output upload will be skipped.")
             self.s3 = None
             return
 

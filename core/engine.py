@@ -66,8 +66,8 @@ class Engine:
         if config.RUN_MODE == 'cloud':
             try:
                 from core.image_upload import R2Uploader
-                uploader = R2Uploader()
-                if uploader.s3:
+                if R2Uploader.has_credentials():
+                    uploader = R2Uploader()
                     # Upload latest version (overwrite)
                     # Object Name: output/source_name/latest.html
                     latest_key = f"output/{source_name}/latest{suffix}.{ext}"
@@ -82,6 +82,8 @@ class Engine:
                     url_arch = uploader.upload_file(archive_path, object_name=archive_key)
                     if url_arch:
                         self.logger.info(f"☁️ Uploaded to R2 (Archive): {url_arch}")
+                else:
+                    self.logger.info("R2 upload skipped: credentials not configured.")
             except Exception as e:
                 self.logger.error(f"Failed to upload output to R2: {e}")
                 
