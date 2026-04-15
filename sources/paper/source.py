@@ -9,6 +9,7 @@ import json
 import hashlib
 import html as html_lib
 import time
+import copy
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from datetime import datetime, timedelta, timezone
 from string import Template
@@ -617,6 +618,92 @@ class PaperSource(BaseSource):
             size += len(article['summary']) + 60
         return size + 110  # 固定 HTML 标签开销（div.ar/div.ac/span.ix/a.lk 等）
 
+    def _clone_page_papers(self, page_papers: list) -> list:
+        cloned = []
+        for feed in page_papers or []:
+            articles = list(feed.get('data') or [])
+            if not articles:
+                continue
+            cloned.append({
+                'journal': feed['journal'],
+                'data': articles,
+                'articles_nu': len(articles),
+            })
+        return cloned
+
+    def _build_page_info(self, today_info: dict, page_papers: list, *, current_page: int = 1,
+                         total_pages: int = 1, is_first_page: bool = True, full_report: bool = False) -> dict:
+        return {
+            'today': today_info['today'],
+            'is_first_page': is_first_page,
+            'current_page': current_page,
+            'total_pages': total_pages,
+            'full_report': full_report,
+            'total_journals': today_info['journals'],
+            'total_articles_sum': today_info['articles_sum'],
+            'paper': page_papers,
+        }
+
+    def _render_page_length(self, today_info: dict, page_papers: list) -> int:
+        if not page_papers:
+            return 0
+        probe_info = self._build_page_info(
+            today_info,
+            page_papers,
+            current_page=8,
+            total_pages=8,
+            is_first_page=False,
+            full_report=False,
+        )
+        return len(self._generate_html(probe_info))
+
+    def _split_page_by_render_length(self, today_info: dict, page_papers: list) -> list:
+        normalized_page = self._clone_page_papers(page_papers)
+        if not normalized_page:
+            return []
+
+        split_pages = []
+        current_page = []
+
+        for feed in normalized_page:
+            journal = feed['journal']
+            for article in feed['data']:
+                candidate_page = self._clone_page_papers(current_page)
+                if candidate_page and candidate_page[-1]['journal'] == journal:
+                    candidate_page[-1]['data'].append(article)
+                    candidate_page[-1]['articles_nu'] = len(candidate_page[-1]['data'])
+                else:
+                    candidate_page.append({
+                        'journal': journal,
+                        'data': [article],
+                        'articles_nu': 1,
+                    })
+
+                candidate_length = self._render_page_length(today_info, candidate_page)
+                if candidate_length <= self.MAX_PAGE_SIZE or not current_page:
+                    current_page = candidate_page
+                    continue
+
+                split_pages.append(current_page)
+                current_page = [{
+                    'journal': journal,
+                    'data': [article],
+                    'articles_nu': 1,
+                }]
+
+                single_length = self._render_page_length(today_info, current_page)
+                if single_length > self.MAX_PAGE_SIZE:
+                    self.logger.warning(
+                        "Paper single-article page still exceeds limit (%s chars): %s",
+                        single_length,
+                        str(article.get('title', '') or '')[:120],
+                    )
+
+        if current_page:
+            split_pages.append(current_page)
+
+        return split_pages
+
     def run(self) -> list:
         """运行获取流程并返回消息列表"""
         self._pending_seen_records = []
@@ -735,6 +822,22 @@ class PaperSource(BaseSource):
         today_info['journals'] += virtual_journals
         today_info['articles_sum'] += virtual_articles
 
+        safe_pages = []
+        for page_papers in all_pages:
+            normalized_page = self._clone_page_papers(page_papers)
+            rendered_length = self._render_page_length(today_info, normalized_page)
+            if rendered_length <= self.MAX_PAGE_SIZE:
+                safe_pages.append(normalized_page)
+                continue
+
+            self.logger.warning(
+                "Estimated paper page overflowed after render (%s chars); re-splitting with actual HTML length.",
+                rendered_length,
+            )
+            safe_pages.extend(self._split_page_by_render_length(today_info, normalized_page))
+
+        all_pages = safe_pages
+
         base_title = f'学术文献{time.strftime("%m-%d", time.localtime())}'
 
         # 如果无任何更新，推送一条提醒消息
@@ -753,7 +856,7 @@ class PaperSource(BaseSource):
                 content=html_content,
                 type=ContentType.HTML,
                 tags=['paper', 'academic', self.topic],
-                metadata={'date': today_info['today'], 'count': 0}
+                metadata={'date': today_info['today'], 'count': 0, 'disable_split': True}
             )]
 
         # 注：split_oversized_pages 已移除（会导致分割页丢失CSS）
@@ -809,16 +912,14 @@ class PaperSource(BaseSource):
 
             
             # 准备渲染上下文，始终保留全天指标
-            page_info = {
-                'today': today_info['today'],
-                'is_first_page': is_first_page,
-                'current_page': idx + 1,
-                'total_pages': total_pages,
-                'full_report': False,
-                'total_journals': today_info['journals'],
-                'total_articles_sum': today_info['articles_sum'],
-                'paper': page_papers,
-            }
+            page_info = self._build_page_info(
+                today_info,
+                page_papers,
+                current_page=idx + 1,
+                total_pages=total_pages,
+                is_first_page=is_first_page,
+                full_report=False,
+            )
             
             # 渲染模板
             html_content = self._generate_html(page_info)
@@ -833,20 +934,24 @@ class PaperSource(BaseSource):
                 content=html_content,
                 type=ContentType.HTML,
                 tags=['paper', 'academic', self.topic],
-                metadata={'date': today_info['today'], 'page': idx+1, 'total_pages': total_pages, 'count': sum(f['articles_nu'] for f in page_papers)}
+                metadata={
+                    'date': today_info['today'],
+                    'page': idx+1,
+                    'total_pages': total_pages,
+                    'count': sum(f['articles_nu'] for f in page_papers),
+                    'disable_split': True,
+                }
             ))
             
         # 生成一份包含全天所有数据的完整 HTML 用于本地查阅 (OVERWRITE latest.html with FULL data)
-        full_info = {
-            'today': today_info['today'],
-            'total_journals': today_info['journals'],
-            'total_articles_sum': today_info['articles_sum'],
-            'paper': today_info['paper'], # ALL data
-            'is_first_page': True,
-            'current_page': 1,
-            'total_pages': 1,
-            'full_report': True,
-        }
+        full_info = self._build_page_info(
+            today_info,
+            today_info['paper'],
+            current_page=1,
+            total_pages=1,
+            is_first_page=True,
+            full_report=True,
+        )
         full_html = self._generate_html(full_info)
         out_path = os.path.join(os.path.dirname(__file__), '../../output/paper/latest.html')
         os.makedirs(os.path.dirname(out_path), exist_ok=True)

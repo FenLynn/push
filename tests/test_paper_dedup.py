@@ -11,7 +11,10 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT_DIR)
 
 import scripts.fetch_to_d1 as fetch_to_d1_module
+from channels.pushplus import PushPlusChannel
+from core import ContentType, Message
 from core.config import config
+from core.engine import Engine
 from core.llm_factory import LLMFactory
 from scripts.fetch_to_d1 import ARTICLE_RETENTION_DAYS, is_entry_within_retention
 from sources.paper import PaperSource
@@ -211,6 +214,78 @@ def test_evaluate_ingest_health_warns_on_zero_insert_without_change():
     )
     assert health['status'] == 'warning'
     assert 'no_new_articles_and_no_d1_change' in health['reasons']
+
+
+def test_split_page_by_render_length_rebalances_oversized_page():
+    source = PaperSource(topic='me', test_mode=True)
+    original_max_page_size = source.MAX_PAGE_SIZE
+    original_generate_html = source._generate_html
+
+    source.MAX_PAGE_SIZE = 120
+    source._generate_html = lambda page_info: 'x' * (40 + 50 * sum(len(feed['data']) for feed in page_info['paper']))
+    try:
+        pages = source._split_page_by_render_length(
+            {'today': '2026-04-15', 'journals': 1, 'articles_sum': 3},
+            [{
+                'journal': 'Test Journal',
+                'data': [{'title': 'A'}, {'title': 'B'}, {'title': 'C'}],
+                'articles_nu': 3,
+            }],
+        )
+    finally:
+        source.MAX_PAGE_SIZE = original_max_page_size
+        source._generate_html = original_generate_html
+
+    assert len(pages) == 3
+    assert all(sum(len(feed['data']) for feed in page) == 1 for page in pages)
+
+
+def test_engine_respects_disable_split_metadata():
+    class StaticSource:
+        def run(self):
+            return Message(
+                title='paper-test',
+                content='x' * 50,
+                type=ContentType.HTML,
+                metadata={'disable_split': True},
+            )
+
+    class RecordingChannel:
+        def __init__(self):
+            self.messages = []
+
+        def send(self, message):
+            self.messages.append(message)
+            return True
+
+    engine = Engine()
+    engine.save_output = lambda *args, **kwargs: ''
+    engine.splitter.max_length = 10
+    engine.register_source('paper', StaticSource())
+    recorder = RecordingChannel()
+    engine.register_channel('recording', recorder)
+
+    assert engine.run_source('paper', ['recording']) is True
+    assert len(recorder.messages) == 1
+
+
+def test_pushplus_send_respects_disable_split_metadata():
+    channel = PushPlusChannel(token='demo-token', topic='me')
+    sent_messages = []
+    original_send_single = channel._send_single
+    channel._send_single = lambda message: sent_messages.append(message) or True
+    try:
+        success = channel.send(Message(
+            title='paper-test',
+            content='x' * 19950,
+            type=ContentType.HTML,
+            metadata={'disable_split': True},
+        ))
+    finally:
+        channel._send_single = original_send_single
+
+    assert success is True
+    assert len(sent_messages) == 1
 
 
 def test_crossref_exact_title_fallback(monkeypatch=None):

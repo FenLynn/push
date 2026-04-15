@@ -5,7 +5,11 @@ on:
 
 jobs:
   run:
+    timeout-minutes: 25
     runs-on: ubuntu-latest
+    concurrency:
+      group: stock-market
+      cancel-in-progress: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

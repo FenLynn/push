@@ -140,7 +140,7 @@ class Engine:
                 self.save_output(source_name, message, suffix=suffix)
                 
                 # 分割内容 (HTML typically won't split well here if generic splitter is used, but we rely on source-level pagination now)
-                messages = self.splitter.split(message)
+                messages = [message] if message.metadata.get('disable_split') else self.splitter.split(message)
                 
                 # 确定目标通道
                 targets = channel_names or list(self.channels.keys())
@@ -188,7 +188,7 @@ class Engine:
         self.save_output(source_name, message)
         
         # 分割内容
-        messages = self.splitter.split(message)
+        messages = [message] if message.metadata.get('disable_split') else self.splitter.split(message)
         
         # 确定目标通道
         targets = channel_names or list(self.channels.keys())

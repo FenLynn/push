@@ -40,6 +40,11 @@ class PushPlusChannel(ChannelInterface):
         
         # 检查内容长度，如果过长则分割发送
         content_str = str(message.content)
+        if message.metadata.get('disable_split'):
+            if len(content_str) > safe_length:
+                print(f"[PushPlus] Warning: content length {len(content_str)} exceeds {safe_length}, but disable_split is set; sending as-is.")
+            return self._send_single(message)
+
         if len(content_str) > safe_length:
             print(f"[PushPlus] Content length {len(content_str)} exceeds {safe_length}, splitting...")
             from core.splitter import Splitter

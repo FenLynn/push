@@ -3,6 +3,7 @@ Stock Source - 股票行情推送 (Enhanced)
 全面升级版：自选股 + 指数 + 板块动态 + 成交排行 + 热门股 + 创新高
 """
 import os
+import socket
 import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
@@ -20,6 +21,7 @@ from core.utils.lib import *
 
 class StockSource(BaseSource):
     """股票数据源 (Enhanced)"""
+    NETWORK_TIMEOUT_SECONDS = max(5, int(os.getenv('STOCK_NETWORK_TIMEOUT_SECONDS', '15') or '15'))
     
     def __init__(self, topic='me', **kwargs):
         super().__init__(**kwargs)
@@ -139,6 +141,19 @@ class StockSource(BaseSource):
             tags=['stock', 'market', self.topic],
             metadata={'trade_status': True}
         )
+
+    def _call_with_socket_timeout(self, func, *args, default=None, timeout_seconds=None, label='', **kwargs):
+        old_timeout = socket.getdefaulttimeout()
+        effective_timeout = timeout_seconds or self.NETWORK_TIMEOUT_SECONDS
+        try:
+            socket.setdefaulttimeout(effective_timeout)
+            return func(*args, **kwargs)
+        except Exception as exc:
+            name = label or getattr(func, '__name__', 'network_call')
+            self.logger.warning(f"{name} failed or timed out after {effective_timeout}s: {exc}")
+            return default
+        finally:
+            socket.setdefaulttimeout(old_timeout)
     
     def _get_stock_data(self) -> List[Dict]:
         """获取自选股数据"""
@@ -332,8 +347,20 @@ class StockSource(BaseSource):
             
             for attempt in range(2):
                 try:
-                    df_sh_hist = ak.stock_zh_index_daily_em(symbol="sh000001")
-                    df_sz_hist = ak.stock_zh_index_daily_em(symbol="sz399001")
+                    df_sh_hist = self._call_with_socket_timeout(
+                        ak.stock_zh_index_daily_em,
+                        symbol="sh000001",
+                        default=None,
+                        label='stock_zh_index_daily_em(sh000001)',
+                    )
+                    df_sz_hist = self._call_with_socket_timeout(
+                        ak.stock_zh_index_daily_em,
+                        symbol="sz399001",
+                        default=None,
+                        label='stock_zh_index_daily_em(sz399001)',
+                    )
+                    if df_sh_hist is None or df_sz_hist is None:
+                        raise RuntimeError('index history request returned no data')
                     if len(df_sh_hist) >= 2 and len(df_sz_hist) >= 2:
                         t_sh = float(df_sh_hist.iloc[-1]['amount']) / 100_000_000
                         y_sh = float(df_sh_hist.iloc[-2]['amount']) / 100_000_000
@@ -618,7 +645,13 @@ class StockSource(BaseSource):
         """获取板块领涨领跌 Top 5"""
         for i in range(3):
             try:
-                df = ak.stock_board_industry_summary_ths()
+                df = self._call_with_socket_timeout(
+                    ak.stock_board_industry_summary_ths,
+                    default=None,
+                    label='stock_board_industry_summary_ths',
+                )
+                if df is None or df.empty:
+                    raise RuntimeError('sector data unavailable')
                 df = df.loc[:, ('板块', '涨跌幅')]
                 df = df.sort_values(by='涨跌幅', ascending=False)
                 
@@ -692,7 +725,14 @@ class StockSource(BaseSource):
         """获取创历史新高的股票"""
         try:
             # 使用同花顺接口获取创新高数据（比逐支查询快得多）
-            df = ak.stock_rank_cxg_ths(symbol="历史新高")
+            df = self._call_with_socket_timeout(
+                ak.stock_rank_cxg_ths,
+                symbol="历史新高",
+                default=None,
+                label='stock_rank_cxg_ths(历史新高)',
+            )
+            if df is None or df.empty:
+                return []
             
             # 只取前 5 个
             result = []
