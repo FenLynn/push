@@ -21,11 +21,11 @@ import pandas as pd
 class GameSource(BaseSource):
     """游戏赛程数据源 (V2)"""
     
-    DEFAULT_GAMES = ['王者荣耀', 'DOTA2', 'S15', 'KPL', '英雄联盟', 'LOL', 'LCK',
+    DEFAULT_GAMES = ['世界杯','王者荣耀', 'DOTA2', 'S15', 'KPL', '英雄联盟', 'LOL', 'LCK',
                      '欧洲杯', 'TI14', 'LEC', '刀塔', 'LPL', 'PCL', 'S赛', 'TI',
                      '男篮世界杯', '男篮欧锦赛', '欧冠']
     
-    HIGHLIGHTED_TEAMS = ['HLE', 'T1', 'GEN', 'BLG']
+    HIGHLIGHTED_TEAMS = ['世界杯','HLE', 'T1', 'GEN', 'BLG']
     
     WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     
