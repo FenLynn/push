@@ -10,6 +10,7 @@ from core.template import TemplateEngine
 from core.config import config
 from sources.base import BaseSource
 from core.d1_client import D1Client
+from core.dashboard_snapshot import export_dashboard_snapshot
 
 class DamaiSource(BaseSource):
     """
@@ -40,6 +41,8 @@ class DamaiSource(BaseSource):
 
         self.logger = logging.getLogger('Push.Source.Damai')
         self.template_engine = TemplateEngine()
+        self._snapshot_events = []
+        self._snapshot_fetch_succeeded = False
         self.root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.d1 = D1Client()
         if self.d1.enabled:
@@ -214,6 +217,7 @@ class DamaiSource(BaseSource):
                 if params_list and params_list[-1] == '': params_list = params_list[:-1]
                 
                 mapping = dict(zip(params_list, args_values))
+                self._snapshot_fetch_succeeded = True
             except Exception as pe:
                 self.logger.warning(f"Failed to parse hydration for {city_name} P{page}: {pe}")
                 return []
@@ -344,6 +348,25 @@ class DamaiSource(BaseSource):
                  city_seen_dict[eid] = show_date
         
         self.logger.info(f"{city_name}: {len(incremental_events)} NEW events since last push.")
+
+        incremental_ids = {event['link'].split('/')[-1] for event in incremental_events}
+        for event in unique_events:
+            try:
+                event_ts = time.mktime(parse_time(event['raw_time']))
+            except Exception:
+                event_ts = now_ts
+            if event_ts < now_ts - 86400:
+                continue
+            event_id = event['link'].split('/')[-1]
+            self._snapshot_events.append({
+                'id': event_id,
+                'title': event.get('title', ''),
+                'city': event.get('venue', ''),
+                'time': event.get('raw_time', ''),
+                'price': event.get('price', ''),
+                'link': event.get('link', ''),
+                'isNew': event_id in incremental_ids,
+            })
         
         # Update history (Save the cleaned and updated dict)
         history[city_code] = city_seen_dict
@@ -362,6 +385,25 @@ class DamaiSource(BaseSource):
             msgs_or_events = self._process_city(city_key, city_code)
             if msgs_or_events:
                 all_incremental_events.extend(msgs_or_events)
+
+        if self._snapshot_fetch_succeeded:
+            events = sorted(
+                self._snapshot_events,
+                key=lambda item: (item.get('time', ''), item.get('city', ''), item.get('title', ''))
+            )[:80]
+            city_counts = {}
+            for event in events:
+                city = event.get('city') or '其他'
+                city_counts[city] = city_counts.get(city, 0) + 1
+            export_dashboard_snapshot('damai', {
+                'source': 'showstart',
+                'events': events,
+                'summary': {
+                    'total': len(events),
+                    'newCount': sum(1 for event in events if event.get('isNew')),
+                    'cities': city_counts,
+                },
+            })
 
         if not all_incremental_events:
             return [self._create_empty_msg()]
