@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.d1_client import D1Client
+from core.dashboard_snapshot import export_dashboard_snapshot
 
 class EstateSource(BaseSource):
     def __init__(self, topic='me', **kwargs):
@@ -196,6 +197,13 @@ class EstateSource(BaseSource):
         # Xi'an
         xa_data = self._scrape_xian() 
         all_data.extend(xa_data)
+
+        if all_data:
+            export_dashboard_snapshot('estate', {
+                'date': time.strftime('%Y-%m-%d'),
+                'items': all_data,
+                'cities': sorted(list(set(item['city'] for item in all_data))),
+            })
         
         # 3. Store to D1
         if self.d1.enabled:

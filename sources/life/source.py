@@ -183,10 +183,10 @@ class LifeSource(BaseSource):
                         'is_new': item.get('is_new', False)
                     })
                 return res
-            return []
+            return self._get_douban_collection('movie_hot_gaia', 'https://m.douban.com/movie/')
         except Exception as e:
             print(f"[Life] Douban Error: {e}")
-            return []
+            return self._get_douban_collection('movie_hot_gaia', 'https://m.douban.com/movie/')
 
     def _get_douban_high_rate(self):
         """豆瓣高分 Top 10"""
@@ -208,10 +208,10 @@ class LifeSource(BaseSource):
                         'is_new': item.get('is_new', False)
                     })
                 return res
-            return []
+            return self._get_douban_collection('movie_top250', 'https://m.douban.com/movie/')
         except Exception as e:
             print(f"[Life] Douban High Rate Error: {e}")
-            return []
+            return self._get_douban_collection('movie_top250', 'https://m.douban.com/movie/')
 
     def _get_douban_book(self):
         """豆瓣非虚构类好书榜 Top 10"""

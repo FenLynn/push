@@ -7,6 +7,7 @@ from sources.base import BaseSource
 from core import Message, ContentType
 from core.template import TemplateEngine
 from core.db import db
+from core.dashboard_snapshot import export_dashboard_snapshot
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from core.legacy import *
 from core.utils.lib import *
@@ -37,6 +38,19 @@ class FundSource(BaseSource):
         # Smart Truncation Logic
         import re
         funds_low, funds_mid, funds_high = self._prepare_data_lists(df)
+
+        if funds_low or funds_mid or funds_high:
+            export_dashboard_snapshot('fund', {
+                'low': list(funds_low),
+                'normal': list(funds_mid),
+                'high': list(funds_high),
+                'summary': {
+                    'total': len(funds_low) + len(funds_mid) + len(funds_high),
+                    'low': len(funds_low),
+                    'normal': len(funds_mid),
+                    'high': len(funds_high),
+                },
+            })
         
         # Backup for restoration approach or just use lists directly
         # Strategy: If too big, trim 'Normal' (Mid) first, then 'High', then 'Low'
