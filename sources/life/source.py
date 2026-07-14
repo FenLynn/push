@@ -85,10 +85,10 @@ class LifeSource(BaseSource):
                     'total': f"{round(float(row['累计票房'])/10000, 2)}", # 亿
                     'days': row['上映天数']
                 })
-            return res
+            return res or self._get_douban_collection('movie_showing', 'https://m.douban.com/movie/')
         except Exception as e:
             print(f"[Life] Movie Realtime Error: {e}")
-            return []
+            return self._get_douban_collection('movie_showing', 'https://m.douban.com/movie/')
 
     def _get_movie_yearly(self):
         """年度票房 Top 10"""
@@ -121,10 +121,10 @@ class LifeSource(BaseSource):
                     'hot': int(row['用户热度']),
                     'rate': row['好评度']
                 })
-            return res
+            return res or self._get_douban_collection('tv_hot', 'https://m.douban.com/tv/')
         except Exception as e:
             print(f"[Life] TV Error: {e}")
-            return []
+            return self._get_douban_collection('tv_hot', 'https://m.douban.com/tv/')
 
     def _get_show_hot(self):
         """热门综艺 Top 10"""
@@ -139,9 +139,28 @@ class LifeSource(BaseSource):
                     'hot': int(row['用户热度']),
                     'rate': row['好评度']
                 })
-            return res
+            return res or self._get_douban_collection('show_hot', 'https://m.douban.com/tv/')
         except Exception as e:
             print(f"[Life] Show Error: {e}")
+            return self._get_douban_collection('show_hot', 'https://m.douban.com/tv/')
+
+    def _get_douban_collection(self, collection, referer):
+        """Read a public Douban mobile collection as an independent fallback."""
+        try:
+            import requests
+            url = f"https://m.douban.com/rexxar/api/v2/subject_collection/{collection}/items?start=0&count=10"
+            headers = {"User-Agent": "Mozilla/5.0", "Referer": referer}
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            response.encoding = 'utf-8'
+            items = response.json().get('subject_collection_items', [])
+            return [{
+                'name': item.get('title'),
+                'rate': (item.get('rating') or {}).get('value') or '暂无',
+                'type': '豆瓣榜单',
+            } for item in items[:10] if item.get('title')]
+        except Exception as e:
+            print(f"[Life] Douban collection {collection} Error: {e}")
             return []
 
     def _get_douban_hot(self):
