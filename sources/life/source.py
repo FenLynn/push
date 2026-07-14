@@ -1,4 +1,6 @@
 """Life Source - 娱乐风向标 (Life V2)"""
+import datetime as dt
+import re
 import sys, os, time
 import pandas as pd
 import akshare as ak
@@ -6,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.template import TemplateEngine
-from core.dashboard_snapshot import export_dashboard_snapshot
+from core.dashboard_snapshot import export_dashboard_snapshot, load_dashboard_snapshot
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from core.legacy import *
 from core.utils.lib import *
@@ -19,7 +21,7 @@ class LifeSource(BaseSource):
         self.template = TemplateEngine()
     
     def run(self) -> Message:
-        data = self._get_combined_data()
+        data, source_status = self._reuse_recent_snapshot(self._get_combined_data())
         export_dashboard_snapshot('life', {
             'boxReal': data.get('box_real', []),
             'boxYear': data.get('box_year', []),
@@ -28,8 +30,10 @@ class LifeSource(BaseSource):
             'doubanList': data.get('douban_list', []),
             'doubanHighRate': data.get('douban_high_rate', []),
             'bookList': data.get('book_list', []),
+            'sourceStatus': source_status,
             'summary': {
                 'boxRealCount': len(data.get('box_real', []) or []),
+                'boxYearCount': len(data.get('box_year', []) or []),
                 'tvCount': len(data.get('tv_list', []) or []),
                 'showCount': len(data.get('show_list', []) or []),
                 'movieCount': len(data.get('douban_list', []) or []),
@@ -60,6 +64,52 @@ class LifeSource(BaseSource):
             tags=['life', 'movie', self.topic]
         )
     
+    def _reuse_recent_snapshot(self, data):
+        """Keep the last good list when a daily upstream briefly fails."""
+        field_map = {
+            'box_real': 'boxReal',
+            'box_year': 'boxYear',
+            'tv_list': 'tvList',
+            'show_list': 'showList',
+            'douban_list': 'doubanList',
+            'douban_high_rate': 'doubanHighRate',
+            'book_list': 'bookList',
+        }
+        previous = load_dashboard_snapshot('life') or {}
+        previous_payload = previous.get('payload') if isinstance(previous.get('payload'), dict) else {}
+        previous_status = previous_payload.get('sourceStatus') if isinstance(previous_payload.get('sourceStatus'), dict) else {}
+        previous_generated_at = str(previous.get('generatedAt') or '')
+        age_days = self._snapshot_age_days(previous_generated_at)
+        status = {}
+
+        for local_key, snapshot_key in field_map.items():
+            current_items = data.get(local_key) if isinstance(data.get(local_key), list) else []
+            if current_items:
+                status[snapshot_key] = {'state': 'fresh', 'updatedAt': ''}
+                continue
+
+            previous_items = previous_payload.get(snapshot_key)
+            max_age_days = 14 if snapshot_key == 'boxYear' else 3
+            if isinstance(previous_items, list) and previous_items and age_days <= max_age_days:
+                data[local_key] = previous_items
+                last_status = previous_status.get(snapshot_key) if isinstance(previous_status.get(snapshot_key), dict) else {}
+                status[snapshot_key] = {
+                    'state': 'cached',
+                    'updatedAt': str(last_status.get('updatedAt') or previous_generated_at),
+                }
+            else:
+                status[snapshot_key] = {'state': 'unavailable', 'updatedAt': ''}
+        return data, status
+
+    @staticmethod
+    def _snapshot_age_days(generated_at):
+        try:
+            value = dt.datetime.fromisoformat(str(generated_at).replace('Z', '+00:00'))
+            now = dt.datetime.now(dt.timezone.utc)
+            return max(0, (now - value.astimezone(dt.timezone.utc)).total_seconds() / 86400)
+        except (TypeError, ValueError):
+            return float('inf')
+
     def _get_combined_data(self):
         return {
             'box_real': self._get_movie_realtime(),
@@ -73,6 +123,9 @@ class LifeSource(BaseSource):
     
     def _get_movie_realtime(self):
         """实时票房 Top 10"""
+        public_items = self._get_public_movie_daily()
+        if public_items:
+            return public_items
         try:
             df = ak.movie_boxoffice_realtime()
             df = df.head(10)
@@ -89,6 +142,42 @@ class LifeSource(BaseSource):
         except Exception as e:
             print(f"[Life] Movie Realtime Error: {e}")
             return self._get_douban_collection('movie_showing', 'https://m.douban.com/movie/')
+
+    def _get_public_movie_daily(self):
+        """Read the public nationwide daily movie ranking page."""
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+
+            response = requests.get(
+                'https://m.sme-gov.cn/dataset/movie.html',
+                headers={'User-Agent': 'Mozilla/5.0'},
+                timeout=10,
+            )
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            items = []
+            for title_node in soup.select('h5.tit_h5')[:10]:
+                metrics = ' '.join(
+                    node.get_text(' ', strip=True)
+                    for node in title_node.parent.select('.list_fr_cnt_ct')
+                )
+                current_match = re.search(r'(?<!累计)票房\s*[:：]\s*([\d.]+)', metrics)
+                total_match = re.search(r'累计票房\s*[:：]\s*([\d.]+)', metrics)
+                if not current_match:
+                    continue
+                items.append({
+                    'name': title_node.get_text(' ', strip=True),
+                    'box': current_match.group(1),
+                    'share': '',
+                    'total': total_match.group(1) if total_match else '',
+                    'days': '',
+                    'source': 'national-movie-ranking',
+                })
+            return items
+        except Exception as exc:
+            print(f"[Life] Public Movie Daily Error: {exc}")
+            return []
 
     def _get_movie_yearly(self):
         """年度票房 Top 10"""

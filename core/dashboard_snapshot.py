@@ -41,7 +41,23 @@ class DashboardSnapshotExporter:
             self.logger.error('Dashboard snapshot export failed: %s', result.get('error'))
         return result
 
+    def load(self, module_name):
+        result = self.kv_client.get(self.build_key(module_name))
+        if not result.get('success'):
+            return None
+        try:
+            snapshot = json.loads(result.get('value') or '{}')
+        except (TypeError, ValueError):
+            self.logger.warning('Dashboard snapshot is not valid JSON: %s', module_name)
+            return None
+        return snapshot if isinstance(snapshot, dict) else None
+
 
 def export_dashboard_snapshot(module_name, payload, kv_client=None):
     exporter = DashboardSnapshotExporter(kv_client=kv_client)
     return exporter.export(module_name, payload)
+
+
+def load_dashboard_snapshot(module_name, kv_client=None):
+    exporter = DashboardSnapshotExporter(kv_client=kv_client)
+    return exporter.load(module_name)

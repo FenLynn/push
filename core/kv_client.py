@@ -49,3 +49,29 @@ class CloudflareKVClient:
         except Exception as exc:
             self.logger.error(f'KV request error: {exc}')
             return {'success': False, 'error': str(exc)}
+
+    def get(self, key):
+        if not self.enabled:
+            return {'success': False, 'error': 'KV client disabled (missing credentials)'}
+
+        encoded_key = quote(str(key), safe='')
+        url = f"{self.API_BASE}/accounts/{self.account_id}/storage/kv/namespaces/{self.namespace_id}/values/{encoded_key}"
+        headers = {'Authorization': f'Bearer {self.api_token}'}
+
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=20,
+                proxies={'http': None, 'https': None}
+            )
+            if response.status_code == 200:
+                return {'success': True, 'value': response.text}
+            if response.status_code == 404:
+                return {'success': False, 'error': 'not found'}
+
+            self.logger.error('KV read failed: HTTP %s', response.status_code)
+            return {'success': False, 'error': f'HTTP {response.status_code}'}
+        except Exception as exc:
+            self.logger.error(f'KV request error: {exc}')
+            return {'success': False, 'error': str(exc)}

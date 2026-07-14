@@ -1,11 +1,12 @@
 """Estate Source - Real Estate Data (Cloudflare D1)"""
+import datetime
 import sys, os, time, re, requests
 import logging
 from bs4 import BeautifulSoup
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.d1_client import D1Client
-from core.dashboard_snapshot import export_dashboard_snapshot
+from core.dashboard_snapshot import export_dashboard_snapshot, load_dashboard_snapshot
 
 class EstateSource(BaseSource):
     def __init__(self, topic='me', **kwargs):
@@ -183,20 +184,52 @@ class EstateSource(BaseSource):
             
         return data_points
 
+    def _merge_recent_snapshot(self, current_items):
+        """Retain a city's last good values when one upstream fails temporarily."""
+        today = time.strftime('%Y-%m-%d')
+        merged = [dict(item, stale=False, sourceDate=today) for item in current_items]
+        current_cities = {item.get('city') for item in current_items}
+        previous = load_dashboard_snapshot('estate') or {}
+        payload = previous.get('payload') if isinstance(previous.get('payload'), dict) else {}
+        previous_items = payload.get('items') if isinstance(payload.get('items'), list) else []
+        generated_at = str(previous.get('generatedAt') or '')
+        age_days = self._snapshot_age_days(generated_at)
+
+        if age_days <= 7:
+            for item in previous_items:
+                city = item.get('city') if isinstance(item, dict) else None
+                if city and city not in current_cities:
+                    cached_item = dict(item)
+                    cached_item['stale'] = True
+                    cached_item['sourceDate'] = str(item.get('sourceDate') or payload.get('date') or '')
+                    merged.append(cached_item)
+        return merged
+
+    @staticmethod
+    def _snapshot_age_days(generated_at):
+        try:
+            previous_time = datetime.datetime.fromisoformat(str(generated_at).replace('Z', '+00:00'))
+            now = datetime.datetime.now(datetime.timezone.utc)
+            return max(0, (now - previous_time.astimezone(datetime.timezone.utc)).total_seconds() / 86400)
+        except (TypeError, ValueError):
+            return float('inf')
+
     def run(self) -> Message:
         # 1. Initialize DB
         self._init_db()
         
         # 2. Collect Data
-        all_data = []
+        current_data = []
         
         # Chengdu
         cd_data = self._scrape_chengdu()
-        all_data.extend(cd_data)
+        current_data.extend(cd_data)
         
         # Xi'an
         xa_data = self._scrape_xian() 
-        all_data.extend(xa_data)
+        current_data.extend(xa_data)
+
+        all_data = self._merge_recent_snapshot(current_data)
 
         if all_data:
             export_dashboard_snapshot('estate', {
@@ -207,7 +240,7 @@ class EstateSource(BaseSource):
         
         # 3. Store to D1
         if self.d1.enabled:
-            self._push_to_d1(all_data)
+            self._push_to_d1(current_data)
         else:
             self.logger.warning("D1 config missing. Data NOT saved.")
 
