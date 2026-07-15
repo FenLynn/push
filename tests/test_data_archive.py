@@ -2,6 +2,7 @@ import pandas as pd
 
 from core.data_archive import DataArchive
 from core.image_upload import R2Uploader
+from sources.finance.indicators.cpi import CPIIndicator
 
 
 class FakeD1Client:
@@ -92,3 +93,17 @@ def test_retention_uses_existing_system_log_timestamp_column():
 
     cleanup_sql = [sql for sql, _ in client.calls if "DELETE FROM system_logs" in sql]
     assert cleanup_sql == ["DELETE FROM system_logs WHERE created_at < ?"]
+
+
+def test_cpi_uses_observation_months_from_nbs_frame():
+    raw = pd.DataFrame({
+        "月份": ["2026年06月份", "2026年05月份"],
+        "全国-同比增长": [1.0, 1.2],
+        "全国-环比增长": [-0.3, -0.1],
+    })
+
+    normalized = CPIIndicator._normalize_nbs_frame(raw)
+
+    assert normalized["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-05-01", "2026-06-01"]
+    assert normalized["cpi_y"].tolist() == [1.2, 1.0]
+    assert normalized["cpi_m"].tolist() == [-0.1, -0.3]

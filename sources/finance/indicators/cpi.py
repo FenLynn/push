@@ -3,31 +3,38 @@ import pandas as pd
 from .base import BaseIndicator
 
 class CPIIndicator(BaseIndicator):
-    def fetch_data(self) -> pd.DataFrame:
-        import time
-        
-        df = None
-        for attempt in range(2): # Reduce attempts to fail faster
-            try:
-                # Set a timeout context if possible, but akshare doesn't support it directly.
-                # Just catch exceptions.
-                # Pre-check: if connection is super slow, just fail.
-                df_y = ak.macro_china_cpi_yearly()
-                df_m = ak.macro_china_cpi_monthly()
-                df_y = df_y.rename(columns={'日期':'date', '今值':'cpi_y'})
-                df_m = df_m.rename(columns={'日期':'date', '今值':'cpi_m'})
-                df = pd.merge(df_y, df_m, on='date', how='outer').sort_values('date')
-                df['date'] = pd.to_datetime(df['date'])
-                df = df.dropna(subset=['cpi_y'], how='all')
-                break
-            except Exception as e:
-                self.logger.warning(f"CPI Fetch attempt {attempt+1} failed: {e}")
-                time.sleep(1)
-        
-        if df is None or df.empty:
-            raise RuntimeError("CPI upstream returned no observations; synthetic fallback is disabled")
+    @staticmethod
+    def _normalize_nbs_frame(frame: pd.DataFrame) -> pd.DataFrame:
+        required = {'月份', '全国-同比增长', '全国-环比增长'}
+        missing = required.difference(frame.columns)
+        if missing:
+            raise RuntimeError(f"CPI upstream columns changed: {sorted(missing)}")
 
-        return df
+        month_parts = frame['月份'].astype(str).str.extract(r'(?P<year>\d{4})年(?P<month>\d{1,2})月份?')
+        dates = pd.to_datetime(
+            month_parts['year'] + '-' + month_parts['month'].str.zfill(2) + '-01',
+            errors='coerce',
+        )
+        normalized = pd.DataFrame({
+            'date': dates,
+            'cpi_y': pd.to_numeric(frame['全国-同比增长'], errors='coerce'),
+            'cpi_m': pd.to_numeric(frame['全国-环比增长'], errors='coerce'),
+        })
+        return normalized.dropna(subset=['date', 'cpi_y']).drop_duplicates('date').sort_values('date')
+
+    def fetch_data(self) -> pd.DataFrame:
+        try:
+            # This dataset is sourced from the National Bureau of Statistics
+            # and uses observation months. The legacy yearly/monthly helpers
+            # expose release-calendar dates and stopped updating in 2025.
+            frame = self._normalize_nbs_frame(ak.macro_china_cpi())
+        except Exception as exc:
+            self.logger.error("CPI Fetch Error: %s", exc)
+            raise
+
+        if frame.empty:
+            raise RuntimeError("CPI upstream returned no observations; synthetic fallback is disabled")
+        return frame
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
