@@ -365,6 +365,7 @@ class DamaiSource(BaseSource):
                 'time': event.get('raw_time', ''),
                 'price': event.get('price', ''),
                 'link': event.get('link', ''),
+                'image': event.get('img', ''),
                 'isNew': event_id in incremental_ids,
             })
         
