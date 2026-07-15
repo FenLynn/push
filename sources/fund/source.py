@@ -17,6 +17,7 @@ class FundSource(BaseSource):
     def __init__(self, topic='me', **kwargs):
         super().__init__(**kwargs)
         self.topic = topic
+        self._index_codes = {}
         self.template = TemplateEngine()
         self.template = TemplateEngine()
         # Proxy is handled by environment variables (core.env)
@@ -103,6 +104,7 @@ class FundSource(BaseSource):
         
         results = []
         for item in items:
+            self._index_codes[item['name']] = str(item.get('index_code') or '').strip()
             results.append({
                 "指数": item['name'], 
                 "PE": round(item['pe'], 1), 
@@ -129,6 +131,7 @@ class FundSource(BaseSource):
                 
                 item = {
                     'name': df.loc[i,'指数'],
+                    'index_code': self._index_codes.get(df.loc[i,'指数'], ''),
                     'pe': df.loc[i,'PE'],
                     'pe_pct': df.loc[i,'PE百分位'],
                     'pb': df.loc[i,'PB'],
