@@ -1,7 +1,8 @@
 """Preview or remove legacy date-keyed chart images from the Push R2 bucket.
 
-Only root objects matching YYYY/MM/DD/<image> are eligible. Stable objects,
-reports, backups and every other prefix are deliberately excluded.
+Only root objects matching YYYY/MM/DD/<image>, plus legacy Finance objects
+whose filename is a date or date-time, are eligible. Stable ``latest``
+objects, reports, backups and every other prefix are deliberately excluded.
 """
 
 from __future__ import annotations
@@ -22,6 +23,14 @@ LEGACY_IMAGE_KEY = re.compile(
     r"^\d{4}/\d{2}/\d{2}/[^/]+\.(?:png|jpe?g|webp|gif)$",
     re.IGNORECASE,
 )
+LEGACY_FINANCE_IMAGE_KEY = re.compile(
+    r"^finance/[^/]+/\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}:\d{2})?\.(?:png|jpe?g|webp|gif)$",
+    re.IGNORECASE,
+)
+
+
+def is_legacy_image_key(key: str) -> bool:
+    return bool(LEGACY_IMAGE_KEY.fullmatch(key) or LEGACY_FINANCE_IMAGE_KEY.fullmatch(key))
 
 
 def find_legacy_keys(uploader: R2Uploader) -> list[str]:
@@ -35,7 +44,7 @@ def find_legacy_keys(uploader: R2Uploader) -> list[str]:
         keys.extend(
             item["Key"]
             for item in response.get("Contents", [])
-            if item.get("Key") and LEGACY_IMAGE_KEY.fullmatch(item["Key"])
+            if item.get("Key") and is_legacy_image_key(item["Key"])
         )
         if not response.get("IsTruncated"):
             return sorted(keys)
