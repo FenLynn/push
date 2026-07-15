@@ -1,8 +1,11 @@
 """Estate Source - Real Estate Data (Cloudflare D1)"""
+import base64
 import datetime
+import hashlib
+import hmac
+import secrets
 import sys, os, time, re, requests
 import logging
-from bs4 import BeautifulSoup
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.d1_client import D1Client
@@ -37,74 +40,92 @@ class EstateSource(BaseSource):
         if self.d1.enabled:
             self.d1.ensure_table(self.table_name, self.schema_sql)
 
+    @staticmethod
+    def _request_chengdu_gateway(base_url, resource, headers):
+        time_response = requests.get(
+            f'{base_url}/fplc/Ticket/getTime',
+            headers=headers,
+            timeout=30,
+        )
+        time_response.raise_for_status()
+        time_payload = time_response.json()
+        timestamp = str(((time_payload.get('data') or {}).get('timestamp')) or '')
+        if not timestamp:
+            raise ValueError('gateway timestamp missing')
+
+        nonce = secrets.token_hex(4)
+        message = f'{resource}:{timestamp}:{nonce}'.encode('utf-8')
+        signature = base64.b64encode(
+            hmac.new(b'fuadoifhasucvvapdanf', message, hashlib.md5).digest()
+        ).decode('ascii')
+        response = requests.post(
+            f'{base_url}/fplc/Ticket/getDataWithLogin',
+            json={
+                'resource': resource,
+                'data': {'data': {'queryDate': time.strftime('%Y-%m-%d')}},
+            },
+            headers={
+                **headers,
+                'X-Sign': signature,
+                'X-Timestamp': timestamp,
+                'X-Nonce': nonce,
+            },
+            timeout=35,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        gateway_data = payload.get('data') if isinstance(payload, dict) else {}
+        rows = gateway_data.get('data') if isinstance(gateway_data, dict) else []
+        return [item for item in (rows or []) if isinstance(item, dict)]
+
     def _scrape_chengdu(self):
         """
-        Scrape Chengdu Real Estate Data
-        Source: https://www.cdzjryb.com/SCXX/Default.aspx?action=ucEveryday2
-        Ported from legacy/estate/chengdu_day.py
+        Read Chengdu's public daily transaction gateway.
+
+        The legacy table now redirects to a SPA. The SPA uses a timestamped
+        HMAC wrapper for its public daily endpoint, so the request is recreated
+        here without browser state or account credentials.
         """
-        url = "https://www.cdzjryb.com/SCXX/Default.aspx?action=ucEveryday2"
+        base_url = "https://blmp.cdzjryb.com"
+        resource = "/fcytx/qsmzq-all-api/qsmzq-zfytx-api/zjryb_mrcj"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': f'{base_url}/fplc_daas_portal/',
+            'Content-Type': 'application/json',
         }
-        
-        data_points = []
-        today_str = time.strftime('%Y-%m-%d')
-        
+
+        rows = []
+        last_error = None
+        for attempt in range(2):
+            try:
+                rows = self._request_chengdu_gateway(base_url, resource, headers)
+                if rows:
+                    break
+                last_error = ValueError('public gateway returned no daily rows')
+            except Exception as exc:
+                last_error = exc
+            if attempt == 0:
+                time.sleep(0.6)
+
+        if not rows:
+            self.logger.error(f"Chengdu gateway error: {last_error}")
+            return []
+
         try:
-            self.logger.info("Fetching Chengdu data...")
-            resp = requests.get(url, headers=headers, timeout=15)
-            if resp.status_code != 200:
-                self.logger.error(f"Chengdu fetch failed: {resp.status_code}")
-                return []
-                
-            soup = BeautifulSoup(resp.content, 'html.parser')
-            tables = soup.find_all('table', class_='blank')
-            
-            if not tables:
-                self.logger.error("Chengdu: No data tables found")
-                return []
-
-            # Mapping based on legacy code
-            # Table 0: New Homes (Commercial)
-            # Table 1: Second Hand (Secondary)
-            
-            # Helper to extract number
-            def get_num(text):
-                matches = re.findall(r'-?\d+\.?\d*', text)
-                return float(matches[0]) if matches else 0.0
-
-            # 1. New Homes (全市/All) -> Table 0, Row 3 (Index 4 in legacy logic seems 1-based? Let's verify legacy code)
-            # Legacy code says: 'com_all_house_area':(4,3) -> Row index 4, Col index 3
-            # Beautiful Soup find_all('tr') is 0-indexed. 
-            # Legacy logic: row = table[0].find_all("tr")[value[0]] -> value is (4, X).
-            # So row index 4.
-            
-            t0 = tables[0]
-            rows_t0 = t0.find_all("tr")
-            if len(rows_t0) > 4:
-                # New Home Area (sqm)
-                nh_area = get_num(rows_t0[4].find_all("td")[3].get_text())
-                data_points.append({'city': 'Chengdu', 'category': 'NewHome_Area', 'value': nh_area, 'unit': 'sqm'})
-                # New Home Count (units)
-                nh_count = get_num(rows_t0[4].find_all("td")[2].get_text())
-                data_points.append({'city': 'Chengdu', 'category': 'NewHome_Count', 'value': nh_count, 'unit': 'units'})
-
-            # 2. Second Hand (全市/All) -> Table 1, Row 4
-            t1 = tables[1]
-            rows_t1 = t1.find_all("tr")
-            if len(rows_t1) > 4:
-                # Second Hand Area (sqm)
-                sh_area = get_num(rows_t1[4].find_all("td")[3].get_text())
-                data_points.append({'city': 'Chengdu', 'category': 'SecondHand_Area', 'value': sh_area, 'unit': 'sqm'})
-                # Second Hand Count (units)
-                sh_count = get_num(rows_t1[4].find_all("td")[2].get_text())
-                data_points.append({'city': 'Chengdu', 'category': 'SecondHand_Count', 'value': sh_count, 'unit': 'units'})
-                
-        except Exception as e:
-            self.logger.error(f"Chengdu scrape error: {e}")
-            
-        return data_points
+            city_row = max(
+                rows,
+                key=lambda item: float(item.get('clf_countnum') or 0) + float(item.get('spf_countnum') or 0),
+            )
+            source_date = str(city_row.get('dated') or time.strftime('%Y-%m-%d'))
+            return [
+                {'city': 'Chengdu', 'category': 'NewHome_Area', 'value': float(city_row.get('spf_area') or 0), 'unit': 'sqm', 'sourceDate': source_date},
+                {'city': 'Chengdu', 'category': 'NewHome_Count', 'value': float(city_row.get('spf_countnum') or 0), 'unit': 'units', 'sourceDate': source_date},
+                {'city': 'Chengdu', 'category': 'SecondHand_Area', 'value': float(city_row.get('clf_area') or 0), 'unit': 'sqm', 'sourceDate': source_date},
+                {'city': 'Chengdu', 'category': 'SecondHand_Count', 'value': float(city_row.get('clf_countnum') or 0), 'unit': 'units', 'sourceDate': source_date},
+            ]
+        except Exception as exc:
+            self.logger.error(f"Chengdu gateway parse error: {exc}")
+            return []
 
     def _push_to_d1(self, data_points):
         """Push data points to D1"""
@@ -137,57 +158,45 @@ class EstateSource(BaseSource):
 
     def _scrape_xian(self):
         """
-        Scrape Xi'an Real Estate Data
-        Source: https://xa.anjuke.com/sale/ (Anjuke)
-        Note: Fang.com and Beike have strict anti-bot/DNS issues in this env.
-        """
-        url = "https://xa.anjuke.com/sale/"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://xa.anjuke.com/'
-        }
-        
-        data_points = []
-        
-        try:
-            self.logger.info("Fetching Xi'an data (Anjuke)...")
-            resp = requests.get(url, headers=headers, timeout=15)
-            if resp.status_code != 200:
-                self.logger.error(f"Xi'an fetch failed: {resp.status_code}")
-                return []
-            
-            # Use Regex to find total count
-            # Anjuke often puts count in JSON or HTML like "total": 1234
-            # Debug showed recurrence of a specific number (e.g. 5369)
-            # We try a few strict patterns first
-            
-            count = 0
-            # Pattern 1: <span class="num">...</span>
-            # Pattern 2: "total": 1234
-            
-            # Blind regex strategy based on debug check (matches 'total...digits')
-            matches = re.findall(r'total.*?(\d+)', resp.text, re.IGNORECASE)
-            if matches:
-                 # Filter reasonable numbers (e.g. > 100)
-                 # Debug showed '5369'
-                 valid_nums = [float(m) for m in matches if float(m) > 100]
-                 if valid_nums:
-                     count = valid_nums[0] # Take the first reasonable number
-            
-            if count > 0:
-                data_points.append({'city': 'Xian', 'category': 'SecondHand_Count_Anjuke', 'value': count, 'unit': 'units'})
-            else:
-                self.logger.warning("Xi'an: No valid count found in Anjuke page")
+        Read Xi'an's public residential second-hand listing total.
 
-        except Exception as e:
-            self.logger.error(f"Xi'an scrape error: {e}")
-            
-        return data_points
+        The former Anjuke desktop page now frequently returns a verification
+        shell. Fang's mobile page exposes the current total as a hidden field
+        and is used here without browser state.
+        """
+        url = "https://m.fang.com/esf/xian/"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+        }
+
+        try:
+            self.logger.info("Fetching Xi'an data (Fang mobile)...")
+            response = requests.get(url, headers=headers, timeout=(8, 25))
+            response.raise_for_status()
+            response.encoding = 'utf-8'
+            match = re.search(r'data-id="total"\s+value="(\d+)"', response.text, re.IGNORECASE)
+            count = int(match.group(1)) if match else 0
+            if count <= 0:
+                self.logger.warning("Xi'an: listing total missing from Fang mobile page")
+                return []
+            return [{
+                'city': 'Xian',
+                # Keep the legacy category so existing D1 history remains continuous.
+                'category': 'SecondHand_Count_Anjuke',
+                'value': count,
+                'unit': 'units',
+                'source': 'fang-mobile',
+                'sourceDate': time.strftime('%Y-%m-%d'),
+            }]
+        except Exception as exc:
+            self.logger.error(f"Xi'an Fang fetch error: {exc}")
+            return []
 
     def _merge_recent_snapshot(self, current_items):
         """Retain a city's last good values when one upstream fails temporarily."""
         today = time.strftime('%Y-%m-%d')
-        merged = [dict(item, stale=False, sourceDate=today) for item in current_items]
+        merged = [dict(item, stale=False, sourceDate=str(item.get('sourceDate') or today)) for item in current_items]
         current_cities = {item.get('city') for item in current_items}
         previous = load_dashboard_snapshot('estate') or {}
         payload = previous.get('payload') if isinstance(previous.get('payload'), dict) else {}

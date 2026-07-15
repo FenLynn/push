@@ -1,5 +1,6 @@
 """Life Source - 娱乐风向标 (Life V2)"""
 import datetime as dt
+import json
 import re
 import sys, os, time
 import pandas as pd
@@ -181,6 +182,9 @@ class LifeSource(BaseSource):
 
     def _get_movie_yearly(self):
         """年度票房 Top 10"""
+        public_items = self._get_maoyan_movie_yearly()
+        if public_items:
+            return public_items
         try:
             df = ak.movie_boxoffice_yearly(time.strftime("%Y%m%d", time.localtime()))
             df = df.head(10)
@@ -197,8 +201,47 @@ class LifeSource(BaseSource):
             print(f"[Life] Movie Yearly Error: {e}")
             return []
 
+    def _get_maoyan_movie_yearly(self):
+        """Read the current-year chart embedded in Maoyan's public page."""
+        try:
+            import requests
+
+            year = time.strftime("%Y", time.localtime())
+            response = requests.get(
+                "https://piaofang.maoyan.com/i/mdb/rank",
+                params={"type": 0, "target": year},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=12,
+            )
+            response.raise_for_status()
+            response.encoding = "utf-8"
+            match = re.search(r'"list":(\[.*?\]),"majorTitle"', response.text, re.S)
+            if not match:
+                return []
+            items = json.loads(match.group(1))
+            result = []
+            for item in items[:10]:
+                name = str(item.get("movieName") or "").strip()
+                if not name:
+                    continue
+                box_value = re.sub(r"[^\d.]", "", str(item.get("boxInfo") or ""))
+                result.append({
+                    "name": name,
+                    "box": box_value,
+                    "avg": item.get("avgViewBoxDesc") or "",
+                    "date": str(item.get("releaseInfo") or ""),
+                    "source": "maoyan-yearly",
+                })
+            return result
+        except Exception as exc:
+            print(f"[Life] Maoyan Yearly Error: {exc}")
+            return []
+
     def _get_tv_hot(self):
         """热播剧集 Top 10"""
+        public_items = self._get_maoyan_web_heat(0)
+        if public_items:
+            return public_items
         try:
             df = ak.video_tv() 
             df = df.sort_values(by='用户热度', ascending=False).head(10)
@@ -217,6 +260,9 @@ class LifeSource(BaseSource):
 
     def _get_show_hot(self):
         """热门综艺 Top 10"""
+        public_items = self._get_maoyan_web_heat(2)
+        if public_items:
+            return public_items
         try:
             df = ak.video_variety_show()
             df = df.sort_values(by='用户热度', ascending=False).head(10)
@@ -232,6 +278,54 @@ class LifeSource(BaseSource):
         except Exception as e:
             print(f"[Life] Show Error: {e}")
             return self._get_douban_collection('show_hot', 'https://m.douban.com/tv/')
+
+    def _get_maoyan_web_heat(self, series_type):
+        """Read Maoyan's public web-heat JSON for series or variety shows."""
+        try:
+            import requests
+
+            response = requests.get(
+                "https://piaofang.maoyan.com/dashboard/webHeatData",
+                params={
+                    "seriesType": series_type,
+                    "platformType": "",
+                    "showDate": 2,
+                    "dateType": 0,
+                    "rankType": 0,
+                    "limit": 10,
+                },
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": "https://piaofang.maoyan.com/web-heat",
+                },
+                timeout=12,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            data_list = payload.get("dataList") if isinstance(payload, dict) else {}
+            items = data_list.get("list") if isinstance(data_list, dict) else []
+            result = []
+            for item in (items or [])[:10]:
+                info = item.get("seriesInfo") if isinstance(item, dict) else {}
+                info = info if isinstance(info, dict) else {}
+                name = str(info.get("name") or "").strip()
+                if not name:
+                    continue
+                details = [
+                    str(info.get("platformDesc") or "").strip(),
+                    str(info.get("releaseInfo") or "").strip(),
+                ]
+                result.append({
+                    "name": name,
+                    "hot": item.get("currHeatDesc") or item.get("currHeat") or "",
+                    "rate": "",
+                    "type": " · ".join(part for part in details if part),
+                    "source": "maoyan-web-heat",
+                })
+            return result
+        except Exception as exc:
+            print(f"[Life] Maoyan Web Heat Error: {exc}")
+            return []
 
     def _get_douban_collection(self, collection, referer):
         """Read a public Douban mobile collection as an independent fallback."""
