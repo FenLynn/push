@@ -1,57 +1,42 @@
-# Push Project (Systematic Edition)
+# Push
 
-A unified TTRSS + Push Notification system running on Docker.
+基于 GitHub Actions 和 Cloudflare 的定时信息采集、归档与消息推送项目。
 
-## 📂 Directory Structure
+## 运行架构
 
-- `core/`, `sources/`, `channels/`: Python application code.
-- `config/`: TTRSS and other configurations.
-- `data/`: 
-  - `postgres/`: (Currently managed by Docker Volume `db_data`)
-  - `push.db`: Local application cache.
-- `scripts/`: System management scripts.
-  - `backup_r2.py`: **R2 Backup**.
-  - `fetch_to_d1.py`: **RSS ingest + 7-day retention cleanup + optics snapshot export**.
-  - `docker_entrypoint.sh`: Container entrypoint.
-- `.env`: Environment variables (Secrets).
-- `docker-compose.yml`: Service definition.
+- GitHub Actions 运行各业务模块和 RSS 抓取任务。
+- Cloudflare 负责定时触发，并使用 D1、R2 保存结构化数据和生成结果。
+- PushPlus 等外部服务负责消息投递。
+- 运行密钥由 GitHub Secrets 注入，不保存在仓库中。
 
-## 🚀 Quick Start (Deployment)
+项目不再提供或维护 Docker、Docker Compose、Ofelia 和 VPS 容器部署方式。
 
-### 1. Start Services
+## 目录
+
+- `core/`：配置、调度、日志和消息生成等核心逻辑。
+- `sources/`：各业务数据源。
+- `channels/`：消息投递渠道。
+- `scripts/`：GitHub Actions 和维护脚本。
+- `.github/workflows/`：各模块的 GitHub Actions 工作流。
+- `cf-cron/`：Cloudflare 定时触发服务。
+
+## 本地运行
+
+创建不会被 Git 跟踪的 `.env`，配置所需变量后执行：
+
 ```bash
-docker compose up -d
+python main.py list
+python main.py run <module> --topic <topic>
 ```
 
-### 2. Manual Run
-```bash
-# Standard run (Respects schedule)
-docker exec -it push-service python main.py run all
+是否绕过模块自身的日期或时段检查，可使用：
 
-# Force run (Bypass trading day/holiday checks)
-docker exec -it push-service python main.py run all --force
+```bash
+python main.py run <module> --topic <topic> --force
 ```
 
-## 🔄 Git Workflow (How to Update)
+## GitHub Actions
 
-### 1. Update Code (Routine)
-Runs on GitHub Actions, just pull locally.
-```bash
-git pull origin main
-```
+各模块工作流直接安装 Python 依赖并执行 `main.py` 或对应脚本，不依赖容器环境。环境配置由仓库 Secret `PUSH_ENV_FILE` 在 Runner 上临时加载。
 
-### 2. Deployment (On VPS)
-Pull the latest image automatically built by GitHub.
-```bash
-docker pull ghcr.io/fenlynn/push:main
-docker compose up -d
-```
-
-## ☁️ Cloud Native Architecture
-- **Backup**: Automated to **Cloudflare R2** (`scripts/backup_r2.py`).
-- **CI/CD**: GitHub Actions auto-builds Docker images to GHCR.
-- **Stateless paper ingest**: `scripts/fetch_to_d1.py` enforces D1 article retention and exports the optics snapshot.
-
-## 🧹 Maintenance
-Files in `../push.bak` are legacy backups/junk and can be deleted after verification.
-Runtime artifacts under `logs/`, `output/`, and `data/` are intentionally ignored by Git and should be treated as generated files.
+运行产物、日志、本地数据和 `.env` 均由 `.gitignore` 排除，不应提交到仓库。
