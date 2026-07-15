@@ -7,6 +7,7 @@ import socket
 import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
+from zoneinfo import ZoneInfo
 import requests
 import akshare as ak
 import logging
@@ -15,6 +16,7 @@ from sources.base import BaseSource
 from core import Message, ContentType
 from core.config import config
 from core.constants import PUSHPLUS_MAX_CONTENT_LENGTH
+from core.dashboard_snapshot import export_dashboard_snapshot
 from core.legacy import *
 from core.utils.lib import *
 
@@ -72,7 +74,7 @@ class StockSource(BaseSource):
             'stocks': [], 'etfs': [], 'indexes': [], 
             'summary': {
                 'up_sum': '-', 'down_sum': '-', 'long_10': '-', 'short_10': '-',
-                'mean': '0.00', 'median': '0.00', 'total_money': '-', 
+                'mean': '-', 'median': '-', 'total_money': '-',
                 'money_change': '-', 'volume_ratio': '-', 'style': '数据收集失败'
             },
             'sectors': {'leaders': [], 'losers': []},
@@ -107,6 +109,7 @@ class StockSource(BaseSource):
         except Exception as e:
             self.logger.error(f"Error collecting market data: {e}")
             # 继续使用已收集的部分数据
+        self._export_market_breadth_snapshot(data)
         # 渲染 HTML（智能裁剪以避免超过 PushPlus 单条消息限制）
         max_len = PUSHPLUS_MAX_CONTENT_LENGTH
         
@@ -141,6 +144,32 @@ class StockSource(BaseSource):
             tags=['stock', 'market', self.topic],
             metadata={'trade_status': True}
         )
+
+    def _export_market_breadth_snapshot(self, data):
+        summary = data.get('summary') if isinstance(data, dict) else None
+        if not isinstance(summary, dict) or self.df_all is None or len(self.df_all) < 1000:
+            return
+
+        try:
+            avg_change = float(summary.get('mean'))
+            median_change = float(summary.get('median'))
+        except (TypeError, ValueError):
+            self.logger.warning('Market breadth snapshot skipped: mean or median is unavailable.')
+            return
+
+        now = datetime.now(ZoneInfo('Asia/Shanghai'))
+        session = 'midday' if 11 <= now.hour < 14 else 'close' if now.hour >= 14 else 'manual'
+        result = export_dashboard_snapshot('stock', {
+            'tradeDate': now.strftime('%Y-%m-%d'),
+            'session': session,
+            'breadth': {
+                'avgChange': round(avg_change, 2),
+                'medianChange': round(median_change, 2),
+                'sampleSize': len(self.df_all),
+            },
+        })
+        if not result.get('success'):
+            self.logger.warning('Market breadth snapshot export skipped: %s', result.get('error'))
 
     def _call_with_socket_timeout(self, func, *args, default=None, timeout_seconds=None, label='', **kwargs):
         old_timeout = socket.getdefaulttimeout()
