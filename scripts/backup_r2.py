@@ -40,11 +40,20 @@ def main():
     load_env()
     
     # Config
-    ACCOUNT_ID = os.getenv('R2_ACCOUNT_ID')
+    ACCOUNT_ID = (
+        os.getenv('CLOUDFLARE_R2_ACCOUNT_ID')
+        or os.getenv('CLOUDFLARE_D1_ACCOUNT_ID')
+        or os.getenv('R2_ACCOUNT_ID')
+    )
     ACCESS_KEY = os.getenv('R2_ACCESS_KEY')
     SECRET_KEY = os.getenv('R2_SECRET_KEY')
     BUCKET_NAME = os.getenv('R2_BUCKET_NAME', 'push-service')
-    ENDPOINT_URL = os.getenv('R2_ENDPOINT')
+    ENDPOINT_URL = os.getenv('CLOUDFLARE_R2_ENDPOINT') or os.getenv('R2_ENDPOINT')
+    if ENDPOINT_URL and ACCOUNT_ID not in ENDPOINT_URL:
+        logger.warning("Ignoring an R2 endpoint that does not match the resolved account ID")
+        ENDPOINT_URL = None
+    if not ENDPOINT_URL and ACCOUNT_ID:
+        ENDPOINT_URL = f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com"
     BACKUP_ENV = os.getenv('BACKUP_ENV', 'test')
     BACKUP_PASS = os.getenv('BACKUP_PASSWORD')
     

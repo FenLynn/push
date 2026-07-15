@@ -38,7 +38,6 @@ class Engine:
         保存消息内容到文件
         """
         import os
-        from datetime import datetime
         from core import ContentType
         
         # 确定后缀
@@ -51,12 +50,6 @@ class Engine:
         # 1. 保存为 latest.<ext>
         latest_path = os.path.join(out_dir, f'latest{suffix}.{ext}')
         with open(latest_path, 'w', encoding='utf-8') as f:
-            f.write(message.content)
-            
-        # 2. 保存为归档 yyyy-mm-dd.<ext> (覆盖同日之前的)
-        date_str = datetime.now().strftime('%Y-%m-%d')
-        archive_path = os.path.join(out_dir, f'{date_str}{suffix}.{ext}')
-        with open(archive_path, 'w', encoding='utf-8') as f:
             f.write(message.content)
             
         self.logger.info(f"Output saved to: {latest_path}")
@@ -74,14 +67,11 @@ class Engine:
                     url = uploader.upload_file(latest_path, object_name=latest_key)
                     if url:
                         self.logger.info(f"☁️ Uploaded to R2 (Latest): {url}")
+                        uploader.prune_prefix(
+                            f"output/{source_name}/",
+                            keep_key_prefixes={f"output/{source_name}/latest"},
+                        )
                         
-                    # Upload archive version (history)
-                    # Object Name: output/source_name/yyyy-mm-dd.html
-                    # Lifecycle rule on bucket handles 7-day deletion
-                    archive_key = f"output/{source_name}/{date_str}{suffix}.{ext}"
-                    url_arch = uploader.upload_file(archive_path, object_name=archive_key)
-                    if url_arch:
-                        self.logger.info(f"☁️ Uploaded to R2 (Archive): {url_arch}")
                 else:
                     self.logger.info("R2 upload skipped: credentials not configured.")
             except Exception as e:

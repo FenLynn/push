@@ -6,10 +6,13 @@ import hmac
 import secrets
 import sys, os, time, re, requests
 import logging
+import pandas as pd
+import akshare as ak
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.d1_client import D1Client
 from core.dashboard_snapshot import export_dashboard_snapshot, load_dashboard_snapshot
+from core.data_archive import DataArchive
 
 class EstateSource(BaseSource):
     def __init__(self, topic='me', **kwargs):
@@ -19,6 +22,7 @@ class EstateSource(BaseSource):
         
         # Initialize D1 Client
         self.d1 = D1Client()
+        self.archive = DataArchive(self.d1)
         
         # Define Schema
         self.table_name = "estate_daily"
@@ -132,8 +136,6 @@ class EstateSource(BaseSource):
         if not self.d1.enabled or not data_points:
             return
 
-        today_str = time.strftime('%Y-%m-%d')
-        
         success_count = 0
         for dp in data_points:
             # Upsert logic (Insert or Replace) -> D1 supports standard SQL
@@ -145,7 +147,7 @@ class EstateSource(BaseSource):
             DO UPDATE SET value=excluded.value, timestamp=CURRENT_TIMESTAMP;
             """
             res = self.d1.query(sql, [
-                today_str, 
+                str(dp.get('sourceDate') or time.strftime('%Y-%m-%d'))[:10],
                 dp['city'], 
                 dp['category'], 
                 dp['value'], 
@@ -155,6 +157,70 @@ class EstateSource(BaseSource):
                 success_count += 1
         
         self.logger.info(f"D1 Push: {success_count}/{len(data_points)} records saved.")
+
+    def _fetch_price_index_history(self):
+        """Fetch the long-running monthly 70-city price index for Chengdu/Xi'an."""
+        try:
+            frame = ak.macro_china_new_house_price(city_first='成都', city_second='西安')
+            frame = frame.rename(columns={
+                '日期': 'date',
+                '城市': 'city_zh',
+                '新建商品住宅价格指数-同比': 'new_home_yoy',
+                '新建商品住宅价格指数-环比': 'new_home_mom',
+                '二手住宅价格指数-同比': 'second_hand_yoy',
+                '二手住宅价格指数-环比': 'second_hand_mom',
+            })
+            required = {'date', 'city_zh', 'new_home_yoy', 'new_home_mom', 'second_hand_yoy', 'second_hand_mom'}
+            if not required.issubset(frame.columns):
+                raise ValueError(f"unexpected price-index columns: {list(frame.columns)}")
+            frame['date'] = pd.to_datetime(frame['date'], errors='coerce')
+            return frame.dropna(subset=['date', 'city_zh']).sort_values('date')
+        except Exception as exc:
+            self.logger.error(f"City price-index fetch failed: {exc}")
+            return pd.DataFrame()
+
+    def _archive_price_index(self, frame):
+        if frame is None or frame.empty or not self.archive.enabled:
+            return []
+        latest_items = []
+        city_map = {'成都': 'Chengdu', '西安': 'Xian'}
+        metric_specs = {
+            'new_home_yoy': {'label': '新房价格同比指数', 'unit': 'index'},
+            'new_home_mom': {'label': '新房价格环比指数', 'unit': 'index'},
+            'second_hand_yoy': {'label': '二手房价格同比指数', 'unit': 'index'},
+            'second_hand_mom': {'label': '二手房价格环比指数', 'unit': 'index'},
+        }
+        for city_zh, city in city_map.items():
+            city_frame = frame[frame['city_zh'] == city_zh].copy()
+            if city_frame.empty:
+                continue
+            self.archive.store_dataframe(
+                domain='estate',
+                group_name='city_price_index',
+                frame=city_frame,
+                metrics=metric_specs,
+                label=f'{city_zh}住宅价格指数',
+                source='AkShare/NBS-70-city',
+                frequency='monthly',
+                location=city,
+                quality='official',
+            )
+            latest = city_frame.iloc[-1]
+            source_date = latest['date'].strftime('%Y-%m-%d')
+            for metric, spec in metric_specs.items():
+                value = pd.to_numeric(latest.get(metric), errors='coerce')
+                if pd.isna(value):
+                    continue
+                latest_items.append({
+                    'city': city,
+                    'category': metric,
+                    'value': float(value),
+                    'unit': spec['unit'],
+                    'source': 'NBS-70-city',
+                    'sourceDate': source_date,
+                    'stale': False,
+                })
+        return latest_items
 
     def _scrape_xian(self):
         """
@@ -197,7 +263,7 @@ class EstateSource(BaseSource):
         """Retain a city's last good values when one upstream fails temporarily."""
         today = time.strftime('%Y-%m-%d')
         merged = [dict(item, stale=False, sourceDate=str(item.get('sourceDate') or today)) for item in current_items]
-        current_cities = {item.get('city') for item in current_items}
+        current_keys = {(item.get('city'), item.get('category')) for item in current_items}
         previous = load_dashboard_snapshot('estate') or {}
         payload = previous.get('payload') if isinstance(previous.get('payload'), dict) else {}
         previous_items = payload.get('items') if isinstance(payload.get('items'), list) else []
@@ -207,7 +273,8 @@ class EstateSource(BaseSource):
         if age_days <= 7:
             for item in previous_items:
                 city = item.get('city') if isinstance(item, dict) else None
-                if city and city not in current_cities:
+                key = (city, item.get('category')) if isinstance(item, dict) else (None, None)
+                if city and key not in current_keys:
                     cached_item = dict(item)
                     cached_item['stale'] = True
                     cached_item['sourceDate'] = str(item.get('sourceDate') or payload.get('date') or '')
@@ -229,6 +296,7 @@ class EstateSource(BaseSource):
         
         # 2. Collect Data
         current_data = []
+        price_index_items = self._archive_price_index(self._fetch_price_index_history())
         
         # Chengdu
         cd_data = self._scrape_chengdu()
@@ -238,7 +306,7 @@ class EstateSource(BaseSource):
         xa_data = self._scrape_xian() 
         current_data.extend(xa_data)
 
-        all_data = self._merge_recent_snapshot(current_data)
+        all_data = self._merge_recent_snapshot(current_data + price_index_items)
 
         if all_data:
             export_dashboard_snapshot('estate', {
@@ -250,6 +318,12 @@ class EstateSource(BaseSource):
         # 3. Store to D1
         if self.d1.enabled:
             self._push_to_d1(current_data)
+            transaction_points = [
+                point for point in current_data
+                if point.get('category') != 'SecondHand_Count_Anjuke'
+            ]
+            self.archive.store_points('estate', 'transactions', transaction_points, 'city-public-gateway')
+            self.archive.run_retention()
         else:
             self.logger.warning("D1 config missing. Data NOT saved.")
 

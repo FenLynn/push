@@ -32,3 +32,4 @@ runs:
 
         printf 'RUN_MODE=cloud\n' >> "$GITHUB_ENV"
         printf 'TZ=Asia/Shanghai\n' >> "$GITHUB_ENV"
+        printf 'PUSH_R2_PUBLIC_BASE_URL=https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets\n' >> "$GITHUB_ENV"

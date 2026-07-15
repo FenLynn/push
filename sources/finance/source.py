@@ -21,6 +21,22 @@ from .indicators import (
 )
 from datetime import datetime
 import logging
+import os
+
+
+EXPERIMENTAL_INDICATOR_NAMES = {
+    'socialfinance',
+    'margin',
+    'electricity',
+    'municipalrealestate',
+    'macrodigest',
+    '巴菲特指标',
+    '克强指数',
+    '流动性画像',
+    '两融杠杆率',
+    'chengdu_real_estate',
+    'xian_real_estate',
+}
 
 class FinanceSource(BaseSource):
     def __init__(self, **kwargs):
@@ -79,10 +95,17 @@ class FinanceSource(BaseSource):
             ChengduRealEstateIndicator(self.manager, self.plotter),
             XianRealEstateIndicator(self.manager, self.plotter),
         ]
+        if str(os.getenv('FINANCE_ENABLE_EXPERIMENTAL') or '').strip().lower() not in {'1', 'true', 'yes'}:
+            self.indicators = [
+                indicator for indicator in self.indicators
+                if indicator.name not in EXPERIMENTAL_INDICATOR_NAMES
+            ]
         self.logger = logging.getLogger("Push.Source.Finance")
 
     def run(self):
         self.logger.info("Starting Finance Run...")
+        if self.manager.archive:
+            self.manager.archive.run_retention()
         
         # Define Categories
         CATEGORY_MAP = {

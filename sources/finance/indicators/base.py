@@ -68,7 +68,11 @@ class BaseIndicator(ABC):
         latest_date = metadata
         url = self.manager.save_plot_info(self.name, latest_date, pic_path)
         if not url:
-            self.logger.warning(f"Image upload failed for {self.name}, using local path")
+            from core.config import config
+            if config.RUN_MODE == 'cloud':
+                self.logger.error(f"Image upload failed for {self.name}; cloud output omitted")
+                return None
+            self.logger.warning(f"Image upload failed for {self.name}; using local preview path")
             url = pic_path
         
         return {'url': url, 'date': latest_date, 'name': self.name, 'value': self._get_latest_value(df)}

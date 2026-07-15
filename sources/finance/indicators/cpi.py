@@ -5,7 +5,6 @@ from .base import BaseIndicator
 class CPIIndicator(BaseIndicator):
     def fetch_data(self) -> pd.DataFrame:
         import time
-        import numpy as np
         
         df = None
         for attempt in range(2): # Reduce attempts to fail faster
@@ -19,27 +18,14 @@ class CPIIndicator(BaseIndicator):
                 df_m = df_m.rename(columns={'日期':'date', '今值':'cpi_m'})
                 df = pd.merge(df_y, df_m, on='date', how='outer').sort_values('date')
                 df['date'] = pd.to_datetime(df['date'])
-                df = df.fillna(0)
+                df = df.dropna(subset=['cpi_y'], how='all')
                 break
             except Exception as e:
                 self.logger.warning(f"CPI Fetch attempt {attempt+1} failed: {e}")
                 time.sleep(1)
         
-        # Synthetic Fallback
         if df is None or df.empty:
-            self.logger.warning("CPI: Generating synthetic data...")
-            # Generate 20 years of data
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=240, freq='M')
-            # Simulated CPI YoY: Mean 2.0, Volatility
-            values_y = 2.0 + np.sin(np.arange(240)/10) * 1.5 + np.random.normal(0, 0.5, 240)
-            # Simulated CPI MoM: Seasonality (Jan/Feb high)
-            values_m = np.random.normal(0.1, 0.3, 240)
-            # Add CNY effect (Months 0, 1)
-            for i in range(240):
-                if dates[i].month in [1, 2]: values_m[i] += 0.5
-                elif dates[i].month in [3]: values_m[i] -= 0.3 # Post-holiday drop
-            
-            df = pd.DataFrame({'date': dates, 'cpi_y': values_y, 'cpi_m': values_m})
+            raise RuntimeError("CPI upstream returned no observations; synthetic fallback is disabled")
 
         return df
 

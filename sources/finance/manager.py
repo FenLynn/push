@@ -3,13 +3,15 @@ import json
 import os
 import logging
 from core.db import db
-from core.image_upload import upload_image_to_cdn
+from core.data_archive import DataArchive
+from .archive_catalog import ARCHIVE_CATALOG
 
 class DataManager:
     def __init__(self):
         self.tag_file = os.path.join(os.path.dirname(__file__), 'tag.json')
         self.logger = logging.getLogger('Push.Finance.Manager')
         self.d1_client = self._init_d1()
+        self.archive = DataArchive(self.d1_client) if self.d1_client else None
         self.df_cache = {}  # {indicator_name: df} —— 供 MacroDigest 等读取，避免重复 fetch
         # Load local first, then try to sync from D1
         self.tags = self._load_tags()
@@ -74,6 +76,22 @@ class DataManager:
             self.logger.warning(f"No data for {name}")
             return False, None
 
+        archive_spec = ARCHIVE_CATALOG.get(name)
+        if self.archive and archive_spec:
+            try:
+                self.archive.store_dataframe(
+                    domain='finance',
+                    group_name=name,
+                    frame=df,
+                    metrics=archive_spec['metrics'],
+                    label=archive_spec['label'],
+                    source=archive_spec['source'],
+                    frequency=archive_spec['frequency'],
+                    quality='official',
+                )
+            except Exception as exc:
+                self.logger.warning(f"D1 archive failed for {name}: {exc}")
+
         # 1. Save to DB (Full Replace for Macro Data to ensure consistency)
         name_map = {
             '股债利差': 'erp',
@@ -106,44 +124,37 @@ class DataManager:
         if not force and name in self.tags:
             cached = self.tags[name]
             cached_date = cached.get('date')
+            cached_url = str(cached.get('url') or '')
+            expected_path = f"/finance/{name}/latest.png"
             # Compare logic: check if strings match (both cleaned)
-            if cached_date == latest_date and cached.get('url'):
+            if cached_date == latest_date and expected_path in cached_url:
                 self.logger.debug(f"{name} skipped (Cached: {latest_date})")
-                return False, cached.get('url')
+                return False, cached_url
         
         return True, latest_date
 
     def save_plot_info(self, name: str, date_str: str, pic_path: str):
-        """上传图片并保存缓存 - R2 优先，SMMS 备用"""
+        """Upload a chart to a stable R2 key and cache its public URL."""
         url = None
 
-        # 1. 优先尝试 R2（自建存储，稳定）
         try:
             from core.image_upload import R2Uploader
             r2 = R2Uploader()
             if r2.s3:
-                object_key = f"finance/{name}/{date_str}.png"
+                object_key = f"finance/{name}/latest.png"
                 url = r2.upload_file(pic_path, object_name=object_key)
                 if url:
-                    self.logger.info(f"✅ R2 上传成功 {name}: {url}")
+                    self.logger.info(f"R2 upload succeeded for {name}: {url}")
+                    removed = r2.prune_prefix(f"finance/{name}/", keep_keys={object_key})
+                    if removed:
+                        self.logger.info(f"R2 rolling cleanup removed {removed} old object(s) for {name}")
         except Exception as e:
-            self.logger.warning(f"R2 上传失败 ({name}): {e}")
-
-        # 2. R2 失败时降级到 SMMS
-        if not url:
-            try:
-                from core.image_upload import upload_image_with_cdn
-                url = upload_image_with_cdn(pic_path)
-                if url:
-                    self.logger.info(f"✅ SMMS 上传成功 {name}: {url}")
-            except Exception as e:
-                self.logger.warning(f"SMMS 上传失败 ({name}): {e}")
+            self.logger.warning(f"R2 upload failed ({name}): {e}")
 
         if not url:
-            self.logger.error(f"❌ 图片上传全部失败: {name}")
+            self.logger.error(f"No public R2 URL available for chart: {name}")
             return None
 
-        # 3. 更新本地缓存 & D1
         self.tags[name] = {'date': str(date_str), 'url': url}
         self._save_tags()
 
