@@ -223,7 +223,9 @@ class DamaiSource(BaseSource):
                 return []
 
             # 2. Extract from activityList
-            al_start = body_str.find('activityList:[')
+            al_start = body_str.find('listData:[')
+            if al_start == -1:
+                al_start = body_str.find('activityList:[')
             search_scope = body_str[al_start:] if al_start != -1 else body_str
             id_matches = list(re.finditer(r'\{id:([a-zA-Z_0-9$]\w*),', search_scope))
             
@@ -245,11 +247,13 @@ class DamaiSource(BaseSource):
                 price = find_field('price') or find_field('salesPrice') or find_field('basePrice')
                 show_time = find_field('showTime')
                 poster = find_field('poster')
+                site_name = find_field('siteName')
 
                 if not eid or not title or not eid.isdigit(): continue
 
                 # Robust Unicode Decoding
                 title = self._recursive_decode(title)
+                site_name = self._recursive_decode(site_name or '')
                 
                 poster = (poster or "").replace(r'\u002F', '/') 
                 show_time = (show_time or "").replace(r'\u002F', '/')
@@ -264,6 +268,7 @@ class DamaiSource(BaseSource):
                 events.append({
                     'title': title, 'time': show_time, 'is_today': False,
                     'price': clean_price, 'venue': city_name,
+                    'site': site_name,
                     'img': poster if poster and poster.startswith('http') else 'https:' + (poster or ""),
                     'link': f"https://www.showstart.com/event/{eid}",
                     'raw_time': show_time
@@ -362,6 +367,7 @@ class DamaiSource(BaseSource):
                 'id': event_id,
                 'title': event.get('title', ''),
                 'city': event.get('venue', ''),
+                'venue': event.get('site', ''),
                 'time': event.get('raw_time', ''),
                 'price': event.get('price', ''),
                 'link': event.get('link', ''),
