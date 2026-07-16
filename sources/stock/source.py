@@ -75,6 +75,7 @@ class StockSource(BaseSource):
             'summary': {
                 'up_sum': '-', 'down_sum': '-', 'long_10': '-', 'short_10': '-',
                 'mean': '-', 'median': '-', 'total_money': '-',
+                'sample_size': 0,
                 'money_change': '-', 'volume_ratio': '-', 'style': '数据收集失败'
             },
             'sectors': {'leaders': [], 'losers': []},
@@ -147,14 +148,18 @@ class StockSource(BaseSource):
 
     def _export_market_breadth_snapshot(self, data):
         summary = data.get('summary') if isinstance(data, dict) else None
-        if not isinstance(summary, dict) or self.df_all is None or len(self.df_all) < 1000:
+        if not isinstance(summary, dict):
             return
 
         try:
             avg_change = float(summary.get('mean'))
             median_change = float(summary.get('median'))
+            sample_size = int(summary.get('sample_size') or 0)
         except (TypeError, ValueError):
             self.logger.warning('Market breadth snapshot skipped: mean or median is unavailable.')
+            return
+        if sample_size < 1000:
+            self.logger.warning('Market breadth snapshot skipped: only %s valid rows.', sample_size)
             return
 
         now = datetime.now(ZoneInfo('Asia/Shanghai'))
@@ -165,7 +170,7 @@ class StockSource(BaseSource):
             'breadth': {
                 'avgChange': round(avg_change, 2),
                 'medianChange': round(median_change, 2),
-                'sampleSize': len(self.df_all),
+                'sampleSize': sample_size,
             },
         })
         if not result.get('success'):
@@ -316,6 +321,7 @@ class StockSource(BaseSource):
             'up_sum': '-', 'down_sum': '-', 
             'long_10': '-', 'short_10': '-',
             'mean': '-', 'median': '-', 
+            'sample_size': 0,
             'total_money': '-', 'money_change': '-', 'money_change_raw': 0,
             'volume_ratio': '-',
             'style': '-'
@@ -361,6 +367,7 @@ class StockSource(BaseSource):
                     'short_10': int(limit_down),
                     'mean': f"{df['pct'].mean():.2f}",
                     'median': f"{df['pct'].median():.2f}",
+                    'sample_size': int(df['pct'].notna().sum()),
                     'total_money': round(total_money, 0)
                 })
             except Exception as e: 
