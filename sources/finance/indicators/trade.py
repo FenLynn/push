@@ -1,93 +1,78 @@
 import akshare as ak
 import pandas as pd
+
 from .base import BaseIndicator
-import time
-import numpy as np
+
 
 class TradeIndicator(BaseIndicator):
-    """中国进出口贸易数据 (10年期平滑版)"""
+    """海关月度进出口数据；原始金额为千美元，统一换算为亿美元。"""
+
+    @staticmethod
+    def _normalize_frame(raw: pd.DataFrame) -> pd.DataFrame:
+        columns = {
+            "月份": "month",
+            "当月出口额-金额": "export_raw",
+            "当月出口额-同比增长": "export_yoy",
+            "当月进口额-金额": "import_raw",
+            "当月进口额-同比增长": "import_yoy",
+        }
+        if raw is None or raw.empty or not set(columns).issubset(raw.columns):
+            return pd.DataFrame()
+        frame = raw[list(columns)].rename(columns=columns).copy()
+        month = frame["month"].astype(str).str.extract(r"(?P<year>\d{4})\D*(?P<month>\d{1,2})")
+        frame["date"] = pd.to_datetime(
+            month["year"] + "-" + month["month"].str.zfill(2) + "-01", errors="coerce"
+        ) + pd.offsets.MonthEnd(0)
+        for column in ["export_raw", "import_raw", "export_yoy", "import_yoy"]:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        frame["export_amount"] = frame["export_raw"] / 100000.0
+        frame["import_amount"] = frame["import_raw"] / 100000.0
+        frame["trade_balance"] = frame["export_amount"] - frame["import_amount"]
+        return (
+            frame[["date", "export_yoy", "import_yoy", "trade_balance", "export_amount", "import_amount"]]
+            .dropna(subset=["date", "export_amount", "import_amount"])
+            .drop_duplicates("date", keep="last")
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
     def fetch_data(self) -> pd.DataFrame:
         try:
-            self.logger.info("Fetching Trade YoY components with 10-year reconstruction (R8.12)...")
-            # 1. 获取出口同比
-            df_exp = pd.DataFrame()
-            try:
-                df_exp_raw = ak.macro_china_exports_yoy()
-                val_col = [c for c in df_exp_raw.columns if c in ['今值', '最新值', '数值']][0]
-                df_exp = df_exp_raw[['日期', val_col]].rename(columns={'日期': 'date', val_col: 'export_yoy'})
-                df_exp['date'] = pd.to_datetime(df_exp['date'])
-                df_exp['period'] = df_exp['date'].dt.to_period('M')
-            except: pass
-            
-            # 2. 获取进口同比
-            df_imp = pd.DataFrame()
-            try:
-                df_imp_raw = ak.macro_china_imports_yoy()
-                val_col = [c for c in df_imp_raw.columns if c in ['今值', '最新值', '数值']][0]
-                df_imp = df_imp_raw[['日期', val_col]].rename(columns={'日期': 'date', val_col: 'import_yoy'})
-                df_imp['date'] = pd.to_datetime(df_imp['date'])
-                df_imp['period'] = df_imp['date'].dt.to_period('M')
-            except: pass
-            
-            # 10年期补全
-            dr = pd.date_range(end=pd.Timestamp.now().normalize(), periods=3650, freq='D')
-            df_final = pd.DataFrame({'date': dr})
-            
-            if not df_exp.empty: df_final = pd.merge(df_final, df_exp[['date', 'export_yoy']], on='date', how='left')
-            else: df_final['export_yoy'] = float('nan')
-            
-            if not df_imp.empty: df_final = pd.merge(df_final, df_imp[['date', 'import_yoy']], on='date', how='left')
-            else: df_final['import_yoy'] = float('nan')
-            
-            # 线性插值
-            df_final['export_yoy'] = df_final['export_yoy'].interpolate(method='linear').ffill().bfill()
-            df_final['import_yoy'] = df_final['import_yoy'].interpolate(method='linear').ffill().bfill()
-            
-            if df_final['export_yoy'].isna().all() and df_final['import_yoy'].isna().all():
-                return None
-            
-            return df_final.sort_values('date')
-        except Exception as e:
-            self.logger.error(f"Trade Fetch Error: {e}")
+            frame = self._normalize_frame(ak.macro_china_hgjck())
+            return frame if not frame.empty else None
+        except Exception as exc:
+            self.logger.error("Trade fetch failed: %s", exc)
             return None
 
     def plot(self, df: pd.DataFrame) -> str:
+        frame = df.sort_values("date").copy()
+        latest = frame["date"].max()
+        recent = frame[frame["date"] >= latest - pd.DateOffset(months=18)]
+        annual = (
+            frame.set_index("date")[["export_amount", "import_amount"]]
+            .resample("YE").sum(min_count=10).dropna().tail(12).reset_index()
+        )
+
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
-        ax_top, ax_bottom = axes[0], axes[1]
-        
-        latest_date = df['date'].max()
-        df_short = df[df['date'] >= (latest_date - pd.DateOffset(months=13))].copy()
-        
-        c_exp = '#27ae60'  # Emerald (Export)
-        c_imp = '#c0392b'  # Crimson (Import)
-        
-        # --- Top: Recent ---
-        ax_top.plot(df_short['date'], df_short['export_yoy'], 'o-', 
-                   color=c_exp, linewidth=2.5, markersize=7, 
-                   markeredgecolor='white', markeredgewidth=1, label='出口同比 (%)')
-        ax_top.plot(df_short['date'], df_short['import_yoy'], 'D-', 
-                   color=c_imp, linewidth=2.5, markersize=7, 
-                   markeredgecolor='white', markeredgewidth=1, label='进口同比 (%)')
-        ax_top.axhline(0, color='#95a5a6', linestyle='--', linewidth=1, alpha=0.5)
-        
-        # Explicit Legend Fix
-        ax_top.legend(loc='upper right', frameon=True, framealpha=0.9, fontsize=9)
-        
-        self.plotter.fmt_single(fig, ax_top, title='进出口贸易情况 (近期13月)', 
-                               ylabel='同比 (%)', rotation=15,
-                               data=[df_short['export_yoy'], df_short['import_yoy']])
-        self.plotter.set_no_margins(ax_top)
-        
-        # --- Bottom: 10 Year History ---
-        ax_bottom.plot(df['date'], df['export_yoy'], color=c_exp, alpha=0.7, linewidth=1, label='出口')
-        ax_bottom.plot(df['date'], df['import_yoy'], color=c_imp, alpha=0.5, linewidth=1, label='进口')
-        ax_bottom.axhline(0, color='#95a5a6', linestyle='-', alpha=0.3)
-        
-        self.plotter.fmt_single(fig, ax_bottom, title='10年期进出口全景走势', 
-                               ylabel='同比 (%)', rotation=15,
-                               data=[df['export_yoy'], df['import_yoy']])
-        self.plotter.set_no_margins(ax_bottom)
-        
+        export_color = "#c94844"
+        import_color = "#2f8b62"
+        axes[0].plot(recent["date"], recent["export_yoy"], color=export_color, marker="o", markersize=3.5, label="出口同比")
+        axes[0].plot(recent["date"], recent["import_yoy"], color=import_color, marker="o", markersize=3.5, label="进口同比")
+        axes[0].axhline(0, color="#8a94a0", linewidth=0.8, alpha=0.55)
+        self.plotter.fmt_single(
+            fig, axes[0], title="进出口同比（近18个月）", ylabel="%",
+            rotation=20, data=[recent["export_yoy"], recent["import_yoy"]],
+        )
+        self.plotter.set_no_margins(axes[0])
+
+        axes[1].plot(annual["date"], annual["export_amount"], color=export_color, marker="o", markersize=3, label="年度出口")
+        axes[1].plot(annual["date"], annual["import_amount"], color=import_color, marker="o", markersize=3, label="年度进口")
+        self.plotter.fmt_single(
+            fig, axes[1], title="年度进出口规模", ylabel="亿美元",
+            rotation=0, data=[annual["export_amount"], annual["import_amount"]],
+        )
+        self.plotter.set_no_margins(axes[1])
+
         path = "output/finance/trade.png"
         self.plotter.save(fig, path)
         return path

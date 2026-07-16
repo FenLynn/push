@@ -36,6 +36,13 @@ ARCHIVE_CATALOG = {
             "m2_growth": {"label": "M2 同比增速", "unit": "%"},
         },
     },
+    "socialfinance": {
+        "label": "社会融资规模增量", "source": "AkShare/PBOC", "frequency": "monthly", "quality": "aggregated",
+        "metrics": {
+            "social_finance_increment": {"label": "社融增量", "unit": "亿元"},
+            "rmb_loan_increment": {"label": "人民币贷款增量", "unit": "亿元"},
+        },
+    },
     "lpr": {
         "label": "贷款市场报价利率", "source": "AkShare/PBOC", "frequency": "monthly",
         "metrics": {
@@ -66,6 +73,30 @@ ARCHIVE_CATALOG = {
             "EUR": {"label": "欧元兑人民币", "unit": "CNY", "scale": 0.01},
             "GBP": {"label": "英镑兑人民币", "unit": "CNY", "scale": 0.01},
             "JPY": {"label": "100日元兑人民币", "unit": "CNY"},
+        },
+    },
+    "trade": {
+        "label": "货物进出口", "source": "AkShare/Eastmoney/GACC", "frequency": "monthly", "quality": "aggregated",
+        "metrics": {
+            "export_yoy": {"label": "出口同比", "unit": "%"},
+            "import_yoy": {"label": "进口同比", "unit": "%"},
+            "trade_balance": {"label": "贸易差额", "unit": "亿美元"},
+            "export_amount": {"label": "出口额", "unit": "亿美元"},
+            "import_amount": {"label": "进口额", "unit": "亿美元"},
+        },
+    },
+    "electricity": {
+        "label": "全社会用电量", "source": "AkShare/Sina/NEA", "frequency": "monthly", "quality": "aggregated",
+        "metrics": {
+            "electricity_monthly": {"label": "当月用电量", "unit": "亿千瓦时"},
+            "electricity_cumulative_yoy": {"label": "累计用电同比", "unit": "%"},
+        },
+    },
+    "margin": {
+        "label": "沪深融资融券", "source": "AkShare/SSE/SZSE", "frequency": "daily", "quality": "aggregated",
+        "metrics": {
+            "margin_balance": {"label": "融资余额", "unit": "亿元"},
+            "margin_buy": {"label": "融资买入额", "unit": "亿元"},
         },
     },
     "realestate": {

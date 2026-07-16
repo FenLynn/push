@@ -87,7 +87,7 @@ class DataManager:
                     label=archive_spec['label'],
                     source=archive_spec['source'],
                     frequency=archive_spec['frequency'],
-                    quality='official',
+                    quality=archive_spec.get('quality', 'official'),
                 )
             except Exception as exc:
                 self.logger.warning(f"D1 archive failed for {name}: {exc}")

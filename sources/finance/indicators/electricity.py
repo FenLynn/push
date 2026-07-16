@@ -1,81 +1,71 @@
-from .base import BaseIndicator
-import pandas as pd
 import akshare as ak
+import pandas as pd
+
+from .base import BaseIndicator
+
 
 class ElectricityIndicator(BaseIndicator):
-    """全社会用电量 (经济活力硬指标)"""
+    """全社会用电量；把年内累计值还原成月度值，缺月时保持空值。"""
+
+    @staticmethod
+    def _normalize_frame(raw: pd.DataFrame) -> pd.DataFrame:
+        required = {"统计时间", "全社会用电量", "全社会用电量同比"}
+        if raw is None or raw.empty or not required.issubset(raw.columns):
+            return pd.DataFrame()
+        frame = raw[list(required)].copy()
+        month = frame["统计时间"].astype(str).str.extract(r"(?P<year>\d{4})\D+(?P<month>\d{1,2})")
+        frame["year"] = pd.to_numeric(month["year"], errors="coerce")
+        frame["month"] = pd.to_numeric(month["month"], errors="coerce")
+        frame["date"] = pd.to_datetime(
+            month["year"] + "-" + month["month"].str.zfill(2) + "-01", errors="coerce"
+        ) + pd.offsets.MonthEnd(0)
+        frame["cumulative"] = pd.to_numeric(frame["全社会用电量"], errors="coerce") / 10000.0
+        frame["electricity_cumulative_yoy"] = pd.to_numeric(frame["全社会用电量同比"], errors="coerce")
+        frame = frame.dropna(subset=["date", "cumulative"]).sort_values("date").drop_duplicates("date", keep="last")
+        previous = frame.groupby("year")["cumulative"].shift(1)
+        previous_month = frame.groupby("year")["month"].shift(1)
+        frame["electricity_monthly"] = frame["cumulative"] - previous
+        frame.loc[frame["month"] == 1, "electricity_monthly"] = frame.loc[frame["month"] == 1, "cumulative"]
+        frame.loc[(frame["month"] > 1) & (previous_month != frame["month"] - 1), "electricity_monthly"] = pd.NA
+        frame.loc[frame["electricity_monthly"] < 0, "electricity_monthly"] = pd.NA
+        return frame[["date", "electricity_monthly", "electricity_cumulative_yoy"]].reset_index(drop=True)
+
     def fetch_data(self) -> pd.DataFrame:
         try:
-            # Note: This API can be slow. We use a fallback if needed.
-            df = ak.macro_china_society_electricity()
-            
-            # Robust column renaming
-            cols = df.columns.tolist()
-            date_col = next((c for c in cols if any(x in str(c) for x in ['月份', '日期', 'date', 'time'])), None)
-            val_col = next((c for c in cols if any(x in str(c) for x in ['用电量', 'value']) and c != date_col), None)
-            
-            if not date_col or not val_col:
-                 # Fallback by index
-                 if len(cols) >= 2:
-                     date_col, val_col = cols[0], cols[1]
-            
-            if date_col and val_col:
-                df = df.rename(columns={date_col: 'date', val_col: 'value'})
-                # If date is like '2023年6月份' or just '2023.6'
-                # Clean up date string
-                if df['date'].dtype == object:
-                    df['date'] = df['date'].astype(str).str.replace('年', '-').str.replace('月份', '-01').str.replace('月', '-01')
-                
-                df['date'] = pd.to_datetime(df['date'], errors='coerce')
-                return df.sort_values('date').dropna()
-            else:
-                raise ValueError(f"Could not identify columns from {cols}")
-
-        except Exception as e:
-            self.logger.error(f"Electricity Fetch Error: {e}")
-            # Fallback
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=120, freq='MS')
-            import numpy as np
-            base = 8000
-            # Seasonal pattern
-            values = [base + 1000 * np.sin(i/6) + np.random.randint(-200, 200) for i in range(120)]
-            df = pd.DataFrame({'date': dates, 'value': values})
-            return df
+            frame = self._normalize_frame(ak.macro_china_society_electricity())
+            return frame if not frame.empty else None
+        except Exception as exc:
+            self.logger.error("Electricity fetch failed: %s", exc)
+            return None
 
     def plot(self, df: pd.DataFrame) -> str:
+        frame = df.sort_values("date").copy()
+        valid_monthly = frame.dropna(subset=["electricity_monthly"])
+        latest = frame["date"].max()
+        recent = frame[frame["date"] >= latest - pd.DateOffset(months=18)]
+        frame["rolling_12m"] = frame["electricity_monthly"].rolling(12, min_periods=12).sum()
+
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
-        
-        # 1. 13-month window
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
-        
-        # 2. History (last 10 years)
-        df_long = df.iloc[-120:].copy()
-        
-        color = '#f1c40f' # Sun Flower (Premium)
-        
-        # --- Top (Recent) ---
-        ax_top = axes[0]
-        ax_top.bar(df_short['date'], df_short['value'], color=color, alpha=0.7, label='用电量 (亿千瓦时)')
-        
-        # Add values
-        for i, (x, y) in enumerate(zip(df_short['date'], df_short['value'])):
-            ax_top.text(x, y + 5, f'{y:.0f}', ha='center', va='bottom', fontsize=9, color='#2c3e50')
+        power_color = "#d49a22"
+        yoy_color = "#3976a8"
+        axes[0].bar(recent["date"], recent["electricity_monthly"], width=20, color=power_color, alpha=0.72, label="当月用电量")
+        right = axes[0].twinx()
+        right.plot(recent["date"], recent["electricity_cumulative_yoy"], color=yoy_color, marker="o", markersize=3.5, label="累计同比")
+        self.plotter.fmt_twinx(
+            fig, axes[0], right, title="全社会用电（近18个月）",
+            ylabel_left="亿千瓦时", ylabel_right="%", rotation=20,
+            data_left=recent["electricity_monthly"], data_right=recent["electricity_cumulative_yoy"],
+        )
+        self.plotter.set_no_margins(axes[0])
 
-        self.plotter.fmt_single(fig, ax_top, title='全社会用电量 (近期13月)', ylabel='亿千瓦时', rotation=15, 
-                               data=[df_short['value']])
-        self.plotter.set_no_margins(ax_top)
+        history = frame.dropna(subset=["rolling_12m"])
+        axes[1].plot(history["date"], history["rolling_12m"], color=power_color, linewidth=1.8)
+        self.plotter.fmt_single(
+            fig, axes[1], title="滚动12个月用电量", ylabel="亿千瓦时",
+            rotation=20, data=history["rolling_12m"],
+        )
+        self.plotter.set_no_margins(axes[1])
 
-        # --- Bottom (History) ---
-        ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['value'], color=color, linewidth=2)
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['value'], color=color, alpha_top=0.2)
-        
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势', ylabel='亿千瓦时', rotation=15, 
-                               data=[df_long['value']])
-        self.plotter.set_no_margins(ax_bot)
-        
         path = "output/finance/electricity.png"
         self.plotter.save(fig, path)
         return path

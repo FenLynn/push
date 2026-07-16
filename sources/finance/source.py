@@ -25,9 +25,6 @@ import os
 
 
 EXPERIMENTAL_INDICATOR_NAMES = {
-    'socialfinance',
-    'margin',
-    'electricity',
     'municipalrealestate',
     'macrodigest',
     '巴菲特指标',
@@ -45,9 +42,6 @@ EXPERIMENTAL_INDICATOR_NAMES = {
 # explicitly enabled. Re-enable a class only after its source and semantics are
 # covered by an audit test.
 BLOCKED_INDICATOR_CLASSES = {
-    SocialFinanceIndicator,
-    MarginIndicator,
-    ElectricityIndicator,
     MunicipalRealEstateIndicator,
     MacroDigestIndicator,
     StockShareholderIndicator,
@@ -56,7 +50,6 @@ BLOCKED_INDICATOR_CLASSES = {
     BuffettIndicator,
     KeqiangIndicator,
     LiquidityPortraitIndicator,
-    TradeIndicator,
     NEVSaleIndicator,
     InsuranceIndicator,
 }
@@ -146,6 +139,7 @@ class FinanceSource(BaseSource):
             'm2': '宏观经济 (Macro Economy)',
             'socialfinance': '宏观经济 (Macro Economy)',
             'trade': '宏观经济 (Macro Economy)',
+            'electricity': '宏观经济 (Macro Economy)',
             'keqiang': '宏观经济 (Macro Economy)',
             'keqiang_index': '宏观经济 (Macro Economy)',
             'buffett': '宏观经济 (Macro Economy)',
@@ -208,6 +202,7 @@ class FinanceSource(BaseSource):
                         'm2': 'M2 货币供应量',
                         'gdp': 'GDP 国内生产总值',
                         'trade': '进出口贸易',
+                        'electricity': '全社会用电量',
                         'keqiang': '克强指数',
                         'keqiang_index': '克强指数',
                         'erp': 'ERP 股债利差',

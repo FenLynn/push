@@ -99,7 +99,7 @@ class Plotter:
         """创建比例子图 (上大下小, 独立X轴)"""
         # Decrease hspace to utilization space, titles will be inside
         fig, axes = plt.subplots(2, 1, figsize=(12, 10), dpi=self.dpi, 
-                               gridspec_kw={'height_ratios': ratios, 'hspace': 0.15})
+                               gridspec_kw={'height_ratios': ratios, 'hspace': 0.32})
         return fig, axes
 
     def set_no_margins(self, ax):
@@ -111,15 +111,23 @@ class Plotter:
         return ax.inset_axes(rect)
 
     def save(self, fig, path):
-        """保存并关闭"""
+        """以透明背景保存并关闭，便于网页和小程序自行决定底色。"""
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        fig.patch.set_alpha(0)
+        for ax in fig.axes:
+            ax.set_facecolor('none')
+            legend = ax.get_legend()
+            if legend:
+                legend.get_frame().set_facecolor('none')
+                legend.get_frame().set_edgecolor('none')
+                legend.get_frame().set_alpha(0)
         try:
             # Add a small padding to prevent labels from being cut off
             plt.tight_layout(pad=2.0)
-            fig.savefig(path, bbox_inches='tight', facecolor='white')
+            fig.savefig(path, bbox_inches='tight', transparent=True, facecolor='none')
         except Exception as e:
             print(f"Save Warning: {e}")
-            fig.savefig(path, facecolor='white')
+            fig.savefig(path, transparent=True, facecolor='none')
         plt.close(fig)
 
     def _beautify(self, ax, data=None):
@@ -181,7 +189,7 @@ class Plotter:
         # Place at bottom-left to avoid blocking data
         ax.text(0.02, 0.05, text, transform=ax.transAxes, 
                 fontsize=10, fontweight='bold', va='bottom', ha='left',
-                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='#dfe6e9', linewidth=0.5))
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='none', alpha=0, edgecolor='none', linewidth=0))
 
     def fmt_twinx(self, fig, ax_left, ax_right, title='', ylabel_left='', ylabel_right='', rotation=15, 
                   data_left=None, data_right=None):
