@@ -2,6 +2,7 @@ import matplotlib
 matplotlib.use('Agg')  # 必须在 import pyplot 之前，确保 headless 环境（GitHub Actions）正常绘图
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from matplotlib import font_manager
 import os
 import sys
 
@@ -14,11 +15,68 @@ class Plotter:
         self.ratios = [2, 1] 
         
         # Style Config
-        plt.rcParams['font.sans-serif'] = ['Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'SimHei', 'Arial Unicode MS', 'Microsoft YaHei', 'sans-serif']
+        self.cjk_font_path, self.cjk_font_family = self._configure_cjk_font()
+        self.cjk_font_ready = bool(self.cjk_font_path)
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = [
+            self.cjk_font_family,
+            'Noto Sans CJK SC',
+            'Noto Sans CJK JP',
+            'Microsoft YaHei',
+            'WenQuanYi Micro Hei',
+            'SimHei',
+            'Arial Unicode MS',
+            'DejaVu Sans',
+        ]
         plt.rcParams['axes.unicode_minus'] = False
         plt.rcParams['lines.linewidth'] = 2.0
         
         self.colors = ['#E74C3C', '#3498DB', '#2ECC71', '#F1C40F', '#9B59B6'] # Flat UI Colors
+
+    @staticmethod
+    def _configure_cjk_font():
+        """Register one concrete CJK font file instead of trusting family fallback.
+
+        Matplotlib does not reliably fall back glyph-by-glyph. GitHub's
+        ``fonts-noto-cjk`` package exposes a TTC whose reported family is often
+        ``Noto Sans CJK JP`` even though it contains Simplified Chinese glyphs.
+        Registering the file explicitly prevents production charts from being
+        rendered with square placeholder glyphs.
+        """
+        candidates = [
+            os.environ.get('PUSH_CJK_FONT_PATH', ''),
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
+            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+            r'C:\Windows\Fonts\msyh.ttc',
+            r'C:\Windows\Fonts\msyhbd.ttc',
+            '/System/Library/Fonts/PingFang.ttc',
+        ]
+        for candidate in candidates:
+            path = str(candidate or '').strip()
+            if not path or not os.path.isfile(path):
+                continue
+            try:
+                font_manager.fontManager.addfont(path)
+                family = font_manager.FontProperties(fname=path).get_name()
+                return path, family
+            except Exception:
+                continue
+
+        installed = {entry.name: entry.fname for entry in font_manager.fontManager.ttflist}
+        for family in [
+            'Noto Sans CJK SC',
+            'Noto Sans CJK JP',
+            'Microsoft YaHei',
+            'WenQuanYi Micro Hei',
+            'SimHei',
+            'Arial Unicode MS',
+        ]:
+            path = installed.get(family, '')
+            if path:
+                return path, family
+        return '', 'DejaVu Sans'
         
     def create_dual_axes(self):
         """创建双子图 (左长右短, 无间隙)"""

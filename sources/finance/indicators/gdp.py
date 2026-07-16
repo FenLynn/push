@@ -61,27 +61,38 @@ class GDPIndicator(BaseIndicator):
         df_long = df[df['q_start'] == 1].copy() 
         df_long = df_long.iloc[-80:] # 20 Years
         
-        c_single = '#2C3E50'      # Midnight Blue (基础增量)
-        c_cumulative = '#c0392b'  # Dark Red (总量堆叠)
-        c_growth = '#2980b9'      # Belize Hole (速率曲线)
+        c_single = '#C94F45'      # 单季度规模
+        c_growth = '#2E7FB8'      # 累计同比增速
         
         # --- Top ---
         ax_top = axes[0]
         x = np.arange(len(df_short))
-        width = 0.4
-        
-        # Stacked Bar Chart
-        b1 = ax_top.bar(x, df_short['gdp_single'], width, label='单季度GDP', color=c_single, alpha=0.85, edgecolor='none', zorder=2)
-        b2 = ax_top.bar(x, df_short['gdp_cumulative'], width, bottom=df_short['gdp_single'], label='累计GDP', color=c_cumulative, alpha=0.85, edgecolor='none', zorder=2)
-        
-        # Value Labels (Optimize font and position)
-        for bars in [b1, b2]:
-            for bar in bars:
-                height = bar.get_height()
-                if height > 0:
-                    y_pos = bar.get_y() + height/2
-                    ax_top.text(bar.get_x() + bar.get_width()/2., y_pos,
-                            f'{int(height/10000)}', ha='center', va='center', fontsize=8, color='white', fontweight='bold')
+        width = 0.58
+        single_values = df_short['gdp_single'] / 10000
+
+        # 单季度值与累计值不能堆叠；堆叠会重复计算同一季度产出。
+        bars = ax_top.bar(
+            x,
+            single_values,
+            width,
+            label='单季度GDP（万亿元）',
+            color=c_single,
+            alpha=0.9,
+            edgecolor='none',
+            zorder=2,
+        )
+        for bar, value in zip(bars, single_values):
+            if pd.notna(value):
+                ax_top.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height(),
+                    f'{value:.1f}',
+                    ha='center',
+                    va='bottom',
+                    fontsize=8,
+                    color='#3C4043',
+                    fontweight='bold',
+                )
         
         def get_label(row):
             q = int(row['q_end'])
@@ -91,16 +102,28 @@ class GDPIndicator(BaseIndicator):
         
         # Growth Rate Line (Secondary Axis)
         ax_top_r = ax_top.twinx()
-        ax_top_r.plot(x, df_short['gdp_growth'], 'D-', color=c_growth, linewidth=2.5, markersize=6, label='同比增长(%)', zorder=3)
+        ax_top_r.plot(
+            x,
+            df_short['gdp_growth'],
+            'D-',
+            color=c_growth,
+            linewidth=2.5,
+            markersize=6,
+            label='GDP累计同比（%）',
+            zorder=3,
+        )
         
-        # Merge legends
-        h1, l1 = ax_top.get_legend_handles_labels()
-        h2, l2 = ax_top_r.get_legend_handles_labels()
-        ax_top.legend(h1+h2, l1+l2, loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
-        
-        self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='宏观数据-GDP生产总值 (近期对比)', 
-                             ylabel_left='亿元', ylabel_right='同比增长(%)', rotation=0,
-                             data_left=df_short['gdp_cumulative'], data_right=df_short['gdp_growth'])
+        self.plotter.fmt_twinx(
+            fig,
+            ax_top,
+            ax_top_r,
+            title='GDP：单季度规模与累计同比（近期对比）',
+            ylabel_left='单季度GDP（万亿元）',
+            ylabel_right='累计同比（%）',
+            rotation=0,
+            data_left=single_values,
+            data_right=df_short['gdp_growth'],
+        )
         
         # --- Bottom ---
         ax_bot = axes[1]

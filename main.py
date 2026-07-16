@@ -118,7 +118,7 @@ def get_engine(token=None, topic='me', require_channel=True):
         pass
     return engine
 
-def gen_modules(modules_to_run, topic='me', token=None):
+def gen_modules(modules_to_run, topic='me', token=None, force=False):
     """Generate content only"""
     logger = logging.getLogger('Push.CLI')
     logger.info(f"=== Generate Only ({time.strftime('%Y-%m-%d %H:%M:%S')}) ===")
@@ -145,7 +145,7 @@ def gen_modules(modules_to_run, topic='me', token=None):
             
         info = MODULES[module_key]
         logger.info(f"Generating {module_key} ({extra_kwargs if extra_kwargs else 'default'})...")
-        kwargs = {'topic': topic}
+        kwargs = {'topic': topic, 'force': force}
         if 'args' in info: kwargs.update(info['args'])
         kwargs.update(extra_kwargs)
         
@@ -322,6 +322,7 @@ def main():
     # 2. GEN (Generate Only)
     gen_parser = subparsers.add_parser('gen', parents=[common], help='Generate Only (Save to output/)')
     gen_parser.add_argument('modules', nargs='+', help='Module names (or "all")')
+    gen_parser.add_argument('--force', action='store_true', help='Force source and chart regeneration')
     
     # 3. SEND (File Only or Module Latest)
     send_parser = subparsers.add_parser('send', parents=[common], help='Send existing file or latest module output')
@@ -390,7 +391,7 @@ def main():
                 logger.error("Some modules failed to run.")
                 sys.exit(1)
         else:
-            gen_modules(mods, topic=args.topic, token=args.token)
+            gen_modules(mods, topic=args.topic, token=args.token, force=args.force)
     else:
         parser.print_help()
 

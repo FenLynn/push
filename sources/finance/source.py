@@ -168,7 +168,7 @@ class FinanceSource(BaseSource):
         count = 0
         for ind in self.indicators:
             try:
-                res = ind.run()
+                res = ind.run(force=self.force)
                 if res:
                     # Enrich display name
                     names = {

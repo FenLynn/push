@@ -30,6 +30,15 @@ jobs:
           
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Verify Chinese chart font
+        run: |
+          python -c "from sources.finance.plot import Plotter; p = Plotter(); assert p.cjk_font_ready, 'CJK chart font is unavailable'; print(f'Chart font: {p.cjk_font_family} ({p.cjk_font_path})')"
         
       - name: Run Finance
-        run: python main.py run finance
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python main.py gen finance --force
+          else
+            python main.py gen finance
+          fi
