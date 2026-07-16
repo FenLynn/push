@@ -38,6 +38,29 @@ EXPERIMENTAL_INDICATOR_NAMES = {
     'xian_real_estate',
 }
 
+# These implementations are not merely experimental: their current output can
+# misstate the underlying data (synthetic fallback, hard-coded denominator,
+# wrong business label, cumulative value plotted as a monthly value, or a
+# hard-coded stock). Keep them unreachable even when experimental charts are
+# explicitly enabled. Re-enable a class only after its source and semantics are
+# covered by an audit test.
+BLOCKED_INDICATOR_CLASSES = {
+    SocialFinanceIndicator,
+    MarginIndicator,
+    ElectricityIndicator,
+    MunicipalRealEstateIndicator,
+    MacroDigestIndicator,
+    StockShareholderIndicator,
+    ERPIndicator,
+    MarketLeverageIndicator,
+    BuffettIndicator,
+    KeqiangIndicator,
+    LiquidityPortraitIndicator,
+    TradeIndicator,
+    NEVSaleIndicator,
+    InsuranceIndicator,
+}
+
 class FinanceSource(BaseSource):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -100,6 +123,10 @@ class FinanceSource(BaseSource):
                 indicator for indicator in self.indicators
                 if indicator.name not in EXPERIMENTAL_INDICATOR_NAMES
             ]
+        self.indicators = [
+            indicator for indicator in self.indicators
+            if type(indicator) not in BLOCKED_INDICATOR_CLASSES
+        ]
         self.logger = logging.getLogger("Push.Source.Finance")
 
     def run(self):

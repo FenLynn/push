@@ -2,7 +2,7 @@ import logging
 from types import SimpleNamespace
 
 import main as push_main
-from sources.finance.source import FinanceSource
+from sources.finance.source import BLOCKED_INDICATOR_CLASSES, FinanceSource
 
 
 def test_generate_only_forwards_force_to_source(monkeypatch):
@@ -52,3 +52,13 @@ def test_finance_source_forwards_force_to_each_indicator():
     source.run()
 
     assert calls == [True]
+
+
+def test_finance_source_never_registers_blocked_indicators(monkeypatch):
+    monkeypatch.setenv('FINANCE_ENABLE_EXPERIMENTAL', '1')
+    monkeypatch.setattr('sources.finance.source.DataManager', lambda: SimpleNamespace(archive=None, df_cache={}))
+    monkeypatch.setattr('sources.finance.source.Plotter', object)
+
+    source = FinanceSource()
+
+    assert not any(type(indicator) in BLOCKED_INDICATOR_CLASSES for indicator in source.indicators)
