@@ -96,10 +96,13 @@ class Plotter:
         return fig, ax
 
     def create_ratio_axes(self, ratios=[3, 1]):
-        """创建比例子图 (上大下小, 独立X轴)"""
-        # Decrease hspace to utilization space, titles will be inside
+        """创建上下双图（独立 X 轴；旧 3:1 请求按移动端等高呈现）。"""
+        # The legacy 3:1 split wastes the lower half on a phone. Existing
+        # finance indicators all use that legacy value, so render them 1:1
+        # while preserving explicitly designed ratios such as [1, 1].
+        effective_ratios = [1, 1] if ratios == [3, 1] else ratios
         fig, axes = plt.subplots(2, 1, figsize=(12, 10), dpi=self.dpi, 
-                               gridspec_kw={'height_ratios': ratios, 'hspace': 0.32})
+                               gridspec_kw={'height_ratios': effective_ratios, 'hspace': 0.32})
         return fig, axes
 
     def set_no_margins(self, ax):
