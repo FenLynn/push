@@ -128,6 +128,8 @@ class GDPIndicator(BaseIndicator):
         ax_top = axes[0]
         x = np.arange(len(recent))
         single_values = recent['gdp_single'] / 10000
+        single_span = single_values.max() - single_values.min()
+        bar_base = single_values.min() - (single_span * 0.12 if single_span else 0.5)
 
         year_palette = ['#3976A8', '#2D8B78', '#8A63B8', '#D28A35']
         bars = []
@@ -136,7 +138,7 @@ class GDPIndicator(BaseIndicator):
             group_bars = self.plotter.gradient_bars(
                 ax_top, positions, group['gdp_single'] / 10000, width=0.58,
                 color=year_palette[color_index % len(year_palette)],
-                alpha_top=0.78, alpha_bottom=0.09,
+                bottom=bar_base, alpha_top=0.78, alpha_bottom=0.15,
                 label=f'{int(year)}年', zorder=3,
             )
             bars.extend(group_bars)
@@ -168,6 +170,9 @@ class GDPIndicator(BaseIndicator):
             rotation=0, ha='center',
         )
         ax_top.set_xlim(-0.5, len(recent) - 0.5)
+        # All year groups share one baseline; otherwise edge-year bars look as
+        # if they float because each group derives a different local bottom.
+        ax_top.set_ylim(bottom=bar_base)
         ax_top.tick_params(axis='x', pad=7)
 
         ax_bot = axes[1]
