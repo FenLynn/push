@@ -201,6 +201,7 @@ ARCHIVE_CATALOG = {
     },
     "internationalrate": {
         "label": "主要央行政策利率", "source": "Federal Reserve/ECB/BOJ/FRED/PBOC", "frequency": "event", "quality": "official",
+        "replace_observations": True,
         "metrics": {
             "usa": {"label": "美联储目标区间上限", "unit": "%"},
             "eur": {"label": "欧洲央行存款便利利率", "unit": "%"},

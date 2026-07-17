@@ -69,6 +69,28 @@ def test_daily_series_keeps_daily_and_builds_monthly_resolution():
     assert "monthly" in params
 
 
+def test_replace_observations_prunes_stale_source_dates_after_successful_write():
+    client = FakeD1Client()
+    archive = DataArchive(client)
+    frame = pd.DataFrame({"date": ["2026-06-01"], "rate": [0.841]})
+
+    saved = archive.store_dataframe(
+        domain="finance",
+        group_name="internationalrate",
+        frame=frame,
+        metrics={"rate": {"label": "Japan overnight", "unit": "%"}},
+        label="International rates",
+        source="FRED",
+        frequency="event",
+        replace_observations=True,
+    )
+
+    assert saved == 1
+    cleanup = [call for call in client.calls if "DELETE FROM data_observations" in call[0]]
+    assert len(cleanup) == 1
+    assert cleanup[0][1][0] == "finance.internationalrate.all.rate"
+
+
 def test_r2_legacy_aliases_and_public_url(monkeypatch):
     monkeypatch.delenv("CLOUDFLARE_R2_ACCOUNT_ID", raising=False)
     monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)

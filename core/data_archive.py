@@ -179,6 +179,7 @@ class DataArchive:
         location: str = "",
         quality: str = "observed",
         date_column: str = "date",
+        replace_observations: bool = False,
     ) -> int:
         if frame is None or frame.empty or date_column not in frame.columns or not self.ensure_schema():
             return 0
@@ -244,7 +245,18 @@ class DataArchive:
                         "quality": observation_quality,
                         "collected_at": collected_at,
                     })
-            saved += self._upsert_observations(rows)
+            series_saved = self._upsert_observations(rows)
+            saved += series_saved
+            if replace_observations and series_saved == len(rows):
+                # Source migrations (for example stale event calendars to
+                # official sparse decisions) must remove observations that no
+                # longer exist. Delete only after the replacement batch has
+                # been written successfully, identified by this run's unique
+                # collected_at timestamp.
+                self.client.query(
+                    "DELETE FROM data_observations WHERE series_id = ? AND collected_at <> ?",
+                    [series_id, collected_at],
+                )
 
         self.record_run(domain, group_name, "success" if saved else "empty", saved)
         return saved
