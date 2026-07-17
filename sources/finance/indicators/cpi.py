@@ -43,9 +43,7 @@ class CPIIndicator(BaseIndicator):
         df = df.sort_values('date').reset_index(drop=True)
 
         # 1. Data Slicing
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
+        df_short = df.tail(15).copy()
         
         df_long = df.iloc[-240:].copy() 
         
@@ -62,6 +60,8 @@ class CPIIndicator(BaseIndicator):
                    color=c_infl_line, linewidth=2.5, markersize=8, 
                    markeredgecolor='white', markeredgewidth=1.5,
                    label='CPI同比')
+        ax_top.plot(df_short['date'], df_short['cpi_m'], 'o--',
+                    color=c_mom, linewidth=2, markersize=6, label='CPI环比')
         
         # Current Value Annotation
         self.plotter.draw_current_line(df_short.iloc[-1]['cpi_y'], ax_top, c_infl_line)
@@ -71,21 +71,24 @@ class CPIIndicator(BaseIndicator):
 
         # Standard Formatting
         self.plotter.fmt_single(fig, ax_top, 
-                             title='CPI居民消费价格指数 (近期13月)', 
-                             ylabel='同比(%)',
+                             title='CPI居民消费价格指数（近15个月）',
+                             ylabel='涨幅(%)',
                              rotation=15, 
-                             data=df_short['cpi_y'])
+                             data=[df_short['cpi_y'], df_short['cpi_m']])
         self.plotter.set_no_margins(ax_top)
 
         # --- Bottom Chart: original long-term YoY with MoM bars. Do not
         # reconstruct an unlabeled synthetic price-level index. ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['cpi_y'], color=c_infl_line, linewidth=1.5, label='CPI同比')
-        ax_bot.bar(df_long['date'], df_long['cpi_m'], width=20, alpha=0.24, color=c_mom, label='CPI环比')
+        self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['cpi_y'],
+                                             positive_color=c_infl_line, negative_color='#3D8B68',
+                                             alpha_top=0.24, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['cpi_y'], color=c_infl_line, linewidth=1.8,
+                    label='CPI同比', zorder=3)
         ax_bot.axhline(y=0, color='#95a5a6', linestyle='--', linewidth=0.8, alpha=0.6)
-        self.plotter.fmt_single(fig, ax_bot, title='CPI同比与环比（20年）',
+        self.plotter.fmt_single(fig, ax_bot, title='CPI同比长期走势（20年）',
                                ylabel='%', rotation=15,
-                               data=[df_long['cpi_y'], df_long['cpi_m']])
+                               data=df_long['cpi_y'])
         self.plotter.set_no_margins(ax_bot)
         
         # Final Polish

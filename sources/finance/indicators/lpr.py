@@ -29,9 +29,7 @@ class LPRIndicator(BaseIndicator):
         df['date'] = pd.to_datetime(df['date'])
         
         # 1. Standardized 13-month window
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
+        df_short = df.tail(15).copy()
         
         # History: show all or last 20 years
         df_long = df.iloc[-240:].copy() 
@@ -57,22 +55,26 @@ class LPRIndicator(BaseIndicator):
         # Explicit legend
         ax_top.legend(loc='upper right', frameon=True, framealpha=0.9, fontsize=9)
         
-        self.plotter.fmt_single(fig, ax_top, title='金融利率-LPR 贷款报价利率 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='LPR 贷款报价利率（近15个月）',
                                ylabel='利率 (%)', rotation=15, 
                                data=[df_short['lpr1y'], df_short['lpr5y']])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom (History) ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['lpr1y'], color=c_1y, linewidth=1.8, alpha=0.9, label='LPR 1Y')
-        ax_bot.plot(df_long['date'], df_long['lpr5y'], color=c_5y, linewidth=1.5, alpha=0.8, label='LPR 5Y')
+        baseline = min(df_long['lpr1y'].min(), df_long['lpr5y'].min()) * 0.96
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['lpr1y'], color=c_1y,
+                                   alpha_top=0.22, baseline=baseline, zorder=1)
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['lpr5y'], color=c_5y,
+                                   alpha_top=0.14, baseline=baseline, zorder=1)
+        ax_bot.step(df_long['date'], df_long['lpr1y'], where='post', color=c_1y,
+                    linewidth=1.8, alpha=0.95, label='LPR 1Y', zorder=3)
+        ax_bot.step(df_long['date'], df_long['lpr5y'], where='post', color=c_5y,
+                    linewidth=1.5, alpha=0.9, label='LPR 5Y', zorder=3)
         
         if 'rate1' in df_long.columns:
             ax_bot.plot(df_long['date'], df_long['rate1'], color='#bdc3c7', linewidth=0.8, 
                        alpha=0.3, linestyle='--', label='基准(1Y)')
-        
-        # Gradient Fill for LPR1Y (emphasize dominance)
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['lpr1y'], color=c_1y, alpha_top=0.25)
         
         self.plotter.fmt_single(fig, ax_bot, title='历史走势 (含基准利率参考)', 
                                ylabel='利率 (%)', rotation=15, 

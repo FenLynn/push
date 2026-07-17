@@ -40,7 +40,7 @@ class SugarIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # History: show ~10-20 years (Daily data)
@@ -53,7 +53,7 @@ class SugarIndicator(BaseIndicator):
         ax_top.plot(df_short['date'], df_short['price'], color=color, linewidth=3, label='中国食糖指数')
         self.plotter.draw_current_line(df_short['price'].iloc[-1], ax_top, color)
         
-        self.plotter.fmt_single(fig, ax_top, title='行业数据-中国食糖指数 (近期13月)', ylabel='指数', rotation=15, data=df_short['price'])
+        self.plotter.fmt_single(fig, ax_top, title='行业数据-中国食糖指数（近15个月）', ylabel='指数', rotation=15, data=df_short['price'])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom: History ---

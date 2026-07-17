@@ -64,7 +64,7 @@ class NEVSaleIndicator(BaseIndicator):
 
     def plot(self, df: pd.DataFrame) -> str:
         frame = df.sort_values("date").copy()
-        recent = frame.tail(13)
+        recent = frame.tail(15)
         if recent.empty:
             raise RuntimeError("NEV retail series is empty")
         frame["year"] = frame["date"].dt.year
@@ -85,7 +85,7 @@ class NEVSaleIndicator(BaseIndicator):
             label="新能源零售渗透率"
         )
         self.plotter.fmt_twinx(
-            fig, axes[0], right, title="新能源乘用车（最近13个月）",
+            fig, axes[0], right, title="新能源乘用车（最近15个月）",
             ylabel_left="零售销量（万辆）", ylabel_right="零售渗透率（%）",
             rotation=25, data_left=recent["nev_retail_sales"],
             data_right=recent["nev_retail_share"]

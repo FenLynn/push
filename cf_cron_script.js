@@ -1,7 +1,7 @@
 // ==========================================
 // 1. 全局配置
 // ==========================================
-const GITHUB_OWNER = "你的GitHub用户名";
+const DEFAULT_GITHUB_OWNER = "FenLynn";
 const DEFAULT_BRANCH = "main";
 
 // ==========================================
@@ -14,6 +14,10 @@ const ROUTE_CONFIG = {
   ],
   // 精确时间匹配 (格式: "HH:MM", 星期可选 "1-5")
   "06:00_1-5": [{ repo: "push", workflow: "night.yml" }],
+  // 海外收盘后的快指标补跑，不重复生成全部宏观图。
+  "06:30_1-5": [
+    { repo: "push", workflow: "finance.yml", inputs: { indicators: "commodity,sox" } }
+  ],
   "07:00": [{ repo: "push", workflow: "morning.yml" }],
   "07:10": [{ repo: "push", workflow: "damai.yml" }],
   "07:20": [{ repo: "push", workflow: "game.yml" }],
@@ -45,6 +49,7 @@ const ROUTE_CONFIG = {
 export default {
   async scheduled(event, env, ctx) {
     const token = env.GITHUB_TOKEN;
+    const githubOwner = String(env.GITHUB_OWNER || DEFAULT_GITHUB_OWNER).trim();
     if (!token) {
       console.error("缺少 GITHUB_TOKEN！");
       return;
@@ -95,7 +100,7 @@ export default {
     console.log(`匹配成功，准备同时触发 ${tasksToRun.length} 个任务...`);
 
     const fetchPromises = tasksToRun.map(task => {
-      const url = `https://api.github.com/repos/${GITHUB_OWNER}/${task.repo}/actions/workflows/${task.workflow}/dispatches`;
+      const url = `https://api.github.com/repos/${githubOwner}/${task.repo}/actions/workflows/${task.workflow}/dispatches`;
       return fetch(new Request(url, {
         method: "POST",
         headers: {
@@ -104,7 +109,10 @@ export default {
           "User-Agent": "CF-Cron",
           "X-GitHub-Api-Version": "2022-11-28"
         },
-        body: JSON.stringify({ ref: task.branch || DEFAULT_BRANCH })
+        body: JSON.stringify({
+          ref: task.branch || DEFAULT_BRANCH,
+          inputs: task.inputs || {}
+        })
       })).then(res => {
         if(res.ok) console.log(`[成功] 触发: ${task.workflow}`);
         else console.error(`[失败] 触发: ${task.workflow} | HTTP ${res.status}`);

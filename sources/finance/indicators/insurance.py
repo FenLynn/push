@@ -50,7 +50,7 @@ class InsuranceIndicator(BaseIndicator):
 
     def plot(self, df: pd.DataFrame) -> str:
         frame = df.sort_values("date").copy()
-        recent = frame.dropna(subset=["premium_monthly"]).tail(13)
+        recent = frame.dropna(subset=["premium_monthly"]).tail(15)
         annual = frame[frame["date"].dt.month.eq(12)].tail(20)
         if recent.empty or annual.empty:
             raise RuntimeError("Insurance series is too short for audited charts")
@@ -69,7 +69,7 @@ class InsuranceIndicator(BaseIndicator):
             label="累计同比"
         )
         self.plotter.fmt_twinx(
-            fig, axes[0], right, title="保险保费（最近13个月）",
+            fig, axes[0], right, title="保险保费（最近15个月）",
             ylabel_left="当月保费（亿元）", ylabel_right="累计同比（%）",
             rotation=25, data_left=recent["premium_monthly"],
             data_right=recent["premium_cumulative_yoy"]

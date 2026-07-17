@@ -1,7 +1,10 @@
 import logging
 from types import SimpleNamespace
 
+import pandas as pd
+
 import main as push_main
+from sources.finance.plot import Plotter
 from sources.finance.source import BLOCKED_INDICATOR_CLASSES, FinanceSource
 
 
@@ -62,3 +65,27 @@ def test_finance_source_never_registers_blocked_indicators(monkeypatch):
     source = FinanceSource()
 
     assert not any(type(indicator) in BLOCKED_INDICATOR_CLASSES for indicator in source.indicators)
+
+
+def test_mobile_macro_canvas_is_taller_and_equal_split():
+    plotter = Plotter()
+    fig, axes = plotter.create_ratio_axes([3, 1])
+    try:
+        assert tuple(fig.get_size_inches()) == (12.0, 15.0)
+        assert abs(axes[0].get_position().height - axes[1].get_position().height) < 0.01
+    finally:
+        import matplotlib.pyplot as plt
+        plt.close(fig)
+
+
+def test_diverging_gradient_closes_both_sides_of_zero():
+    plotter = Plotter()
+    fig, ax = plotter.create_single_ax()
+    dates = pd.date_range('2026-01-01', periods=5, freq='ME')
+    try:
+        images = plotter.fill_diverging_gradient(ax, dates, pd.Series([2, 1, -1, -2, 1]))
+        assert len(images) >= 2
+        assert all(image.get_zorder() == 1 for image in images)
+    finally:
+        import matplotlib.pyplot as plt
+        plt.close(fig)

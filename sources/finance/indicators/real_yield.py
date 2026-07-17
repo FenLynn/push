@@ -45,8 +45,7 @@ class RealInterestRateIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
+        df_short = df.tail(15).copy()
         
         # History: 10 Years
         long_threshold = latest_date - pd.DateOffset(years=10)
@@ -62,20 +61,21 @@ class RealInterestRateIndicator(BaseIndicator):
         ax_top.plot(df_short['date'], df_short['real'], color=c_real, linewidth=2.5, label='实际利率(真实成本)')
         
         # Fill area between 0 and Real
-        ax_top.fill_between(df_short['date'], df_short['real'], 0, color=c_real, alpha=0.1)
+        self.plotter.fill_diverging_gradient(ax_top, df_short['date'], df_short['real'],
+                                             alpha_top=0.18, zorder=1)
 
         self.plotter.draw_current_line(df_short['real'].iloc[-1], ax_top, c_real)
         
-        self.plotter.fmt_single(fig, ax_top, title='真实资金成本-实际利率 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='实际利率代理（近15个月）',
                                ylabel='利率(%)', rotation=15, 
                                data=[df_short['nominal'], df_short['real']])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom: 10Y History ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['real'], color=c_real, linewidth=1.5)
-        # Gradient Fill
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['real'], color=c_real)
+        self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['real'],
+                                             alpha_top=0.28, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['real'], color=c_real, linewidth=1.7, zorder=4)
         ax_bot.axhline(y=0, color='gray', linestyle='--')
         
         self.plotter.fmt_single(fig, ax_bot, title='历史实际利率 (10年)', 

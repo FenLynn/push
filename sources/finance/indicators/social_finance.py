@@ -43,9 +43,11 @@ class SocialFinanceIndicator(BaseIndicator):
 
     def plot(self, df: pd.DataFrame) -> str:
         frame = df.sort_values("date").copy()
-        latest = frame["date"].max()
-        recent = frame[frame["date"] >= latest - pd.DateOffset(months=24)]
-        frame["rolling_12m"] = frame["social_finance_increment"].rolling(12, min_periods=12).sum()
+        prior_year = frame["social_finance_increment"].shift(12)
+        frame["social_finance_yoy"] = (
+            (frame["social_finance_increment"] / prior_year - 1) * 100
+        ).where(prior_year > 0)
+        recent = frame.tail(15).copy()
 
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         total_color = "#3976a8"
@@ -55,22 +57,28 @@ class SocialFinanceIndicator(BaseIndicator):
             recent["date"], recent["social_finance_increment"], width=20,
             color=total_color, alpha=0.72, label="社融增量",
         )
-        axes[0].plot(
-            recent["date"], recent["rmb_loan_increment"], color=loan_color,
-            marker="o", markersize=3.5, linewidth=1.8, label="人民币贷款增量",
-        )
+        right = axes[0].twinx()
+        right.plot(recent["date"], recent["social_finance_yoy"], color=loan_color,
+                   marker="o", markersize=4, linewidth=2, label="社融同比")
         axes[0].axhline(0, color="#8a94a0", linewidth=0.8, alpha=0.5)
-        self.plotter.fmt_single(
-            fig, axes[0], title="社融月度增量（近24个月）", ylabel="亿元",
-            rotation=20, data=[recent["social_finance_increment"], recent["rmb_loan_increment"]],
+        self.plotter.fmt_twinx(
+            fig, axes[0], right, title="社融月度增量（近15个月）",
+            ylabel_left="亿元", ylabel_right="同比(%)",
+            rotation=20, data_left=recent["social_finance_increment"],
+            data_right=recent["social_finance_yoy"],
         )
         self.plotter.set_no_margins(axes[0])
 
-        history = frame.dropna(subset=["rolling_12m"])
-        axes[1].plot(history["date"], history["rolling_12m"], color=total_color, linewidth=1.8)
-        self.plotter.fmt_single(
-            fig, axes[1], title="滚动12个月社融增量", ylabel="亿元",
-            rotation=20, data=history["rolling_12m"],
+        history = frame.tail(120).copy()
+        axes[1].bar(history["date"], history["social_finance_increment"], width=20,
+                    color=total_color, alpha=0.55, label="单月社融")
+        history_right = axes[1].twinx()
+        history_right.plot(history["date"], history["social_finance_yoy"], color=loan_color,
+                           linewidth=1.7, label="同比", zorder=3)
+        self.plotter.fmt_twinx(
+            fig, axes[1], history_right, title="社融单月增量与同比（10年）",
+            ylabel_left="亿元", ylabel_right="同比(%)", rotation=20,
+            data_left=history["social_finance_increment"], data_right=history["social_finance_yoy"],
         )
         self.plotter.set_no_margins(axes[1])
 

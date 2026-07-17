@@ -7,11 +7,6 @@ on:
         description: "可选：逗号分隔的指标名；留空运行全部"
         required: false
         default: ""
-  schedule:
-    # Full refresh every day at 23:20 Beijing time.
-    - cron: '20 15 * * *'
-    # Overseas market close refresh, 06:30 Beijing time Monday-Friday.
-    - cron: '30 22 * * 0-4'
 
 jobs:
   run:
@@ -45,10 +40,6 @@ jobs:
         
       - name: Run Finance
         env:
-          FINANCE_INDICATORS: ${{ inputs.indicators || (github.event.schedule == '30 22 * * 0-4' && 'commodity,sox') || '' }}
+          FINANCE_INDICATORS: ${{ inputs.indicators || '' }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python main.py gen finance --force
-          else
-            python main.py gen finance
-          fi
+          python main.py gen finance --force

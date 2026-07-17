@@ -26,7 +26,7 @@ class BondIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         df_long = df.iloc[-5000:].copy() 
@@ -54,22 +54,25 @@ class BondIndicator(BaseIndicator):
         h2, l2 = ax_top_r.get_legend_handles_labels()
         ax_top.legend(h1+h2, l1+l2, loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
         
-        self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='债券市场-国债收益率 (近期13月)', 
+        self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='中国国债收益率（近15个月）',
                              ylabel_left='收益率(%)', ylabel_right='利差(BP)',
                              data_left=[df_short['y10'], df_short['y2']], data_right=df_short['spread'])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['y10'], color=c_10y, linewidth=1.8, alpha=0.9, label='10Y')
-        ax_bot.plot(df_long['date'], df_long['y2'], color=c_2y, linewidth=1.2, alpha=0.7, label='2Y')
-        
-        # Gradient fill for 10Y (risk-free benchmark)
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['y10'], color=c_10y, alpha_top=0.25)
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['y10'], color=c_10y,
+                                   alpha_top=0.25, baseline=0, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['y10'], color=c_10y, linewidth=1.8,
+                    alpha=0.95, label='10Y', zorder=4)
+        ax_bot.plot(df_long['date'], df_long['y2'], color=c_2y, linewidth=1.2,
+                    alpha=0.8, label='2Y', zorder=4)
         
         self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年全景)', 
                                ylabel='收益率(%)', rotation=15, 
                                data=[df_long['y10'], df_long['y2']])
+        # 收益率面积明确落到 0 轴，避免把任意最小值误当作基准。
+        ax_bot.set_ylim(0, max(df_long['y10'].max(), df_long['y2'].max()) * 1.12)
         self.plotter.set_no_margins(ax_bot)
         
         path = "output/finance/bond.png"

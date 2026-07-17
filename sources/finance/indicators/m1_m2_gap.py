@@ -36,7 +36,7 @@ class M1M2GapIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # History: 20 years
@@ -58,7 +58,7 @@ class M1M2GapIndicator(BaseIndicator):
         self.plotter.draw_current_line(df_short['m1_growth'].iloc[-1], ax_top, c_m1)
         self.plotter.draw_current_line(df_short['m2_growth'].iloc[-1], ax_top, c_m2)
         
-        self.plotter.fmt_single(fig, ax_top, title='M1 与 M2 同比增速（近期13月）',
+        self.plotter.fmt_single(fig, ax_top, title='M1 与 M2 同比增速（近15个月）',
                                ylabel='同比(%)', rotation=15, 
                                data=[df_short['m1_growth'], df_short['m2_growth']])
         self.plotter.set_no_margins(ax_top)

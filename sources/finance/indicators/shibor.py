@@ -29,7 +29,7 @@ class ShiborIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # History: show ~20 years (Daily data, use large N)
@@ -52,19 +52,22 @@ class ShiborIndicator(BaseIndicator):
         # Explicit legend
         ax_top.legend(loc='upper right', frameon=True, framealpha=0.9, fontsize=9)
         
-        self.plotter.fmt_single(fig, ax_top, title='流动性-Shibor利率 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='Shibor 利率（近15个月）',
                                ylabel='利率(%)', rotation=15,
                                data=[df_short['ON'], df_short['3M'], df_short['1Y']])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom: Long ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['ON'], color=c_on, linewidth=0.8, alpha=0.4)
-        ax_bot.plot(df_long['date'], df_long['3M'], color=c_3m, linewidth=1.8, alpha=0.9)
-        ax_bot.plot(df_long['date'], df_long['1Y'], color=c_1y, linewidth=1.5, alpha=0.8)
-        
-        # Gradient fill for 3M
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['3M'], color=c_3m, alpha_top=0.2)
+        baseline = df_long[['ON', '3M', '1Y']].min().min() * 0.96
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['3M'], color=c_3m,
+                                   alpha_top=0.2, baseline=baseline, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['ON'], color=c_on, linewidth=0.8,
+                    alpha=0.5, zorder=3)
+        ax_bot.plot(df_long['date'], df_long['3M'], color=c_3m, linewidth=1.8,
+                    alpha=0.95, zorder=4)
+        ax_bot.plot(df_long['date'], df_long['1Y'], color=c_1y, linewidth=1.5,
+                    alpha=0.9, zorder=4)
         
         self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年全景)', 
                                ylabel='利率(%)', rotation=15,

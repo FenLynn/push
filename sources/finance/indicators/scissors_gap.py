@@ -62,9 +62,7 @@ class ScissorsGapIndicator(BaseIndicator):
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         
         # 1. 13-month window
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
+        df_short = df.tail(15).copy()
         
         # 2. History (last 10 years)
         df_long = df.iloc[-120:].copy()
@@ -83,22 +81,27 @@ class ScissorsGapIndicator(BaseIndicator):
         
         # Enhanced fill gap with higher alpha
         ax_top.fill_between(df_short['date'], df_short['cpi'], df_short['ppi'], 
-                           where=(df_short['cpi'] >= df_short['ppi']), color=c_cpi, alpha=0.15, label='CPI同比较高')
+                           where=(df_short['cpi'] >= df_short['ppi']), interpolate=True,
+                           color=c_cpi, alpha=0.15, label='CPI同比较高')
         ax_top.fill_between(df_short['date'], df_short['cpi'], df_short['ppi'], 
-                           where=(df_short['cpi'] < df_short['ppi']), color=c_ppi, alpha=0.15, label='PPI同比较高')
+                           where=(df_short['cpi'] < df_short['ppi']), interpolate=True,
+                           color=c_ppi, alpha=0.15, label='PPI同比较高')
         
         # Explicit legend
         ax_top.legend(loc='upper right', frameon=True, framealpha=0.9, fontsize=9)
         
-        self.plotter.fmt_single(fig, ax_top, title='CPI 与 PPI 同比（近期13月）',
+        self.plotter.fmt_single(fig, ax_top, title='CPI 与 PPI 同比（近15个月）',
                                ylabel='同比 (%)', rotation=15, 
                                data=[df_short['cpi'], df_short['ppi']])
         self.plotter.set_no_margins(ax_top)
 
         # --- Bottom (Gap History) ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['gap'], color=c_gap, linewidth=1.5, alpha=0.9, label='Gap (CPI-PPI)')
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['gap'], color=c_gap, alpha_top=0.25)
+        self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['gap'],
+                                             positive_color='#C94F45', negative_color='#3D8B68',
+                                             alpha_top=0.3, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['gap'], color=c_gap, linewidth=1.8,
+                    alpha=0.95, label='Gap (CPI-PPI)', zorder=3)
         ax_bot.axhline(y=0, color='#95a5a6', linestyle='--', linewidth=1.5, alpha=0.7)
         
         # Draw current value line

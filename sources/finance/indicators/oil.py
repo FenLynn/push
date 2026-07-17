@@ -21,7 +21,7 @@ class OilIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # History: show 200 adjustments
@@ -42,7 +42,7 @@ class OilIndicator(BaseIndicator):
         # Explicit legend
         ax_top.legend(loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
         
-        self.plotter.fmt_single(fig, ax_top, title='行业数据-中国油价变动 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='行业数据-中国油价变动（近15个月）',
                               ylabel='元/吨', rotation=15, data=[df_short['gasoline'], df_short['diesel']])
         self.plotter.set_no_margins(ax_top)
         

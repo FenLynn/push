@@ -2,6 +2,9 @@ import matplotlib
 matplotlib.use('Agg')  # 必须在 import pyplot 之前，确保 headless 环境（GitHub Actions）正常绘图
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import matplotlib.colors as mcolors
+import matplotlib.dates as mdates
+from matplotlib.patches import PathPatch
 from matplotlib import font_manager
 import os
 import sys
@@ -101,8 +104,8 @@ class Plotter:
         # finance indicators all use that legacy value, so render them 1:1
         # while preserving explicitly designed ratios such as [1, 1].
         effective_ratios = [1, 1] if ratios == [3, 1] else ratios
-        fig, axes = plt.subplots(2, 1, figsize=(12, 10), dpi=self.dpi, 
-                               gridspec_kw={'height_ratios': effective_ratios, 'hspace': 0.32})
+        fig, axes = plt.subplots(2, 1, figsize=(12, 15), dpi=self.dpi,
+                               gridspec_kw={'height_ratios': effective_ratios, 'hspace': 0.24})
         return fig, axes
 
     def set_no_margins(self, ax):
@@ -169,10 +172,11 @@ class Plotter:
                     is_empty = False
                     d_min, d_max = valid_data.min(), valid_data.max()
                     if d_max == d_min:
-                        ax.set_ylim(d_min * 0.9, d_max * 1.1)
+                        padding = max(abs(float(d_min)) * 0.08, 0.5)
+                        ax.set_ylim(d_min - padding, d_max + padding)
                     else:
                         diff = d_max - d_min
-                        ax.set_ylim(d_min - diff * 0.05, d_max + diff * 0.1)
+                        ax.set_ylim(d_min - diff * 0.12, d_max + diff * 0.12)
             except: pass
             
         if is_empty:
@@ -181,11 +185,67 @@ class Plotter:
                     transform=ax.transAxes, fontsize=14, color='#7f8c8d', 
                     ha='center', va='center', alpha=0.5, weight='bold')
 
-    def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.3):
-        """实现渐变填充效果 (通过叠加不同透明度的 fill_between)"""
+    def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.3,
+                      baseline=0, where=None, zorder=1):
+        """绘制从基准线向数据线逐渐加深、且交叉处无白缝的渐变阴影。"""
         import numpy as np
-        for i in range(1, 6):
-            ax.fill_between(x, y, y.min(), color=color, alpha=alpha_top * (i/5.0), where=(y > y.min()))
+        import pandas as pd
+
+        x_values = np.asarray(mdates.date2num(pd.to_datetime(x)), dtype=float)
+        y_values = np.asarray(pd.to_numeric(y, errors='coerce'), dtype=float)
+        valid = np.isfinite(x_values) & np.isfinite(y_values)
+        where_values = valid if where is None else np.asarray(where, dtype=bool) & valid
+        if not where_values.any():
+            return []
+
+        collection = ax.fill_between(
+            x_values, y_values, baseline, where=where_values,
+            interpolate=True, facecolor='none', edgecolor='none', zorder=zorder,
+        )
+        rgb = mcolors.to_rgb(color)
+        images = []
+        for path in collection.get_paths():
+            vertices = path.vertices
+            if len(vertices) < 3:
+                continue
+            xmin, xmax = vertices[:, 0].min(), vertices[:, 0].max()
+            ymin, ymax = vertices[:, 1].min(), vertices[:, 1].max()
+            if not np.isfinite([xmin, xmax, ymin, ymax]).all() or xmax <= xmin or ymax <= ymin:
+                continue
+            levels = np.linspace(ymin, ymax, 256)
+            span = max(abs(ymin - baseline), abs(ymax - baseline), 1e-12)
+            # Ease-in keeps the area near the x/baseline visibly lighter on a
+            # small phone screen, instead of looking like a flat solid block.
+            alpha = np.power(np.clip(np.abs(levels - baseline) / span, 0, 1), 1.7) * alpha_top
+            rgba = np.empty((256, 1, 4), dtype=float)
+            rgba[:, :, :3] = rgb
+            rgba[:, 0, 3] = alpha
+            patch = PathPatch(path, facecolor='none', edgecolor='none')
+            ax.add_patch(patch)
+            images.append(ax.imshow(
+                rgba, extent=(xmin, xmax, ymin, ymax), origin='lower',
+                aspect='auto', interpolation='bicubic', zorder=zorder,
+                clip_path=patch, clip_on=True,
+            ))
+        collection.remove()
+        ax.update_datalim(np.column_stack([x_values[valid], y_values[valid]]))
+        ax.autoscale_view()
+        return images
+
+    def fill_diverging_gradient(self, ax, x, y, baseline=0,
+                                positive_color='#C94F45', negative_color='#3D8B68',
+                                alpha_top=0.28, zorder=1):
+        """按基准线上红、线下绿绘制连续渐变。"""
+        import numpy as np
+        import pandas as pd
+        values = np.asarray(pd.to_numeric(y, errors='coerce'), dtype=float)
+        finite = np.isfinite(values)
+        return (
+            self.fill_gradient(ax, x, values, positive_color, alpha_top, baseline,
+                               finite & (values >= baseline), zorder)
+            + self.fill_gradient(ax, x, values, negative_color, alpha_top, baseline,
+                                 finite & (values <= baseline), zorder)
+        )
 
     def _add_internal_title(self, ax, text):
         """Add title inside chart - moved to bottom left per user request"""
@@ -222,6 +282,7 @@ class Plotter:
         if ylabel_right:
             ax_right.set_ylabel(ylabel_right, fontsize=11, weight='bold', color='#2d3436')
         ax_right.grid(False)
+        self._pad_y_only(ax_right, data_right)
         
         # Force rotation
         for label in ax_left.get_xticklabels():
@@ -263,6 +324,25 @@ class Plotter:
         
         if sci_on:
              ax.ticklabel_format(style='sci', scilimits=(-1,2), axis='y')
+
+    @staticmethod
+    def _pad_y_only(ax, data):
+        """Give a secondary y axis the same safe edge padding as the main axis."""
+        import pandas as pd
+        if data is None:
+            return
+        try:
+            if isinstance(data, (list, tuple)):
+                series = pd.concat([pd.to_numeric(item, errors='coerce') for item in data]).dropna()
+            else:
+                series = pd.to_numeric(data, errors='coerce').dropna()
+            if series.empty:
+                return
+            d_min, d_max = float(series.min()), float(series.max())
+            padding = max(abs(d_min) * 0.08, 0.5) if d_max == d_min else (d_max - d_min) * 0.12
+            ax.set_ylim(d_min - padding, d_max + padding)
+        except Exception:
+            return
 
     def draw_current_line(self, val, ax, color):
         """绘制当前值虚线"""

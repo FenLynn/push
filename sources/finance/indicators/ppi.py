@@ -40,9 +40,7 @@ class PPIIndicator(BaseIndicator):
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         
         # 1. Standardized 13-month window using DateOffset
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
+        df_short = df.tail(15).copy()
         
         # History: 20 years (240 months)
         df_long = df.iloc[-240:].copy() 
@@ -58,7 +56,7 @@ class PPIIndicator(BaseIndicator):
         ax_top.axhline(y=0, color='#636e72', linestyle='--', alpha=0.5, linewidth=1)
         
         self.plotter.fmt_single(fig, ax_top,
-                             title='宏观数据-PPI价格指数 (近期13月)',
+                             title='PPI工业生产者价格（近15个月）',
                              ylabel='同比增长(%)',
                              rotation=15,
                              data=df_short['ppi_growth'])
@@ -67,8 +65,11 @@ class PPIIndicator(BaseIndicator):
         # --- Bottom: History. The "previous year = 100" index is exactly
         # growth + 100, so plotting both would duplicate one measurement. ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['ppi_growth'], color=c_growth, linewidth=1.6, label='PPI同比')
-        ax_bot.fill_between(df_long['date'], df_long['ppi_growth'], 0, color=c_growth, alpha=0.18)
+        history_color = '#3976A8'
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['ppi_growth'],
+                                   color=history_color, alpha_top=0.26, baseline=0, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['ppi_growth'], color=history_color,
+                    linewidth=1.8, label='PPI同比', zorder=3)
         ax_bot.axhline(y=0, color='#636e72', linestyle='--', alpha=0.5, linewidth=0.8)
         self.plotter.fmt_single(fig, ax_bot, title='PPI同比（20年）',
                               ylabel='同比（%）', rotation=15,

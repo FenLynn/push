@@ -46,7 +46,7 @@ class ForexIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # History: show ~20 years
@@ -58,7 +58,7 @@ class ForexIndicator(BaseIndicator):
         # Draw current line for USD (Benchmark)
         self.plotter.draw_current_line((df_short['USD']/100).iloc[-1], ax_top, '#e74c3c')
         
-        self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='外汇市场-汇率中间价 (近期13月)', 
+        self.plotter.fmt_twinx(fig, ax_top, ax_top_r, title='外汇市场-汇率中间价（近15个月）',
                              ylabel_left='CNY', ylabel_right='JPY(100)',
                              data_left=[df_short['USD']/100, df_short['EUR']/100, df_short['GBP']/100],
                              data_right=df_short['JPY'])

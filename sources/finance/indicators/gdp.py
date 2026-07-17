@@ -52,87 +52,58 @@ class GDPIndicator(BaseIndicator):
 
     def plot(self, df: pd.DataFrame) -> str:
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
-        
-        # Consistent window for GDP (Quarterly, so 6 quarters ~ 18 months to see > 1 year)
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=18)
-        df_short = df[df['date'] >= short_threshold].copy()
-        
-        df_long = df[df['q_start'] == 1].copy() 
-        df_long = df_long.iloc[-80:] # 20 Years
-        
-        c_single = '#C94F45'      # 单季度规模
-        c_growth = '#2E7FB8'      # 累计同比增速
-        
-        # --- Top ---
-        ax_top = axes[0]
-        x = np.arange(len(df_short))
-        width = 0.58
-        single_values = df_short['gdp_single'] / 10000
+        quarters = df[(df['q_start'] == 1) & df['q_end'].notna()].copy().sort_values('date')
+        quarters['quarter_yoy'] = quarters.groupby('q_end')['gdp_single'].pct_change() * 100
+        recent = quarters.tail(8).copy()
+        history = quarters.tail(80).copy()
 
-        # 单季度值与累计值不能堆叠；堆叠会重复计算同一季度产出。
-        bars = ax_top.bar(
-            x,
-            single_values,
-            width,
-            label='单季度GDP（万亿元）',
-            color=c_single,
-            alpha=0.9,
-            edgecolor='none',
-            zorder=2,
-        )
+        c_single = '#C94F45'
+        c_growth = '#2E7FB8'
+        c_cumulative = '#8A94A0'
+        ax_top = axes[0]
+        x = np.arange(len(recent))
+        single_values = recent['gdp_single'] / 10000
+
+        # 每个年份用一根淡色宽柱表示当前图中该年的季度合计；完整年度与
+        # 不完整年度均按实际可见季度求和，避免把半年累计伪装成全年值。
+        for year, group in recent.groupby('year', sort=True):
+            positions = [recent.index.get_loc(idx) for idx in group.index]
+            left, right = min(positions), max(positions)
+            annual_visible = group['gdp_single'].sum() / 10000
+            ax_top.bar((left + right) / 2, annual_visible, width=(right - left + 0.9),
+                       color=c_cumulative, alpha=0.11, edgecolor='none', zorder=0,
+                       label='年度/年内合计' if year == recent['year'].min() else None)
+
+        bars = ax_top.bar(x, single_values, width=0.56, color=c_single, alpha=0.88,
+                          edgecolor='none', label='单季度GDP', zorder=2)
         for bar, value in zip(bars, single_values):
             if pd.notna(value):
-                ax_top.text(
-                    bar.get_x() + bar.get_width() / 2,
-                    bar.get_height(),
-                    f'{value:.1f}',
-                    ha='center',
-                    va='bottom',
-                    fontsize=8,
-                    color='#3C4043',
-                    fontweight='bold',
-                )
-        
-        def get_label(row):
-            q = int(row['q_end'])
-            return f"{int(row['year'])} Q{q}"
+                ax_top.text(bar.get_x() + bar.get_width() / 2, value, f'{value:.1f}',
+                            ha='center', va='bottom', fontsize=8, color='#3C4043')
         ax_top.set_xticks(x)
-        ax_top.set_xticklabels([get_label(r) for idx, r in df_short.iterrows()])
-        
-        # Growth Rate Line (Secondary Axis)
+        ax_top.set_xticklabels([f"{int(r.year)} Q{int(r.q_end)}" for _, r in recent.iterrows()])
+
         ax_top_r = ax_top.twinx()
-        ax_top_r.plot(
-            x,
-            df_short['gdp_growth'],
-            'D-',
-            color=c_growth,
-            linewidth=2.5,
-            markersize=6,
-            label='GDP累计同比（%）',
-            zorder=3,
-        )
-        
+        ax_top_r.plot(x, recent['quarter_yoy'], 'o-', color=c_growth, linewidth=2.4,
+                      markersize=6, label='单季度同比', zorder=4)
+        ax_top_r.plot(x, recent['gdp_growth'], 'D--', color='#D49A22', linewidth=1.8,
+                      markersize=5, label='年内累计同比', zorder=4)
         self.plotter.fmt_twinx(
-            fig,
-            ax_top,
-            ax_top_r,
-            title='GDP：单季度规模与累计同比（近期对比）',
-            ylabel_left='单季度GDP（万亿元）',
-            ylabel_right='累计同比（%）',
-            rotation=0,
-            data_left=single_values,
-            data_right=df_short['gdp_growth'],
+            fig, ax_top, ax_top_r, title='GDP：近8个季度规模与增速',
+            ylabel_left='GDP（万亿元）', ylabel_right='同比（%）', rotation=0,
+            data_left=[single_values, recent.groupby('year')['gdp_single'].transform('sum') / 10000],
+            data_right=[recent['quarter_yoy'], recent['gdp_growth']],
         )
-        
-        # --- Bottom ---
+
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['gdp_growth'], color=c_growth, linewidth=2, label='GDP同比')
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['gdp_growth'], color=c_growth)
+        self.plotter.fill_diverging_gradient(ax_bot, history['date'], history['quarter_yoy'],
+                                             positive_color=c_growth, negative_color='#3D8B68',
+                                             alpha_top=0.28, zorder=1)
+        ax_bot.plot(history['date'], history['quarter_yoy'], color=c_growth,
+                    linewidth=2, label='单季度同比', zorder=4)
         ax_bot.axhline(y=0, color='#636e72', linestyle='--', linewidth=0.8, alpha=0.5)
-        
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年全景)', ylabel='增速(%)', rotation=15, 
-                               data=df_long['gdp_growth'])
+        self.plotter.fmt_single(fig, ax_bot, title='单季度同比长期走势（20年）',
+                               ylabel='同比(%)', rotation=15, data=history['quarter_yoy'])
         self.plotter.set_no_margins(ax_bot)
         
         path = "output/finance/gdp.png"

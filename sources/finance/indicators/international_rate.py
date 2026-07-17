@@ -53,7 +53,7 @@ class InternationalRateIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # 2. History (last 20 years)
@@ -78,7 +78,7 @@ class InternationalRateIndicator(BaseIndicator):
         # Explicit legend
         ax_top.legend(loc='upper right', frameon=True, framealpha=0.9, fontsize=9)
             
-        self.plotter.fmt_single(fig, ax_top, title='全球视野-主要央行基准利率 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='全球视野-主要央行基准利率（近15个月）',
                                ylabel='利率 (%)', rotation=15, 
                                data=[df_short['usa'], df_short.get('eur', [0]), df_short.get('jpy', [0])])
         self.plotter.set_no_margins(ax_top)

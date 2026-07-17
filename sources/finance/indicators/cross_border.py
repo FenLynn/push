@@ -30,7 +30,7 @@ class CrossBorderIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # History: 10 Years
@@ -50,7 +50,7 @@ class CrossBorderIndicator(BaseIndicator):
         self.plotter.draw_current_line(df_short['us_10y'].iloc[-1], ax_top, c_us)
         self.plotter.draw_current_line(df_short['cn_10y'].iloc[-1], ax_top, c_cn)
         
-        self.plotter.fmt_single(fig, ax_top, title='中美10年期国债收益率（近期13月）',
+        self.plotter.fmt_single(fig, ax_top, title='中美10年期国债收益率（近15个月）',
                                ylabel='收益率(%)', rotation=15, 
                                data=[df_short['us_10y'], df_short['cn_10y']])
         self.plotter.set_no_margins(ax_top)

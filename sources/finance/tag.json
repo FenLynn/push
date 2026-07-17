@@ -1,106 +1,106 @@
 {
     "cpi": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/cpi/latest.png?v=c82b84f1b8bb",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/cpi/latest.png?v=40f129bc50bd",
         "date": "2026-06-01 00:00:00"
     },
     "socialfinance": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/socialfinance/latest.png?v=0ca8bdd036e5",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/socialfinance/latest.png?v=5c3b63905f5e",
         "date": "2026-04-30 00:00:00"
     },
     "margin": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/margin/latest.png?v=335e0fbaf63a",
-        "date": "2026-07-15 00:00:00"
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/margin/latest.png?v=86d89c1d2c69",
+        "date": "2026-07-16 00:00:00"
     },
     "forex": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/forex/latest.png?v=8ef81370280e",
-        "date": "2026-07-16 00:00:00"
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/forex/latest.png?v=b140670a74fa",
+        "date": "2026-07-17 00:00:00"
     },
     "commodity": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/commodity/latest.png?v=993651a77239",
-        "date": "2026-07-16 00:00:00"
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/commodity/latest.png?v=b220ba4464eb",
+        "date": "2026-07-17 00:00:00"
     },
     "sox": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/sox/latest.png?v=b2d5a8ced0f5",
-        "date": "2026-07-15 00:00:00"
-    },
-    "shibor": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/shibor/latest.png?v=26711364d070",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/sox/latest.png?v=8fd0bfe31858",
         "date": "2026-07-16 00:00:00"
     },
+    "shibor": {
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/shibor/latest.png?v=7ce7315ed50c",
+        "date": "2026-07-17 00:00:00"
+    },
     "gdp": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/gdp/latest.png?v=84d19f8bb990",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/gdp/latest.png?v=73fad8273539",
         "date": "2026-06-30 00:00:00"
     },
     "ppi": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/ppi/latest.png?v=2f5a4812fd5d",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/ppi/latest.png?v=6687b9eb757a",
         "date": "2026-06-01 00:00:00"
     },
     "pmi": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/pmi/latest.png?v=8971163266b5",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/pmi/latest.png?v=b16575a70020",
         "date": "2026-06-01 00:00:00"
     },
     "m2": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/m2/latest.png?v=c5f1a31688dc",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/m2/latest.png?v=ba1b72b27fc6",
         "date": "2026-06-01 00:00:00"
     },
     "sugar": {
-        "url": "https://i2.wp.com/s2.loli.net/2026/02/09/Ehiub9UJL1K47Rw.png",
-        "date": "2026-02-06 00:00:00"
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/sugar/latest.png?v=09920d05eed0",
+        "date": "2026-07-16 00:00:00"
     },
     "commodityindex": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/commodityindex/latest.png?v=6db2a9ea416b",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/commodityindex/latest.png?v=fb054ab9872d",
         "date": "2026-07-16 00:00:00"
     },
     "energyindex": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/energyindex/latest.png?v=a521b2594afd",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/energyindex/latest.png?v=3b68a2f48eb4",
         "date": "2026-07-16 00:00:00"
     },
     "pig": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/pig/latest.png?v=d1d99ccfce7e",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/pig/latest.png?v=8e9f61e9216f",
         "date": "2026-07-13 00:00:00"
     },
     "oil": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/oil/latest.png?v=2f7eeef10a80",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/oil/latest.png?v=56007cb8c7f3",
         "date": "2026-07-04 00:00:00"
     },
     "lpr": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/lpr/latest.png?v=80eaf8e79325",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/lpr/latest.png?v=31457934d0e4",
         "date": "2026-06-22 00:00:00"
     },
     "bond": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/bond/latest.png?v=9c72e9b21d45",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/bond/latest.png?v=f64082033152",
         "date": "2026-07-16 00:00:00"
     },
     "internationalrate": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/internationalrate/latest.png?v=c08b529362dc",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/internationalrate/latest.png?v=2d11c6e3180a",
         "date": "2025-10-30 00:00:00"
     },
     "insurance": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/insurance/latest.png?v=172d88222633",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/insurance/latest.png?v=206acd084260",
         "date": "2026-05-01 00:00:00"
     },
     "nevsale": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/nevsale/latest.png?v=2fec6a72d50b",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/nevsale/latest.png?v=421e1894d867",
         "date": "2026-06-01 00:00:00"
     },
     "realestate": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/realestate/latest.png?v=68c9a816ec3f",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/realestate/latest.png?v=be5fd465c6fc",
         "date": "2025-12-01 00:00:00"
     },
     "trade": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/trade/latest.png?v=31397392b749",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/trade/latest.png?v=0300bc510b06",
         "date": "2026-06-30 00:00:00"
     },
     "news": {
-        "url": "https://i0.wp.com/cdn.jsdelivr.net/gh/Fenlynn/image@main/pic/20260213114018.png",
-        "date": "20260212"
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/news/latest.png?v=f8701fbcb265",
+        "date": "2026-07-16 00:00:00"
     },
     "scissorsgap": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/scissorsgap/latest.png?v=4d878af69b54",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/scissorsgap/latest.png?v=ca69777bfeda",
         "date": "2026-06-01 00:00:00"
     },
     "electricity": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/electricity/latest.png?v=caa684ecec35",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/electricity/latest.png?v=598f5020062a",
         "date": "2026-05-31 00:00:00"
     },
     "municipalrealestate": {
@@ -136,19 +136,19 @@
         "date": "2026-03-27 00:00:00"
     },
     "m1m2gap": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/m1m2gap/latest.png?v=534721e2c508",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/m1m2gap/latest.png?v=ec44bdd59a31",
         "date": "2026-06-01 00:00:00"
     },
     "marketpe": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/marketpe/latest.png?v=618b4c5127d6",
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/marketpe/latest.png?v=a18dd7155616",
         "date": "2026-07-16 00:00:00"
     },
     "crossborder": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/crossborder/latest.png?v=818e4ef65880",
-        "date": "2026-07-15 00:00:00"
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/crossborder/latest.png?v=4b9be644124e",
+        "date": "2026-07-16 00:00:00"
     },
     "realinterestrate": {
-        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/realinterestrate/latest.png?v=6350548be95c",
-        "date": "2025-09-09 00:00:00"
+        "url": "https://whoisyourdaddyqywx-worker.660415.xyz/api/public/push-assets/finance/realinterestrate/latest.png?v=c573873a0082",
+        "date": "2026-06-30 00:00:00"
     }
 }

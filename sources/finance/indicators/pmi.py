@@ -18,9 +18,7 @@ class PMIIndicator(BaseIndicator):
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         
         # 1. Standardized 13-month window
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
+        df_short = df.tail(15).copy()
         
         # History: 20 years (240 months)
         df_long = df.iloc[-240:].copy() 
@@ -45,15 +43,17 @@ class PMIIndicator(BaseIndicator):
         
         self.plotter.draw_current_line(df_short.iloc[-1]['manufacture'], ax_top, c_manu)
         
-        self.plotter.fmt_single(fig, ax_top, title='PMI 采购经理人指数 (近期13月)', ylabel='指数点位', rotation=15,
+        self.plotter.fmt_single(fig, ax_top, title='PMI 采购经理人指数（近15个月）', ylabel='指数点位', rotation=15,
                                data=[df_short['manufacture'], df_short['non_manufacture']])
         self.plotter.set_no_margins(ax_top)
         ax_top.legend(loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['manufacture'], color=c_manu, linewidth=1.5, label='制造业')
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['manufacture'], color=c_manu, alpha_top=0.2)
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['manufacture'],
+                                   color=c_manu, alpha_top=0.22, baseline=50, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['manufacture'], color=c_manu,
+                    linewidth=1.7, label='制造业', zorder=3)
         
         ax_bot.axhline(y=50, color=c_line, linestyle=':', alpha=0.6)
         

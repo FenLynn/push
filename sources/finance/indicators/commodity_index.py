@@ -25,7 +25,7 @@ class CommodityIndexIndicator(BaseIndicator):
         
         # 1. Standardized 13-month window
         latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
+        short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
         # History: 20 years (Weekly data, ensure enough rows)
@@ -39,7 +39,7 @@ class CommodityIndexIndicator(BaseIndicator):
         ax_top.plot(df_short['date'], df_short['index'], color=color, linewidth=3.5, label='CCPI总指数')
         self.plotter.draw_current_line(df_short['index'].iloc[-1], ax_top, color)
         
-        self.plotter.fmt_single(fig, ax_top, title='宏观数据-中国大宗商品价格指数 (近期13月)', ylabel='指数', rotation=15, data=df_short['index'])
+        self.plotter.fmt_single(fig, ax_top, title='宏观数据-中国大宗商品价格指数（近15个月）', ylabel='指数', rotation=15, data=df_short['index'])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom: History ---
