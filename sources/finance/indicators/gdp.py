@@ -136,13 +136,15 @@ class GDPIndicator(BaseIndicator):
             group_bars = self.plotter.gradient_bars(
                 ax_top, positions, group['gdp_single'] / 10000, width=0.58,
                 color=year_palette[color_index % len(year_palette)],
-                label=f'{int(year)}年', zorder=2,
+                alpha_top=0.78, alpha_bottom=0.09,
+                label=f'{int(year)}年', zorder=3,
             )
             bars.extend(group_bars)
         for bar, value in zip(bars, single_values):
             if pd.notna(value):
                 ax_top.text(bar.get_x() + bar.get_width() / 2, value, f'{value:.1f}',
-                            ha='center', va='bottom', fontsize=11, fontweight='bold', color='#3C4043')
+                            ha='center', va='bottom', fontsize=14, fontweight='bold',
+                            color='#2F343A', zorder=6, clip_on=False)
         ax_top.set_xticks(x)
         ax_top.set_xticklabels([f"{int(r.year)}Q{int(r.q_end)}" for _, r in recent.iterrows()])
         ax_top.set_xlim(-0.5, len(recent) - 0.5)
@@ -158,6 +160,15 @@ class GDPIndicator(BaseIndicator):
             data_left=single_values,
             data_right=[recent['quarter_yoy'], recent['gdp_growth']],
         )
+        # fmt_twinx right-aligns generic date labels. Quarter labels belong
+        # exactly under the centre of each bar.
+        ax_top.set_xticks(x)
+        ax_top.set_xticklabels(
+            [f"{int(row.year)}Q{int(row.q_end)}" for _, row in recent.iterrows()],
+            rotation=0, ha='center',
+        )
+        ax_top.set_xlim(-0.5, len(recent) - 0.5)
+        ax_top.tick_params(axis='x', pad=7)
 
         ax_bot = axes[1]
         self.plotter.fill_diverging_gradient(ax_bot, history['date'], history['quarter_yoy'],

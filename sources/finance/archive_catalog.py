@@ -66,6 +66,8 @@ ARCHIVE_CATALOG = {
         "metrics": {
             "lpr1y": {"label": "LPR 1年期", "unit": "%"},
             "lpr5y": {"label": "LPR 5年期以上", "unit": "%"},
+            "lpr1y_unchanged_months": {"label": "LPR 1年期现值持续", "unit": "个月"},
+            "lpr5y_unchanged_months": {"label": "LPR 5年期现值持续", "unit": "个月"},
             "unchanged_months": {"label": "当前报价持续", "unit": "个月"},
         },
     },
@@ -146,8 +148,14 @@ ARCHIVE_CATALOG = {
         },
     },
     "realestate": {
-        "label": "全国房地产景气指数", "source": "AkShare/NBS", "frequency": "monthly",
-        "metrics": {"value": {"label": "全国房地产景气指数", "unit": "index"}},
+        "label": "70城住宅价格景气", "source": "NBS/Eastmoney", "frequency": "monthly",
+        "quality": "aggregated",
+        "metrics": {
+            "new_house_yoy": {"label": "70城新房同比中位数", "unit": "%"},
+            "second_house_yoy": {"label": "70城二手房同比中位数", "unit": "%"},
+            "new_house_rise_share": {"label": "新房环比上涨城市占比", "unit": "%"},
+            "second_house_rise_share": {"label": "二手房环比上涨城市占比", "unit": "%"},
+        },
     },
     "commodity": {
         "label": "COMEX 黄金", "source": "AkShare/Sina/COMEX", "frequency": "daily", "quality": "market",
@@ -176,6 +184,7 @@ ARCHIVE_CATALOG = {
         "label": "生猪市场价格", "source": "AkShare/搜猪/行情宝", "frequency": "daily", "quality": "industry",
         "metrics": {
             "daily_price": {"label": "全国瘦肉型生猪日价", "unit": "元/公斤"},
+            "futures_price": {"label": "大商所生猪主连收盘", "unit": "元/公斤"},
             "index": {"label": "生猪价格指数", "unit": "点"},
             "transaction_price": {"label": "生猪成交均价", "unit": "元/公斤"},
         },
@@ -191,11 +200,11 @@ ARCHIVE_CATALOG = {
         },
     },
     "internationalrate": {
-        "label": "主要央行政策利率", "source": "AkShare/金十数据", "frequency": "event", "quality": "aggregated",
+        "label": "主要央行政策利率", "source": "Federal Reserve/ECB/BOJ/FRED/PBOC", "frequency": "event", "quality": "official",
         "metrics": {
-            "usa": {"label": "美联储政策利率", "unit": "%"},
-            "eur": {"label": "欧洲央行政策利率", "unit": "%"},
-            "jpy": {"label": "日本央行政策利率", "unit": "%"},
+            "usa": {"label": "美联储目标区间上限", "unit": "%"},
+            "eur": {"label": "欧洲央行存款便利利率", "unit": "%"},
+            "jpy": {"label": "日本隔夜拆借利率", "unit": "%"},
             "cn": {"label": "中国1年期LPR参考", "unit": "%"},
         },
     },

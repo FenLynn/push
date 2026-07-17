@@ -8,6 +8,8 @@ from sources.finance.indicators.trade import TradeIndicator
 from sources.finance.indicators.insurance import InsuranceIndicator
 from sources.finance.indicators.nev_sale import NEVSaleIndicator
 from sources.finance.indicators.oil import OilIndicator
+from sources.finance.indicators.real_estate import RealEstateIndicator
+from sources.finance.indicators.lpr import LPRIndicator
 
 
 def test_social_finance_keeps_monthly_observations_without_interpolation():
@@ -128,3 +130,43 @@ def test_oil_does_not_publish_future_effective_price(monkeypatch):
 
     assert frame["date"].dt.strftime("%Y-%m-%d").tolist() == ["2020-01-01"]
     assert frame.iloc[-1]["gasoline"] == 8000
+
+
+def test_real_estate_aggregates_price_indexes_and_market_breadth():
+    raw = pd.DataFrame({
+        'REPORT_DATE': ['2026-06-01'] * 3,
+        'CITY': ['A', 'B', 'C'],
+        'FIRST_COMHOUSE_SAME': [98, 100, 102],
+        'FIRST_COMHOUSE_SEQUENTIAL': [99.9, 100, 100.2],
+        'SECOND_HOUSE_SAME': [95, 97, 99],
+        'SECOND_HOUSE_SEQUENTIAL': [99.8, 100.1, 100.2],
+    })
+
+    frame = RealEstateIndicator._aggregate(raw)
+
+    # The production collector requires at least 60 cities. Verify the summary
+    # formula separately with a replicated 60-city fixture.
+    replicated = pd.concat([
+        raw.assign(CITY=raw['CITY'] + f'-{copy}') for copy in range(20)
+    ])
+    frame = RealEstateIndicator._aggregate(replicated)
+    assert frame.iloc[0]['new_house_yoy'] == pytest.approx(0)
+    assert frame.iloc[0]['second_house_yoy'] == pytest.approx(-3)
+    assert frame.iloc[0]['new_house_rise_share'] == pytest.approx(100 / 3)
+    assert frame.iloc[0]['second_house_rise_share'] == pytest.approx(200 / 3)
+
+
+def test_lpr_tracks_one_and_five_year_duration_independently(monkeypatch):
+    raw = pd.DataFrame({
+        'TRADE_DATE': pd.date_range('2026-01-20', periods=4, freq='ME'),
+        'LPR1Y': [3.0, 3.0, 3.0, 3.0],
+        'LPR5Y': [3.5, 3.5, 3.4, 3.4],
+        'RATE_1': [3.0] * 4,
+        'RATE_2': [3.5] * 4,
+    })
+    monkeypatch.setattr('sources.finance.indicators.lpr.ak.macro_china_lpr', lambda: raw)
+
+    frame = LPRIndicator(None, None).fetch_data()
+
+    assert frame.iloc[-1]['lpr1y_unchanged_months'] == 4
+    assert frame.iloc[-1]['lpr5y_unchanged_months'] == 2

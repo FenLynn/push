@@ -91,3 +91,33 @@ def test_diverging_gradient_closes_both_sides_of_zero():
     finally:
         import matplotlib.pyplot as plt
         plt.close(fig)
+
+
+def test_frames_stay_behind_data_and_bar_feet_remain_visible():
+    plotter = Plotter()
+    fig, ax = plotter.create_single_ax()
+    try:
+        bars = plotter.gradient_bars(ax, [0, 1], pd.Series([10, 12]))
+        plotter.fmt_single(fig, ax, data=pd.Series([10, 12]))
+        assert all(spine.get_zorder() < bars[0].get_zorder() for spine in ax.spines.values())
+        gradient_images = list(ax.images)
+        assert gradient_images
+        assert min(image.get_array()[:, :, 3].min() for image in gradient_images) >= 0.07
+    finally:
+        import matplotlib.pyplot as plt
+        plt.close(fig)
+
+
+def test_price_gradient_baseline_is_pinned_to_x_axis():
+    plotter = Plotter()
+    fig, ax = plotter.create_single_ax()
+    values = pd.Series([5100, 5300, 5200])
+    dates = pd.date_range('2026-01-01', periods=3, freq='ME')
+    baseline = 4900
+    try:
+        plotter.fill_gradient(ax, dates, values, baseline=baseline)
+        plotter.fmt_single(fig, ax, data=values)
+        assert ax.get_ylim()[0] == baseline
+    finally:
+        import matplotlib.pyplot as plt
+        plt.close(fig)

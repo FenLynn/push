@@ -50,20 +50,29 @@ class SugarIndicator(BaseIndicator):
         
         # --- Top: Recent ---
         ax_top = axes[0]
-        ax_top.plot(df_short['date'], df_short['price'], color=color, linewidth=3, label='中国食糖指数')
+        ax_top.plot(df_short['date'], df_short['price'], color=color, linewidth=3,
+                    label='综合价格', zorder=5)
+        ax_top.plot(df_short['date'], df_short['spot_price'], color='#C95A55', linewidth=2.2,
+                    label='现货价格', zorder=5)
         self.plotter.draw_current_line(df_short['price'].iloc[-1], ax_top, color)
         
-        self.plotter.fmt_single(fig, ax_top, title='行业数据-中国食糖指数（近15个月）', ylabel='指数', rotation=15, data=df_short['price'])
+        self.plotter.fmt_single(fig, ax_top, title='中国食糖价格（近15个月）',
+                               ylabel='元/吨', rotation=15,
+                               data=[df_short['price'], df_short['spot_price']])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        baseline = df_long['price'].min() * 0.96
+        baseline = min(df_long['price'].min(), df_long['spot_price'].min()) * 0.96
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['price'],
                                    color=color, baseline=baseline, zorder=1)
-        ax_bot.plot(df_long['date'], df_long['price'], color=color, linewidth=1.5, zorder=4)
+        ax_bot.plot(df_long['date'], df_long['price'], color=color, linewidth=1.7,
+                    label='综合价格', zorder=5)
+        ax_bot.plot(df_long['date'], df_long['spot_price'], color='#C95A55', linewidth=1.4,
+                    label='现货价格', zorder=5)
         
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='指数', rotation=15, data=df_long['price'])
+        self.plotter.fmt_single(fig, ax_bot, title='历史走势（近20年）', ylabel='元/吨',
+                               rotation=15, data=[df_long['price'], df_long['spot_price']])
         self.plotter.set_no_margins(ax_bot)
         
         path = "output/finance/sugar.png"

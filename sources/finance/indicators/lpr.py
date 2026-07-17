@@ -20,8 +20,14 @@ class LPRIndicator(BaseIndicator):
             for col in ['lpr1y', 'lpr5y', 'rate1', 'rate2']:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             df = df.sort_values('date').dropna(subset=['lpr1y', 'lpr5y']).copy()
-            changed = df['lpr1y'].ne(df['lpr1y'].shift()) | df['lpr5y'].ne(df['lpr5y'].shift())
-            df['unchanged_months'] = df.groupby(changed.cumsum()).cumcount() + 1
+            for metric in ('lpr1y', 'lpr5y'):
+                changed = df[metric].ne(df[metric].shift())
+                df[f'{metric}_unchanged_months'] = df.groupby(changed.cumsum()).cumcount() + 1
+            # Retain the legacy field for old clients; it represents the
+            # shorter of the two independently calculated durations.
+            df['unchanged_months'] = df[[
+                'lpr1y_unchanged_months', 'lpr5y_unchanged_months'
+            ]].min(axis=1)
             return df
         except Exception as e:
             self.logger.error(f"LPR Fetch Error: {e}")
@@ -44,14 +50,13 @@ class LPRIndicator(BaseIndicator):
         
         # --- Top (Recent) ---
         ax_top = axes[0]
-        ax_top.step(df_short['date'], df_short['lpr1y'], where='post', color=c_1y, linewidth=3.5, label='LPR 1Y', zorder=3)
-        ax_top.step(df_short['date'], df_short['lpr5y'], where='post', color=c_5y, linewidth=3, label='LPR 5Y', zorder=2)
         current = df_short.iloc[-1]
-        ax_top.text(
-            0.02, 0.96,
-            f"现值：1Y {current['lpr1y']:.2f}% · 5Y {current['lpr5y']:.2f}% · 已持续 {int(current['unchanged_months'])} 个月",
-            transform=ax_top.transAxes, va='top', ha='left', fontsize=10, color='#4B5563',
-        )
+        duration_1y = int(current['lpr1y_unchanged_months'])
+        duration_5y = int(current['lpr5y_unchanged_months'])
+        ax_top.step(df_short['date'], df_short['lpr1y'], where='post', color=c_1y,
+                    linewidth=3.5, label=f'LPR 1Y（持续{duration_1y}个月）', zorder=5)
+        ax_top.step(df_short['date'], df_short['lpr5y'], where='post', color=c_5y,
+                    linewidth=3, label=f'LPR 5Y（持续{duration_5y}个月）', zorder=5)
         
         # Benchmarks as faint dotted lines (weakened)
         if 'rate1' in df_short.columns:

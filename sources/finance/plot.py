@@ -110,7 +110,10 @@ class Plotter:
 
     def set_no_margins(self, ax):
         """去除左右空白"""
-        ax.margins(x=0)
+        # A literal zero margin clips the first/last marker and lets the frame
+        # sit on top of the data. Two percent is compact but keeps every glyph
+        # inside the plotting area on a phone.
+        ax.margins(x=0.02)
 
     def add_inset_plot(self, ax, rect=[0.1, 0.6, 0.35, 0.25]):
         """在主图中添加小图"""
@@ -146,6 +149,8 @@ class Plotter:
             spine.set_visible(True)
             spine.set_color('#dfe6e9') # Lighter spines
             spine.set_linewidth(0.8)
+            # Frames are decoration; data must always render above them.
+            spine.set_zorder(0.2)
             
         ax.tick_params(axis='both', which='both', colors='#636e72', labelsize=10)
         
@@ -173,10 +178,22 @@ class Plotter:
                     d_min, d_max = valid_data.min(), valid_data.max()
                     if d_max == d_min:
                         padding = max(abs(float(d_min)) * 0.08, 0.5)
-                        ax.set_ylim(d_min - padding, d_max + padding)
+                        y_min, y_max = d_min - padding, d_max + padding
                     else:
                         diff = d_max - d_min
-                        ax.set_ylim(d_min - diff * 0.12, d_max + diff * 0.12)
+                        y_min, y_max = d_min - diff * 0.12, d_max + diff * 0.12
+
+                    # When an area fill supplies a baseline below (or above)
+                    # the complete series, pin it to the frame. This prevents
+                    # a blank strip between the gradient and the x-axis.
+                    baselines = getattr(ax, '_finance_fill_baselines', [])
+                    lower = [float(value) for value in baselines if value <= d_min]
+                    upper = [float(value) for value in baselines if value >= d_max]
+                    if lower:
+                        y_min = min(lower)
+                    if upper:
+                        y_max = max(upper)
+                    ax.set_ylim(y_min, y_max)
             except: pass
             
         if is_empty:
@@ -186,8 +203,8 @@ class Plotter:
                     ha='center', va='center', alpha=0.5, weight='bold')
 
     def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.38,
-                      baseline=0, where=None, zorder=1, step=None,
-                      alpha_floor=0.055):
+                      baseline=None, where=None, zorder=1, step=None,
+                      alpha_floor=0.075):
         """绘制从基准线向数据线逐渐加深、且交叉处无白缝的渐变阴影。"""
         import numpy as np
         import pandas as pd
@@ -195,9 +212,22 @@ class Plotter:
         x_values = np.asarray(mdates.date2num(pd.to_datetime(x)), dtype=float)
         y_values = np.asarray(pd.to_numeric(y, errors='coerce'), dtype=float)
         valid = np.isfinite(x_values) & np.isfinite(y_values)
+        if baseline is None:
+            finite_y = y_values[np.isfinite(y_values)]
+            if not finite_y.size:
+                return []
+            data_min, data_max = float(finite_y.min()), float(finite_y.max())
+            span = data_max - data_min
+            baseline = data_min - (span * 0.12 if span else max(abs(data_min) * 0.04, 0.5))
         where_values = valid if where is None else np.asarray(where, dtype=bool) & valid
         if not where_values.any():
             return []
+
+        stored_baselines = list(getattr(ax, '_finance_fill_baselines', []))
+        numeric_baseline = float(baseline)
+        if np.isfinite(numeric_baseline) and numeric_baseline not in stored_baselines:
+            stored_baselines.append(numeric_baseline)
+        ax._finance_fill_baselines = stored_baselines
 
         collection = ax.fill_between(
             x_values, y_values, baseline, where=where_values,
@@ -238,8 +268,8 @@ class Plotter:
         return images
 
     def gradient_bars(self, ax, x, height, width=0.7, color='#3976A8',
-                      bottom=None, alpha_top=0.98, alpha_bottom=0.01,
-                      label=None, zorder=2):
+                      bottom=None, alpha_top=0.90, alpha_bottom=0.075,
+                      label=None, zorder=3):
         """Draw bars whose colour is light at the base and deep at the top."""
         import numpy as np
         import pandas as pd
@@ -273,7 +303,7 @@ class Plotter:
             levels = np.linspace(0, 1, 256)
             if value < 0:
                 levels = levels[::-1]
-            levels = np.power(levels, 1.65)
+            levels = np.power(levels, 1.35)
             rgba = np.empty((256, 1, 4), dtype=float)
             rgba[:, :, :3] = rgb
             rgba[:, 0, 3] = alpha_bottom + (alpha_top - alpha_bottom) * levels
@@ -329,6 +359,7 @@ class Plotter:
             spine.set_visible(True)
             spine.set_color('#dfe6e9')
             spine.set_linewidth(0.8)
+            spine.set_zorder(0.2)
         # The primary axis owns left/top/bottom. Drawing twin-axis spines on
         # top of them makes those sides darker than the right border.
         for side in ('left', 'top', 'bottom'):

@@ -71,7 +71,9 @@ class NewsIndicator(BaseIndicator):
         wc = wordcloud.WordCloud(
             font_path=font_path,
             width=1200,
-            height=600,
+            # A square canvas doubles the former vertical room and remains
+            # readable when shown full-width on a phone.
+            height=1200,
             mode='RGBA',
             background_color=None,
             max_words=100,
