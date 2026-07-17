@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 import pandas as pd
 import requests
@@ -41,12 +42,22 @@ class RealEstateIndicator(BaseIndicator):
 
     @classmethod
     def _fetch_page(cls, start_date: str, page: int) -> dict:
-        response = requests.get(cls.API_URL, params=cls._params(start_date, page), timeout=25)
-        response.raise_for_status()
-        payload = response.json()
-        if not payload.get('success') or not payload.get('result'):
-            raise RuntimeError(f"70-city house-price page {page} returned no data")
-        return payload['result']
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = requests.get(
+                    cls.API_URL, params=cls._params(start_date, page), timeout=35
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not payload.get('success') or not payload.get('result'):
+                    raise RuntimeError(f"70-city house-price page {page} returned no data")
+                return payload['result']
+            except Exception as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+        raise RuntimeError(f"70-city house-price page {page} failed after retries: {last_error}")
 
     @staticmethod
     def _aggregate(raw: pd.DataFrame) -> pd.DataFrame:
@@ -87,7 +98,10 @@ class RealEstateIndicator(BaseIndicator):
         pages = int(first.get('pages') or 1)
         records = list(first.get('data') or [])
         if pages > 1:
-            with ThreadPoolExecutor(max_workers=6) as executor:
+            # Eastmoney occasionally throttles six simultaneous history pages
+            # on GitHub-hosted runners. Four workers plus per-page retry is
+            # slower by only a few seconds and much more reliable.
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 for result in executor.map(
                     lambda page: self._fetch_page(start_date, page), range(2, pages + 1)
                 ):
