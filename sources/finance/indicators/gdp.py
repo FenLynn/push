@@ -28,7 +28,12 @@ class GDPIndicator(BaseIndicator):
         for table in pd.read_html(report_url):
             if table.shape[1] < 5:
                 continue
-            header_rows = table.astype(str).apply(lambda row: '|'.join(row), axis=1)
+            # pandas/HTML parser versions differ here: a mixed table can still
+            # yield float cells during ``apply`` even after ``astype(str)``.
+            # Convert every value at the join boundary for Linux runners too.
+            header_rows = table.apply(
+                lambda row: '|'.join(str(value) for value in row.tolist()), axis=1
+            )
             header_index = next((idx for idx, text in header_rows.items()
                                  if '年份' in text and '1季度' in text and '4季度' in text), None)
             if header_index is None:
