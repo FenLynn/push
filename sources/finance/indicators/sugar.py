@@ -1,31 +1,35 @@
-import akshare as ak
 import pandas as pd
+import requests
 from .base import BaseIndicator
 
 class SugarIndicator(BaseIndicator):
     """食糖现货价格"""
     def fetch_data(self) -> pd.DataFrame:
         try:
-            df = ak.index_sugar_msweet()
-            # Debug: print columns if needed
-            # print(f"Sugar columns: {df.columns}")
-            
-            required = {'日期', '综合价格'}
-            if not required.issubset(df.columns):
-                raise ValueError(f"食糖源字段变化: {list(df.columns)}")
-            df = df.rename(columns={'日期': 'date', '综合价格': 'price', '现货价格': 'spot_price', '原糖价格': 'raw_sugar_price'})
+            # AkShare 1.18.x writes a float into a pandas string column before
+            # converting it and crashes under pandas 2.2. Read the same public
+            # endpoint directly; invalid source cells become NaN rather than
+            # applying AkShare's undocumented hard-coded replacement value.
+            response = requests.get(
+                'https://www.msweet.com.cn/eportal/ui',
+                params={
+                    'struts.portlet.action': '/portlet/price!getSTZSJson.action',
+                    'moduleId': 'cb752447cfe24b44b18c7a7e9abab048',
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            df = pd.concat([pd.DataFrame(payload['category']), pd.DataFrame(payload['data'])], axis=1)
+            if df.shape[1] != 4:
+                raise ValueError(f"食糖源字段变化: {df.shape[1]} columns")
+            df.columns = ['date', 'price', 'raw_sugar_price', 'spot_price']
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
             df['price'] = pd.to_numeric(df['price'], errors='coerce')
             for column in ('spot_price', 'raw_sugar_price'):
                 if column in df.columns:
                     df[column] = pd.to_numeric(df[column], errors='coerce')
             return df.dropna(subset=['price', 'date']).sort_values('date')
-        except TypeError as e:
-            if "Invalid value" in str(e) and "dtype 'str'" in str(e):
-                 self.logger.warning(f"Sugar Data Source Error (Akshare Upstream Bug): {e}. SkippingSugar.")
-                 return pd.DataFrame() # Return empty to skip safely
-            self.logger.error(f"Sugar Fetch Error: {e}", exc_info=True)
-            raise e
         except Exception as e:
             self.logger.error(f"Sugar Fetch Error: {e}", exc_info=True)
             raise e

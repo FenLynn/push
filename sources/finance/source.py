@@ -118,6 +118,13 @@ class FinanceSource(BaseSource):
             indicator for indicator in self.indicators
             if type(indicator) not in BLOCKED_INDICATOR_CLASSES
         ]
+        requested = {
+            item.strip().lower()
+            for item in str(os.getenv('FINANCE_INDICATORS') or '').split(',')
+            if item.strip()
+        }
+        if requested:
+            self.indicators = [indicator for indicator in self.indicators if indicator.name in requested]
         self.logger = logging.getLogger("Push.Source.Finance")
 
     def run(self):

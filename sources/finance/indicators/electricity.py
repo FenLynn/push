@@ -1,5 +1,6 @@
 import akshare as ak
 import pandas as pd
+import time
 
 from .base import BaseIndicator
 
@@ -31,12 +32,19 @@ class ElectricityIndicator(BaseIndicator):
         return frame[["date", "electricity_monthly", "electricity_cumulative_yoy"]].reset_index(drop=True)
 
     def fetch_data(self) -> pd.DataFrame:
-        try:
-            frame = self._normalize_frame(ak.macro_china_society_electricity())
-            return frame if not frame.empty else None
-        except Exception as exc:
-            self.logger.error("Electricity fetch failed: %s", exc)
-            return None
+        last_error = None
+        for attempt in range(3):
+            try:
+                frame = self._normalize_frame(ak.macro_china_society_electricity())
+                if not frame.empty:
+                    return frame
+                last_error = RuntimeError('electricity source returned no observations')
+            except Exception as exc:
+                last_error = exc
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+        self.logger.error("Electricity fetch failed after retries: %s", last_error)
+        return None
 
     def plot(self, df: pd.DataFrame) -> str:
         frame = df.sort_values("date").copy()

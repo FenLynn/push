@@ -7,14 +7,16 @@ class M1M2GapIndicator(BaseIndicator):
     
     def fetch_data(self) -> pd.DataFrame:
         try:
-            # ak.macro_china_money_supply() can hang
-            df = ak.macro_china_supply_of_money()
-            df['date'] = pd.to_datetime(df['统计时间'], format='%Y.%m')
-            
-            df = df.rename(columns={
-                '货币(狭义货币M1)同比增长': 'm1_growth',
-                '货币和准货币（广义货币M2）同比增长': 'm2_growth'
-            })
+            cached = self.manager.df_cache.get('m2')
+            if cached is not None and {'date', 'm1_growth', 'm2_growth'}.issubset(cached.columns):
+                df = cached[['date', 'm1_growth', 'm2_growth']].copy()
+            else:
+                df = ak.macro_china_supply_of_money()
+                df['date'] = pd.to_datetime(df['统计时间'], format='%Y.%m')
+                df = df.rename(columns={
+                    '货币(狭义货币M1)同比增长': 'm1_growth',
+                    '货币和准货币（广义货币M2）同比增长': 'm2_growth'
+                })
             df['date'] = pd.to_datetime(df['date'])
             df['m1_growth'] = pd.to_numeric(df['m1_growth'], errors='coerce')
             df['m2_growth'] = pd.to_numeric(df['m2_growth'], errors='coerce')

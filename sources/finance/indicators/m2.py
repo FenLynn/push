@@ -18,11 +18,12 @@ class M2Indicator(BaseIndicator):
                 '货币和准货币（广义货币M2）': 'm2',
                 '货币(狭义货币M1)': 'm1',
                 '流通中现金(M0)': 'm0',
-                '货币和准货币（广义货币M2）同比增长': 'm2_growth'
+                '货币和准货币（广义货币M2）同比增长': 'm2_growth',
+                '货币(狭义货币M1)同比增长': 'm1_growth'
             })
             
             # Numeric conversion
-            for col in ['m2', 'm1', 'm0', 'm2_growth']:
+            for col in ['m2', 'm1', 'm0', 'm2_growth', 'm1_growth']:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
