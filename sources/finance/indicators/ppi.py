@@ -66,8 +66,9 @@ class PPIIndicator(BaseIndicator):
         # growth + 100, so plotting both would duplicate one measurement. ---
         ax_bot = axes[1]
         history_color = '#3976A8'
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['ppi_growth'],
-                                   color=history_color, alpha_top=0.26, baseline=0, zorder=1)
+        self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['ppi_growth'],
+                                             baseline=0, positive_color='#C95A55',
+                                             negative_color='#3D8B68', alpha_top=0.26, zorder=1)
         ax_bot.plot(df_long['date'], df_long['ppi_growth'], color=history_color,
                     linewidth=1.8, label='PPI同比', zorder=3)
         ax_bot.axhline(y=0, color='#636e72', linestyle='--', alpha=0.5, linewidth=0.8)

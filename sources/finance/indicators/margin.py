@@ -48,7 +48,7 @@ class MarginIndicator(BaseIndicator):
                     ak.macro_china_market_margin_sz(),
                 )
                 if not frame.empty:
-                    return frame
+                    return self._with_sh_index(frame)
             except Exception as exc:
                 self.logger.warning("Margin fetch attempt %s failed: %s", attempt + 1, exc)
             if attempt == 0:
@@ -69,7 +69,10 @@ class MarginIndicator(BaseIndicator):
         recent_x = recent.index.to_numpy()
         axes[0].plot(recent_x, recent["margin_balance"], color=balance_color, linewidth=2, label="融资余额")
         right = axes[0].twinx()
-        right.bar(recent_x, recent["margin_buy"], color=buy_color, alpha=0.28, width=0.72, label="融资买入额")
+        self.plotter.gradient_bars(
+            right, recent_x, recent["margin_buy"], color=buy_color,
+            alpha_top=0.62, alpha_bottom=0.08, width=0.72, label="融资买入额",
+        )
         tick_step = max(1, len(recent) // 6)
         tick_positions = list(range(0, len(recent), tick_step))
         if tick_positions[-1] != len(recent) - 1:
@@ -87,19 +90,35 @@ class MarginIndicator(BaseIndicator):
 
         history = history.reset_index(drop=True)
         history_x = history.index.to_numpy()
-        axes[1].plot(history_x, history["margin_balance"], color=balance_color, linewidth=1.5)
+        axes[1].plot(history_x, history["margin_balance"], color=balance_color,
+                     linewidth=1.5, label="融资余额", zorder=4)
+        history_right = axes[1].twinx()
+        history_right.plot(history_x, history["sh_close"], color="#3976A8",
+                           linewidth=1.3, alpha=0.82, label="上证指数", zorder=3)
         year_change = history["date"].dt.year.ne(history["date"].dt.year.shift())
         year_positions = history.index[year_change].tolist()
         axes[1].xaxis.set_major_locator(ticker.FixedLocator(year_positions))
         axes[1].xaxis.set_major_formatter(ticker.FixedFormatter([
             str(history.iloc[position]["date"].year) for position in year_positions
         ]))
-        self.plotter.fmt_single(
-            fig, axes[1], title="融资余额长期走势", ylabel="亿元",
-            rotation=15, data=history["margin_balance"],
+        self.plotter.fmt_twinx(
+            fig, axes[1], history_right, title="融资余额与上证指数（10年）",
+            ylabel_left="融资余额（亿元）", ylabel_right="上证指数", rotation=15,
+            data_left=history["margin_balance"], data_right=history["sh_close"],
         )
         axes[1].set_xlim(0, max(1, len(history) - 1))
 
         path = "output/finance/margin.png"
         self.plotter.save(fig, path)
         return path
+    @staticmethod
+    def _with_sh_index(frame: pd.DataFrame) -> pd.DataFrame:
+        try:
+            index = ak.stock_zh_index_daily(symbol="sh000001")[["date", "close"]].copy()
+            index["date"] = pd.to_datetime(index["date"], errors="coerce")
+            index["sh_close"] = pd.to_numeric(index["close"], errors="coerce")
+            return frame.merge(index[["date", "sh_close"]].dropna(), on="date", how="left")
+        except Exception:
+            frame = frame.copy()
+            frame["sh_close"] = pd.NA
+            return frame

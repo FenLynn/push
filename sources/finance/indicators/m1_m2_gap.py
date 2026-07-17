@@ -66,10 +66,12 @@ class M1M2GapIndicator(BaseIndicator):
         # --- Bottom: Historical Gap ---
         ax_bot = axes[1]
         
-        # Conditional Bar Colors
-        colors = [c_pos if v >= 0 else c_neg for v in df_long['gap']]
-        
-        ax_bot.bar(df_long['date'], df_long['gap'], color=colors, width=20, alpha=0.8, label='M1-M2剪刀差')
+        self.plotter.fill_diverging_gradient(
+            ax_bot, df_long['date'], df_long['gap'], baseline=0,
+            positive_color='#C95A55', negative_color='#3D8B68', alpha_top=0.28, zorder=1,
+        )
+        ax_bot.plot(df_long['date'], df_long['gap'], color='#3976A8',
+                    linewidth=1.8, label='M1-M2剪刀差', zorder=4)
         ax_bot.axhline(y=0, color='#95a5a6', linestyle='--', linewidth=1)
         
         self.plotter.fmt_single(fig, ax_bot, title='M1-M2 同比增速差（20年）',

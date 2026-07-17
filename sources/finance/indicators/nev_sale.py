@@ -47,12 +47,14 @@ class NEVSaleIndicator(BaseIndicator):
         frame = sales.merge(shares, on="date", how="left")
         for column in ["nev_retail_sales", "nev_retail_share"]:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
-        return (
+        frame = (
             frame.dropna(subset=["date", "nev_retail_sales"])
             .drop_duplicates("date", keep="last")
             .sort_values("date")
             .reset_index(drop=True)
         )
+        frame["nev_retail_yoy"] = frame["nev_retail_sales"].pct_change(12) * 100
+        return frame
 
     def fetch_data(self) -> pd.DataFrame:
         response = requests.get(self.SOURCE_URL, params={"charttype": "6"}, timeout=30)
@@ -64,7 +66,7 @@ class NEVSaleIndicator(BaseIndicator):
 
     def plot(self, df: pd.DataFrame) -> str:
         frame = df.sort_values("date").copy()
-        recent = frame.tail(15)
+        recent = frame.tail(15).copy()
         if recent.empty:
             raise RuntimeError("NEV retail series is empty")
         frame["year"] = frame["date"].dt.year
@@ -72,12 +74,19 @@ class NEVSaleIndicator(BaseIndicator):
         frame["nev_retail_ytd"] = frame.groupby("year")["nev_retail_sales"].cumsum()
 
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
-        sales_color = "#2d8b78"
+        sales_color = "#3976A8"
         share_color = "#c94844"
-        axes[0].bar(
-            recent["date"], recent["nev_retail_sales"], width=20,
-            color=sales_color, alpha=0.58, label="新能源乘用车零售"
+        bars = self.plotter.gradient_bars(
+            axes[0], recent["date"], recent["nev_retail_sales"], width=20,
+            color=sales_color, label="新能源乘用车零售",
         )
+        for bar, yoy in zip(bars, recent["nev_retail_yoy"]):
+            if pd.notna(yoy):
+                axes[0].text(
+                    bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(),
+                    f'{yoy:+.0f}%', ha='center', va='bottom', fontsize=7,
+                    color='#C95A55' if yoy >= 0 else '#3D8B68', zorder=5,
+                )
         right = axes[0].twinx()
         right.plot(
             recent["date"], recent["nev_retail_share"],

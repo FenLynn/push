@@ -52,17 +52,15 @@ class RealInterestRateIndicator(BaseIndicator):
         df_long = df[df['date'] >= long_threshold].copy()
         
         c_nom = '#e74c3c' # Red (Nominal)
-        c_real = '#2c3e50' # Blue (Real)
+        c_real = '#3976A8'
         c_cpi = '#95a5a6' # Gray (Inflation)
         
         # --- Top: Nominal vs Real ---
         ax_top = axes[0]
-        ax_top.plot(df_short['date'], df_short['nominal'], color=c_nom, label='名义利率(10Y)', linestyle='--')
-        ax_top.plot(df_short['date'], df_short['real'], color=c_real, linewidth=2.5, label='实际利率(真实成本)')
-        
-        # Fill area between 0 and Real
-        self.plotter.fill_diverging_gradient(ax_top, df_short['date'], df_short['real'],
-                                             alpha_top=0.18, zorder=1)
+        ax_top.plot(df_short['date'], df_short['nominal'], color=c_nom, label='名义利率(10Y)',
+                    linestyle='--', marker='o', markersize=4)
+        ax_top.plot(df_short['date'], df_short['real'], color=c_real, linewidth=2.5,
+                    marker='o', markersize=5, label='实际利率(真实成本)')
 
         self.plotter.draw_current_line(df_short['real'].iloc[-1], ax_top, c_real)
         
@@ -74,6 +72,7 @@ class RealInterestRateIndicator(BaseIndicator):
         # --- Bottom: 10Y History ---
         ax_bot = axes[1]
         self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['real'],
+                                             positive_color='#C95A55', negative_color='#3D8B68',
                                              alpha_top=0.28, zorder=1)
         ax_bot.plot(df_long['date'], df_long['real'], color=c_real, linewidth=1.7, zorder=4)
         ax_bot.axhline(y=0, color='gray', linestyle='--')

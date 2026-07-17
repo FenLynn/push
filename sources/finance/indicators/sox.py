@@ -25,7 +25,7 @@ class SOXIndicator(BaseIndicator):
         # History: show ~20 years
         df_long = df.iloc[-5000:].copy() 
         
-        color = '#8e44ad' # Wisteria Purple (Premium)
+        color = '#3976A8'
         
         # Top: Recent
         ax_top = axes[0]
@@ -37,9 +37,10 @@ class SOXIndicator(BaseIndicator):
         
         # Bottom: Long
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['close'], color=color, linewidth=1.5)
-        # Gradient Fill
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['close'], color=color)
+        baseline = df_long['close'].min() * 0.96
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['close'],
+                                   color=color, baseline=baseline, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['close'], color=color, linewidth=1.5, zorder=4)
         
         self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='点位', rotation=15, data=df_long['close'])
         self.plotter.set_no_margins(ax_bot)

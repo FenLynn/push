@@ -61,11 +61,12 @@ class CrossBorderIndicator(BaseIndicator):
         # Area Chart for Spread
         # Sign only identifies which yield is higher; it does not prove a
         # corresponding capital-flow direction.
-        ax_bot.fill_between(df_long['date'], df_long['spread'], 0, where=(df_long['spread']>=0), 
-                           color='#27ae60', alpha=0.5, label='美债收益率较高')
-        ax_bot.fill_between(df_long['date'], df_long['spread'], 0, where=(df_long['spread']<0), 
-                           color='#e74c3c', alpha=0.5, label='中债收益率较高')
-        ax_bot.plot(df_long['date'], df_long['spread'], color='#7f8c8d', linewidth=0.8)
+        self.plotter.fill_diverging_gradient(
+            ax_bot, df_long['date'], df_long['spread'], baseline=0,
+            positive_color='#C95A55', negative_color='#3D8B68', alpha_top=0.28, zorder=1,
+        )
+        ax_bot.plot(df_long['date'], df_long['spread'], color='#3976A8',
+                    linewidth=1.7, label='美债-中债', zorder=4)
         
         # Zero line
         ax_bot.axhline(y=0, color='black', linestyle='-', linewidth=0.8)

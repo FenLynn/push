@@ -46,7 +46,7 @@ class SugarIndicator(BaseIndicator):
         # History: show ~10-20 years (Daily data)
         df_long = df.iloc[-5000:].copy() 
         
-        color = '#e67e22' # Carrot Orange (Premium)
+        color = '#3976A8'
         
         # --- Top: Recent ---
         ax_top = axes[0]
@@ -58,9 +58,10 @@ class SugarIndicator(BaseIndicator):
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['price'], color=color, linewidth=1.5)
-        # Gradient Fill
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['price'], color=color)
+        baseline = df_long['price'].min() * 0.96
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['price'],
+                                   color=color, baseline=baseline, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['price'], color=color, linewidth=1.5, zorder=4)
         
         self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='指数', rotation=15, data=df_long['price'])
         self.plotter.set_no_margins(ax_bot)

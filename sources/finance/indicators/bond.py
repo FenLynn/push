@@ -32,7 +32,7 @@ class BondIndicator(BaseIndicator):
         df_long = df.iloc[-5000:].copy() 
         
         # Color Palette - Premium Bond Theme
-        c_10y = '#e74c3c'  # Crimson (长端无风险利率)
+        c_10y = '#C96B68'
         c_2y = '#3498db'   # Dodger Blue (短端无风险利率)
         c_spread = '#95a5a6'  # Silver Gray (宏观预期指标)
         
@@ -62,7 +62,7 @@ class BondIndicator(BaseIndicator):
         # --- Bottom ---
         ax_bot = axes[1]
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['y10'], color=c_10y,
-                                   alpha_top=0.25, baseline=0, zorder=1)
+                                   alpha_top=0.18, baseline=0, zorder=1)
         ax_bot.plot(df_long['date'], df_long['y10'], color=c_10y, linewidth=1.8,
                     alpha=0.95, label='10Y', zorder=4)
         ax_bot.plot(df_long['date'], df_long['y2'], color=c_2y, linewidth=1.2,

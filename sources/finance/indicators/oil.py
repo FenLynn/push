@@ -11,7 +11,17 @@ class OilIndicator(BaseIndicator):
             df['date'] = pd.to_datetime(df['date'])
             df['gasoline'] = pd.to_numeric(df['gasoline'], errors='coerce')
             df['diesel'] = pd.to_numeric(df['diesel'], errors='coerce')
-            return df.dropna(subset=['gasoline']).sort_values('date')
+            df = df.dropna(subset=['gasoline']).sort_values('date').copy()
+            # Approximate pump-equivalent values using standard reference
+            # densities. These are explicitly estimates, not local retail quotes.
+            df['gasoline_liter_est'] = df['gasoline'] * 0.00074
+            df['diesel_liter_est'] = df['diesel'] * 0.00084
+            next_date = df['date'].shift(-1)
+            df['days_current'] = (next_date - df['date']).dt.days
+            df.loc[df.index[-1], 'days_current'] = max(
+                0, (pd.Timestamp.now().normalize() - df.iloc[-1]['date']).days
+            )
+            return df
         except Exception as e:
             self.logger.error(f"Oil Fetch Error: {e}")
             raise e
@@ -28,13 +38,19 @@ class OilIndicator(BaseIndicator):
         df_long = df.iloc[-200:].copy() 
         
         # Color Palette - Premium Oil Theme
-        c_gasoline = '#f39c12'  # Orange (消费端)
-        c_diesel = '#3498db'    # Dodger Blue (工业端)
+        c_gasoline = '#C95A55'
+        c_diesel = '#3976A8'
         
         # --- Top: Recent ---
         ax_top = axes[0]
         ax_top.step(df_short['date'], df_short['gasoline'], where='post', color=c_gasoline, linewidth=3.5, label='汽油价格', zorder=3)
         ax_top.step(df_short['date'], df_short['diesel'], where='post', color=c_diesel, linewidth=3, label='柴油价格', zorder=2)
+        latest = df_short.iloc[-1]
+        ax_top.text(
+            0.02, 0.96,
+            f"估算：汽油 {latest['gasoline_liter_est']:.2f} 元/L · 柴油 {latest['diesel_liter_est']:.2f} 元/L · 已持续 {int(latest['days_current'])} 天",
+            transform=ax_top.transAxes, va='top', ha='left', fontsize=10, color='#4B5563',
+        )
         
         # Draw current value line for gasoline
         self.plotter.draw_current_line(df_short['gasoline'].iloc[-1], ax_top, c_gasoline)
@@ -48,11 +64,17 @@ class OilIndicator(BaseIndicator):
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['gasoline'], color=c_gasoline, alpha=0.9, linewidth=1.8, label='汽油')
-        ax_bot.plot(df_long['date'], df_long['diesel'], color=c_diesel, alpha=0.9, linewidth=1.5, label='柴油')
-        
-        # Gradient fill for gasoline (consumer focus)
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['gasoline'], color=c_gasoline, alpha_top=0.2)
+        baseline = min(df_long['gasoline'].min(), df_long['diesel'].min()) * 0.96
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['gasoline'],
+                                   color=c_gasoline, alpha_top=0.13, baseline=baseline,
+                                   zorder=1, step='post')
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['diesel'],
+                                   color=c_diesel, alpha_top=0.11, baseline=baseline,
+                                   zorder=1, step='post')
+        ax_bot.step(df_long['date'], df_long['gasoline'], where='post', color=c_gasoline,
+                    alpha=0.9, linewidth=1.8, label='汽油', zorder=4)
+        ax_bot.step(df_long['date'], df_long['diesel'], where='post', color=c_diesel,
+                    alpha=0.9, linewidth=1.5, label='柴油', zorder=4)
         
         self.plotter.fmt_single(fig, ax_bot, title='历史走势 (200次调整全景)', 
                               ylabel='元/吨', rotation=15,

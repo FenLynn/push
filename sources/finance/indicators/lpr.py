@@ -19,7 +19,10 @@ class LPRIndicator(BaseIndicator):
             # Ensure numeric
             for col in ['lpr1y', 'lpr5y', 'rate1', 'rate2']:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-            return df.sort_values('date')
+            df = df.sort_values('date').dropna(subset=['lpr1y', 'lpr5y']).copy()
+            changed = df['lpr1y'].ne(df['lpr1y'].shift()) | df['lpr5y'].ne(df['lpr5y'].shift())
+            df['unchanged_months'] = df.groupby(changed.cumsum()).cumcount() + 1
+            return df
         except Exception as e:
             self.logger.error(f"LPR Fetch Error: {e}")
             raise e
@@ -43,6 +46,12 @@ class LPRIndicator(BaseIndicator):
         ax_top = axes[0]
         ax_top.step(df_short['date'], df_short['lpr1y'], where='post', color=c_1y, linewidth=3.5, label='LPR 1Y', zorder=3)
         ax_top.step(df_short['date'], df_short['lpr5y'], where='post', color=c_5y, linewidth=3, label='LPR 5Y', zorder=2)
+        current = df_short.iloc[-1]
+        ax_top.text(
+            0.02, 0.96,
+            f"现值：1Y {current['lpr1y']:.2f}% · 5Y {current['lpr5y']:.2f}% · 已持续 {int(current['unchanged_months'])} 个月",
+            transform=ax_top.transAxes, va='top', ha='left', fontsize=10, color='#4B5563',
+        )
         
         # Benchmarks as faint dotted lines (weakened)
         if 'rate1' in df_short.columns:
@@ -64,9 +73,9 @@ class LPRIndicator(BaseIndicator):
         ax_bot = axes[1]
         baseline = min(df_long['lpr1y'].min(), df_long['lpr5y'].min()) * 0.96
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['lpr1y'], color=c_1y,
-                                   alpha_top=0.22, baseline=baseline, zorder=1)
+                                   alpha_top=0.22, baseline=baseline, zorder=1, step='post')
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['lpr5y'], color=c_5y,
-                                   alpha_top=0.14, baseline=baseline, zorder=1)
+                                   alpha_top=0.14, baseline=baseline, zorder=1, step='post')
         ax_bot.step(df_long['date'], df_long['lpr1y'], where='post', color=c_1y,
                     linewidth=1.8, alpha=0.95, label='LPR 1Y', zorder=3)
         ax_bot.step(df_long['date'], df_long['lpr5y'], where='post', color=c_5y,

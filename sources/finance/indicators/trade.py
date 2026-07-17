@@ -48,10 +48,7 @@ class TradeIndicator(BaseIndicator):
         frame = df.sort_values("date").copy()
         latest = frame["date"].max()
         recent = frame[frame["date"] >= latest - pd.DateOffset(months=18)]
-        annual = (
-            frame.set_index("date")[["export_amount", "import_amount"]]
-            .resample("YE").sum(min_count=10).dropna().tail(12).reset_index()
-        )
+        monthly_history = frame.tail(120).copy()
 
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         export_color = "#c94844"
@@ -65,11 +62,18 @@ class TradeIndicator(BaseIndicator):
         )
         self.plotter.set_no_margins(axes[0])
 
-        axes[1].plot(annual["date"], annual["export_amount"], color=export_color, marker="o", markersize=3, label="年度出口")
-        axes[1].plot(annual["date"], annual["import_amount"], color=import_color, marker="o", markersize=3, label="年度进口")
+        baseline = min(monthly_history["export_amount"].min(), monthly_history["import_amount"].min()) * 0.95
+        self.plotter.fill_gradient(axes[1], monthly_history["date"], monthly_history["export_amount"],
+                                   color=export_color, alpha_top=0.16, baseline=baseline, zorder=1)
+        self.plotter.fill_gradient(axes[1], monthly_history["date"], monthly_history["import_amount"],
+                                   color=import_color, alpha_top=0.13, baseline=baseline, zorder=1)
+        axes[1].plot(monthly_history["date"], monthly_history["export_amount"],
+                     color=export_color, linewidth=1.7, label="月度出口", zorder=4)
+        axes[1].plot(monthly_history["date"], monthly_history["import_amount"],
+                     color=import_color, linewidth=1.7, label="月度进口", zorder=4)
         self.plotter.fmt_single(
-            fig, axes[1], title="年度进出口规模", ylabel="亿美元",
-            rotation=0, data=[annual["export_amount"], annual["import_amount"]],
+            fig, axes[1], title="月度进出口规模（10年）", ylabel="亿美元",
+            rotation=15, data=[monthly_history["export_amount"], monthly_history["import_amount"]],
         )
         self.plotter.set_no_margins(axes[1])
 

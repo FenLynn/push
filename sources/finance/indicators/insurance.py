@@ -58,9 +58,9 @@ class InsuranceIndicator(BaseIndicator):
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         premium_color = "#3976a8"
         yoy_color = "#c94844"
-        axes[0].bar(
-            recent["date"], recent["premium_monthly"], width=20,
-            color=premium_color, alpha=0.58, label="当月原保险保费"
+        self.plotter.gradient_bars(
+            axes[0], recent["date"], recent["premium_monthly"], width=20,
+            color=premium_color, label="当月原保险保费",
         )
         right = axes[0].twinx()
         right.plot(
@@ -76,9 +76,14 @@ class InsuranceIndicator(BaseIndicator):
         )
         self.plotter.set_no_margins(axes[0])
 
+        baseline = annual["premium_cumulative"].min() * 0.96
+        self.plotter.fill_gradient(
+            axes[1], annual["date"], annual["premium_cumulative"],
+            color=premium_color, alpha_top=0.22, baseline=baseline, zorder=1,
+        )
         axes[1].plot(
             annual["date"], annual["premium_cumulative"],
-            color=premium_color, marker="o", markersize=3, linewidth=1.6
+            color=premium_color, marker="o", markersize=3, linewidth=1.6, zorder=4,
         )
         self.plotter.fmt_single(
             fig, axes[1], title="完整年度原保险保费收入",

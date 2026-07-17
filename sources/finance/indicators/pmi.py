@@ -23,7 +23,7 @@ class PMIIndicator(BaseIndicator):
         # History: 20 years (240 months)
         df_long = df.iloc[-240:].copy() 
         
-        c_manu = '#2c3e50' # Midnight Blue (Manufacture)
+        c_manu = '#3976A8'
         c_non = '#f39c12'  # Amber (Non-Manufacture)
         c_line = '#c0392b' # Deep Red for Boom-Bust line
         
@@ -50,8 +50,9 @@ class PMIIndicator(BaseIndicator):
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['manufacture'],
-                                   color=c_manu, alpha_top=0.22, baseline=50, zorder=1)
+        self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['manufacture'],
+                                             baseline=50, positive_color='#C95A55',
+                                             negative_color='#3D8B68', alpha_top=0.25, zorder=1)
         ax_bot.plot(df_long['date'], df_long['manufacture'], color=c_manu,
                     linewidth=1.7, label='制造业', zorder=3)
         

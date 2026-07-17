@@ -31,7 +31,7 @@ class CommodityIndexIndicator(BaseIndicator):
         # History: 20 years (Weekly data, ensure enough rows)
         df_long = df.iloc[-1040:].copy() # 52 weeks * 20 years = 1040
         
-        color = '#c0392b' # Deep Red (Premium)
+        color = '#3976A8'
         
         # --- Top: Recent ---
         ax_top = axes[0]
@@ -44,9 +44,10 @@ class CommodityIndexIndicator(BaseIndicator):
         
         # --- Bottom: History ---
         ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['index'], color=color, linewidth=1.5)
-        # Gradient Fill
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['index'], color=color)
+        baseline = df_long['index'].min() * 0.96
+        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['index'],
+                                   color=color, baseline=baseline, zorder=1)
+        ax_bot.plot(df_long['date'], df_long['index'], color=color, linewidth=1.5, zorder=4)
         
         self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='指数', rotation=15, data=df_long['index'])
         self.plotter.set_no_margins(ax_bot)

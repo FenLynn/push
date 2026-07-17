@@ -30,7 +30,7 @@ class RealEstateIndicator(BaseIndicator):
         df_long = df.iloc[-240:].copy() 
         
         # Color Palette - Construction Orange Theme
-        c_index = '#d35400'    # Pumpkin (警示与行业色)
+        c_index = '#3976A8'
         c_baseline = '#7f8c8d' # Asbestos (中性线基准)
         
         # --- Top (Recent) ---
@@ -53,8 +53,9 @@ class RealEstateIndicator(BaseIndicator):
         
         # --- Bottom (History) ---
         ax_bot = axes[1]
+        baseline = df_long['value'].min() * 0.98
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['value'], color=c_index,
-                                   alpha_top=0.25, baseline=100, zorder=1)
+                                   alpha_top=0.25, baseline=baseline, zorder=1)
         ax_bot.plot(df_long['date'], df_long['value'], color=c_index, linewidth=1.8,
                     label='历史走势', zorder=3)
         ax_bot.axhline(y=100, color='#bdc3c7', linestyle='--', alpha=0.5, linewidth=1)

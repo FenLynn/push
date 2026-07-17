@@ -15,7 +15,7 @@ class ForexIndicator(BaseIndicator):
             self.logger.error(f"Forex Fetch Error: {e}")
             raise e
 
-    def plot_dual(self, ax, df):
+    def plot_dual(self, ax, df, fill_usd=False):
         ax_r = ax.twinx()
         usd = df['USD'] / 100
         eur = df['EUR'] / 100
@@ -27,7 +27,12 @@ class ForexIndicator(BaseIndicator):
         c_eur = '#3498db'  # Dodger Blue (主要对手)
         c_gbp = '#8e44ad'  # Wisteria (传统货币)
         c_jpy = '#95a5a6'  # Concrete (避险/套息 - 虚线)
-        
+        if fill_usd:
+            baseline = min(usd.min(), eur.min(), gbp.min()) * 0.98
+            self.plotter.fill_gradient(
+                ax, df['date'], usd, color=c_usd, alpha_top=0.14,
+                baseline=baseline, zorder=1,
+            )
         ax.plot(df['date'], usd, color=c_usd, linewidth=2.5, label='美元 (USD)', zorder=3)
         ax.plot(df['date'], eur, color=c_eur, linewidth=2, label='欧元 (EUR)', zorder=2)
         ax.plot(df['date'], gbp, color=c_gbp, linewidth=1.5, label='英镑 (GBP)', alpha=0.8, zorder=2)
@@ -65,11 +70,8 @@ class ForexIndicator(BaseIndicator):
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom ---
-        ax_bot, ax_bot_r = self.plot_dual(axes[1], df_long)
+        ax_bot, ax_bot_r = self.plot_dual(axes[1], df_long, fill_usd=True)
         ax_bot.legend().set_visible(False) # Hide legend on bottom chart
-        
-        # Gradient fill for USD
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['USD']/100, color='#e74c3c', alpha_top=0.2)
         
         self.plotter.fmt_twinx(fig, ax_bot, ax_bot_r, title='历史走势 (20年全景)', 
                              ylabel_left='', ylabel_right='',

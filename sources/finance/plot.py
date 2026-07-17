@@ -186,7 +186,7 @@ class Plotter:
                     ha='center', va='center', alpha=0.5, weight='bold')
 
     def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.3,
-                      baseline=0, where=None, zorder=1):
+                      baseline=0, where=None, zorder=1, step=None):
         """绘制从基准线向数据线逐渐加深、且交叉处无白缝的渐变阴影。"""
         import numpy as np
         import pandas as pd
@@ -200,7 +200,7 @@ class Plotter:
 
         collection = ax.fill_between(
             x_values, y_values, baseline, where=where_values,
-            interpolate=True, facecolor='none', edgecolor='none', zorder=zorder,
+            interpolate=True, step=step, facecolor='none', edgecolor='none', zorder=zorder,
         )
         rgb = mcolors.to_rgb(color)
         images = []
@@ -231,6 +231,37 @@ class Plotter:
         ax.update_datalim(np.column_stack([x_values[valid], y_values[valid]]))
         ax.autoscale_view()
         return images
+
+    def gradient_bars(self, ax, x, height, width=0.7, color='#3976A8',
+                      bottom=0, alpha_top=0.82, alpha_bottom=0.16,
+                      label=None, zorder=2):
+        """Draw bars whose colour is light at the base and deep at the top."""
+        import numpy as np
+        import pandas as pd
+
+        heights = np.asarray(pd.to_numeric(height, errors='coerce'), dtype=float)
+        bottoms = np.broadcast_to(np.asarray(bottom, dtype=float), heights.shape)
+        bars = ax.bar(
+            x, heights, width=width, bottom=bottoms, color=color,
+            alpha=alpha_bottom, edgecolor='none', label=label, zorder=zorder,
+        )
+        rgb = mcolors.to_rgb(color)
+        for bar, value, base in zip(bars, heights, bottoms):
+            if not np.isfinite(value) or value == 0:
+                continue
+            left, right = bar.get_x(), bar.get_x() + bar.get_width()
+            y0, y1 = sorted((base, base + value))
+            levels = np.linspace(0, 1, 256)
+            if value < 0:
+                levels = levels[::-1]
+            rgba = np.empty((256, 1, 4), dtype=float)
+            rgba[:, :, :3] = rgb
+            rgba[:, 0, 3] = alpha_bottom + (alpha_top - alpha_bottom) * levels
+            ax.imshow(
+                rgba, extent=(left, right, y0, y1), origin='lower', aspect='auto',
+                interpolation='bicubic', clip_path=bar, clip_on=True, zorder=zorder + 0.1,
+            )
+        return bars
 
     def fill_diverging_gradient(self, ax, x, y, baseline=0,
                                 positive_color='#C94F45', negative_color='#3D8B68',

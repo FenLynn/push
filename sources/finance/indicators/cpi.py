@@ -81,9 +81,9 @@ class CPIIndicator(BaseIndicator):
         # reconstruct an unlabeled synthetic price-level index. ---
         ax_bot = axes[1]
         self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['cpi_y'],
-                                             positive_color=c_infl_line, negative_color='#3D8B68',
+                                             positive_color='#C95A55', negative_color='#3D8B68',
                                              alpha_top=0.24, zorder=1)
-        ax_bot.plot(df_long['date'], df_long['cpi_y'], color=c_infl_line, linewidth=1.8,
+        ax_bot.plot(df_long['date'], df_long['cpi_y'], color='#3976A8', linewidth=1.8,
                     label='CPI同比', zorder=3)
         ax_bot.axhline(y=0, color='#95a5a6', linestyle='--', linewidth=0.8, alpha=0.6)
         self.plotter.fmt_single(fig, ax_bot, title='CPI同比长期走势（20年）',

@@ -33,14 +33,27 @@ class InternationalRateIndicator(BaseIndicator):
                 df_jpy['jpy'] = pd.to_numeric(df_jpy['jpy'], errors='coerce')
             except Exception as e:
                 self.logger.warning(f"Japan Rate Fetch Failed: {e}")
+
+            # China reference: 1Y LPR. It is a loan prime rate rather than the
+            # same policy instrument as the overseas series, so render it gray.
+            cached_lpr = self.manager.df_cache.get('lpr')
+            if cached_lpr is not None and {'date', 'lpr1y'}.issubset(cached_lpr.columns):
+                df_cn = cached_lpr[['date', 'lpr1y']].rename(columns={'lpr1y': 'cn'}).copy()
+            else:
+                df_cn = ak.macro_china_lpr()[['TRADE_DATE', 'LPR1Y']].rename(
+                    columns={'TRADE_DATE': 'date', 'LPR1Y': 'cn'}
+                )
+            df_cn['date'] = pd.to_datetime(df_cn['date'])
+            df_cn['cn'] = pd.to_numeric(df_cn['cn'], errors='coerce')
             
             # Merge
             df = pd.merge(df_usa, df_eur, on='date', how='outer')
             df = pd.merge(df, df_jpy, on='date', how='outer')
+            df = pd.merge(df, df_cn, on='date', how='outer')
             df = df.sort_values('date')
             
             # Forward fill to create continuous rates
-            df[['usa', 'eur', 'jpy']] = df[['usa', 'eur', 'jpy']].ffill()
+            df[['usa', 'eur', 'jpy', 'cn']] = df[['usa', 'eur', 'jpy', 'cn']].ffill()
             
             return df.dropna(subset=['usa'], how='all') # Keep if at least one is present
         except Exception as e:
@@ -63,6 +76,7 @@ class InternationalRateIndicator(BaseIndicator):
         c_usa = '#e74c3c'  # Crimson (美联储 - 全球定价基准)
         c_eur = '#3498db'  # Dodger Blue (欧央行)
         c_jpy = '#9b59b6'  # Amethyst (日央行)
+        c_cn = '#8A94A0'
         
         # --- Top (Recent) ---
         ax_top = axes[0]
@@ -71,6 +85,8 @@ class InternationalRateIndicator(BaseIndicator):
             ax_top.step(df_short['date'], df_short['eur'], where='post', color=c_eur, linewidth=2.5, label='ECB (Euro)')
         if 'jpy' in df_short.columns:
             ax_top.step(df_short['date'], df_short['jpy'], where='post', color=c_jpy, linewidth=2.5, label='BOJ (Japan)')
+        ax_top.step(df_short['date'], df_short['cn'], where='post', color=c_cn,
+                    linewidth=1.8, linestyle='--', label='中国1Y LPR（参考）')
         
         # Draw current value line for Fed
         self.plotter.draw_current_line(df_short.iloc[-1]['usa'], ax_top, c_usa)
@@ -80,7 +96,7 @@ class InternationalRateIndicator(BaseIndicator):
             
         self.plotter.fmt_single(fig, ax_top, title='全球视野-主要央行基准利率（近15个月）',
                                ylabel='利率 (%)', rotation=15, 
-                               data=[df_short['usa'], df_short.get('eur', [0]), df_short.get('jpy', [0])])
+                               data=[df_short['usa'], df_short.get('eur', [0]), df_short.get('jpy', [0]), df_short['cn']])
         self.plotter.set_no_margins(ax_top)
         
         # --- Bottom (History) ---
@@ -90,13 +106,15 @@ class InternationalRateIndicator(BaseIndicator):
             ax_bot.plot(df_long['date'], df_long['eur'], color=c_eur, linewidth=1.2, alpha=0.7, label='Euro')
         if 'jpy' in df_long.columns:
             ax_bot.plot(df_long['date'], df_long['jpy'], color=c_jpy, linewidth=1.2, alpha=0.7, label='Japan')
+        ax_bot.plot(df_long['date'], df_long['cn'], color=c_cn, linewidth=1.1,
+                    alpha=0.8, linestyle='--', label='China 1Y LPR')
             
         # Gradient Fill for USA (emphasize dominance)
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['usa'], color=c_usa, alpha_top=0.2)
         
         self.plotter.fmt_single(fig, ax_bot, title='全球主要利率历史趋势 (20年全景)', 
                                ylabel='利率 (%)', rotation=15, 
-                               data=[df_long['usa'], df_long.get('eur', [0]), df_long.get('jpy', [0])])
+                               data=[df_long['usa'], df_long.get('eur', [0]), df_long.get('jpy', [0]), df_long['cn']])
         self.plotter.set_no_margins(ax_bot)
         
         path = "output/finance/international_rate.png"

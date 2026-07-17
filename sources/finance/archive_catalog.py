@@ -64,6 +64,7 @@ ARCHIVE_CATALOG = {
         "metrics": {
             "lpr1y": {"label": "LPR 1年期", "unit": "%"},
             "lpr5y": {"label": "LPR 5年期以上", "unit": "%"},
+            "unchanged_months": {"label": "当前报价持续", "unit": "个月"},
         },
     },
     "shibor": {
@@ -139,6 +140,7 @@ ARCHIVE_CATALOG = {
         "metrics": {
             "nev_retail_sales": {"label": "新能源乘用车零售销量", "unit": "万辆"},
             "nev_retail_share": {"label": "新能源零售渗透率", "unit": "%"},
+            "nev_retail_yoy": {"label": "新能源零售同比", "unit": "%"},
         },
     },
     "realestate": {
@@ -180,6 +182,9 @@ ARCHIVE_CATALOG = {
         "metrics": {
             "gasoline": {"label": "汽油基准价", "unit": "元/吨"},
             "diesel": {"label": "柴油基准价", "unit": "元/吨"},
+            "gasoline_liter_est": {"label": "汽油折算估值", "unit": "元/L"},
+            "diesel_liter_est": {"label": "柴油折算估值", "unit": "元/L"},
+            "days_current": {"label": "本轮价格持续", "unit": "天"},
         },
     },
     "internationalrate": {
@@ -188,6 +193,7 @@ ARCHIVE_CATALOG = {
             "usa": {"label": "美联储政策利率", "unit": "%"},
             "eur": {"label": "欧洲央行政策利率", "unit": "%"},
             "jpy": {"label": "日本央行政策利率", "unit": "%"},
+            "cn": {"label": "中国1年期LPR参考", "unit": "%"},
         },
     },
     "news": {

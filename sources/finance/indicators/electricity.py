@@ -60,10 +60,12 @@ class ElectricityIndicator(BaseIndicator):
         annual["annual_yoy"] = annual["cumulative"].pct_change() * 100
 
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
-        power_color = "#d49a22"
-        yoy_color = "#3976a8"
-        axes[0].bar(quarters["date"], quarters["quarter_total"], width=45,
-                    color=power_color, alpha=0.72, label="季度用电量")
+        power_color = "#3976A8"
+        yoy_color = "#C95A55"
+        self.plotter.gradient_bars(
+            axes[0], quarters["date"], quarters["quarter_total"], width=45,
+            color=power_color, label="季度用电量",
+        )
         right = axes[0].twinx()
         right.plot(quarters["date"], quarters["electricity_cumulative_yoy"], color=yoy_color,
                    marker="o", markersize=5, linewidth=2, label="累计同比")
@@ -74,8 +76,10 @@ class ElectricityIndicator(BaseIndicator):
         )
         self.plotter.set_no_margins(axes[0])
 
-        axes[1].bar(annual["date"], annual["cumulative"], width=180,
-                    color=power_color, alpha=0.52, label="年度用电量")
+        self.plotter.gradient_bars(
+            axes[1], annual["date"], annual["cumulative"], width=180,
+            color=power_color, label="年度用电量",
+        )
         annual_right = axes[1].twinx()
         annual_right.plot(annual["date"], annual["annual_yoy"], color=yoy_color,
                           marker="o", linewidth=1.8, label="年度同比", zorder=3)

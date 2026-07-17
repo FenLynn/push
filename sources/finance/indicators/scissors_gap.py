@@ -100,7 +100,7 @@ class ScissorsGapIndicator(BaseIndicator):
         self.plotter.fill_diverging_gradient(ax_bot, df_long['date'], df_long['gap'],
                                              positive_color='#C94F45', negative_color='#3D8B68',
                                              alpha_top=0.3, zorder=1)
-        ax_bot.plot(df_long['date'], df_long['gap'], color=c_gap, linewidth=1.8,
+        ax_bot.plot(df_long['date'], df_long['gap'], color='#3976A8', linewidth=1.8,
                     alpha=0.95, label='Gap (CPI-PPI)', zorder=3)
         ax_bot.axhline(y=0, color='#95a5a6', linestyle='--', linewidth=1.5, alpha=0.7)
         

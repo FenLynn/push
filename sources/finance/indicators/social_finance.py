@@ -53,9 +53,9 @@ class SocialFinanceIndicator(BaseIndicator):
         total_color = "#3976a8"
         loan_color = "#d88932"
 
-        axes[0].bar(
-            recent["date"], recent["social_finance_increment"], width=20,
-            color=total_color, alpha=0.72, label="社融增量",
+        self.plotter.gradient_bars(
+            axes[0], recent["date"], recent["social_finance_increment"], width=20,
+            color=total_color, label="社融增量",
         )
         right = axes[0].twinx()
         right.plot(recent["date"], recent["social_finance_yoy"], color=loan_color,
@@ -68,10 +68,15 @@ class SocialFinanceIndicator(BaseIndicator):
             data_right=recent["social_finance_yoy"],
         )
         self.plotter.set_no_margins(axes[0])
+        tick_rows = recent.iloc[::2]
+        axes[0].set_xticks(tick_rows["date"])
+        axes[0].set_xticklabels(tick_rows["date"].dt.strftime('%Y%m'))
 
         history = frame.tail(120).copy()
-        axes[1].bar(history["date"], history["social_finance_increment"], width=20,
-                    color=total_color, alpha=0.55, label="单月社融")
+        self.plotter.gradient_bars(
+            axes[1], history["date"], history["social_finance_increment"], width=20,
+            color=total_color, label="单月社融",
+        )
         history_right = axes[1].twinx()
         history_right.plot(history["date"], history["social_finance_yoy"], color=loan_color,
                            linewidth=1.7, label="同比", zorder=3)
