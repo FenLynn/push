@@ -3,7 +3,7 @@ import pandas as pd
 from .base import BaseIndicator
 
 class CrossBorderIndicator(BaseIndicator):
-    """中美利差 (跨境流动性压力)"""
+    """中美十年期国债收益率及美债减中债利差。"""
     
     def fetch_data(self) -> pd.DataFrame:
         try:
@@ -50,7 +50,7 @@ class CrossBorderIndicator(BaseIndicator):
         self.plotter.draw_current_line(df_short['us_10y'].iloc[-1], ax_top, c_us)
         self.plotter.draw_current_line(df_short['cn_10y'].iloc[-1], ax_top, c_cn)
         
-        self.plotter.fmt_single(fig, ax_top, title='跨境流动性-中美10年期国债收益率 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='中美10年期国债收益率（近期13月）',
                                ylabel='收益率(%)', rotation=15, 
                                data=[df_short['us_10y'], df_short['cn_10y']])
         self.plotter.set_no_margins(ax_top)
@@ -59,12 +59,12 @@ class CrossBorderIndicator(BaseIndicator):
         ax_bot = axes[1]
         
         # Area Chart for Spread
-        # Green if US > CN (Pressure), Red if US < CN (Inflow) - Convention debatable
-        # Let's keep it simple: Spread Value
+        # Sign only identifies which yield is higher; it does not prove a
+        # corresponding capital-flow direction.
         ax_bot.fill_between(df_long['date'], df_long['spread'], 0, where=(df_long['spread']>=0), 
-                           color='#27ae60', alpha=0.5, label='美债更高(流出压力)')
+                           color='#27ae60', alpha=0.5, label='美债收益率较高')
         ax_bot.fill_between(df_long['date'], df_long['spread'], 0, where=(df_long['spread']<0), 
-                           color='#e74c3c', alpha=0.5, label='中债更高(流入动力)')
+                           color='#e74c3c', alpha=0.5, label='中债收益率较高')
         ax_bot.plot(df_long['date'], df_long['spread'], color='#7f8c8d', linewidth=0.8)
         
         # Zero line

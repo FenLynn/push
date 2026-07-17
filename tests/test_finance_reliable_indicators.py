@@ -5,6 +5,8 @@ from sources.finance.indicators.electricity import ElectricityIndicator
 from sources.finance.indicators.margin import MarginIndicator
 from sources.finance.indicators.social_finance import SocialFinanceIndicator
 from sources.finance.indicators.trade import TradeIndicator
+from sources.finance.indicators.insurance import InsuranceIndicator
+from sources.finance.indicators.nev_sale import NEVSaleIndicator
 
 
 def test_social_finance_keeps_monthly_observations_without_interpolation():
@@ -81,3 +83,33 @@ def test_margin_discards_exchange_zero_placeholder():
     normalized = MarginIndicator._normalize_exchange(raw, "sh")
 
     assert normalized["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-07-15"]
+
+
+def test_insurance_derives_monthly_value_without_cross_year_subtraction():
+    raw = pd.DataFrame({
+        "日期": ["2025-12-01", "2026-01-01", "2026-02-01"],
+        "最新值": [1_200_000, 200_000, 350_000],
+    })
+
+    normalized = InsuranceIndicator._normalize(raw)
+
+    assert pd.isna(normalized.iloc[0]["premium_monthly"])
+    assert normalized["premium_monthly"].iloc[1:].tolist() == [20.0, 15.0]
+    assert normalized.iloc[-1]["premium_cumulative"] == 35.0
+
+
+def test_nev_uses_retail_sales_and_retail_penetration_fields():
+    payload = [
+        {"dataList": [{"month": "6月", "2026年": [148.1, 120.0, 100.6753, 20.0]}]},
+        {"dataList": []},
+        {"dataList": [{
+            "月份": "2026-6月",
+            "ICE": [87.5, 59.5, 37.1, 37.2],
+            "NEV": [148.1, 100.6753, 62.9, 62.8],
+        }]},
+    ]
+
+    normalized = NEVSaleIndicator._normalize(payload)
+
+    assert normalized.iloc[0]["nev_retail_sales"] == 100.6753
+    assert normalized.iloc[0]["nev_retail_share"] == 62.8

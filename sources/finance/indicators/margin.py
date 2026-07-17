@@ -1,6 +1,7 @@
 import time
 
 import akshare as ak
+import matplotlib.ticker as ticker
 import pandas as pd
 
 from .base import BaseIndicator
@@ -62,22 +63,42 @@ class MarginIndicator(BaseIndicator):
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         balance_color = "#c94844"
         buy_color = "#3976a8"
-        axes[0].plot(recent["date"], recent["margin_balance"], color=balance_color, linewidth=2, label="融资余额")
+        # Trading-day ordinal removes weekend/holiday gaps without inventing
+        # observations. Date labels still show the underlying exchange date.
+        recent = recent.reset_index(drop=True)
+        recent_x = recent.index.to_numpy()
+        axes[0].plot(recent_x, recent["margin_balance"], color=balance_color, linewidth=2, label="融资余额")
         right = axes[0].twinx()
-        right.bar(recent["date"], recent["margin_buy"], color=buy_color, alpha=0.28, width=0.8, label="融资买入额")
+        right.bar(recent_x, recent["margin_buy"], color=buy_color, alpha=0.28, width=0.72, label="融资买入额")
+        tick_step = max(1, len(recent) // 6)
+        tick_positions = list(range(0, len(recent), tick_step))
+        if tick_positions[-1] != len(recent) - 1:
+            tick_positions.append(len(recent) - 1)
+        axes[0].xaxis.set_major_locator(ticker.FixedLocator(tick_positions))
+        axes[0].xaxis.set_major_formatter(ticker.FixedFormatter([
+            recent.iloc[position]["date"].strftime("%m-%d") for position in tick_positions
+        ]))
         self.plotter.fmt_twinx(
             fig, axes[0], right, title="沪深两融（近60个交易日）",
             ylabel_left="融资余额（亿元）", ylabel_right="买入额（亿元）", rotation=25,
             data_left=recent["margin_balance"], data_right=recent["margin_buy"],
         )
-        self.plotter.set_no_margins(axes[0])
+        axes[0].set_xlim(-0.6, len(recent) - 0.4)
 
-        axes[1].plot(history["date"], history["margin_balance"], color=balance_color, linewidth=1.5)
+        history = history.reset_index(drop=True)
+        history_x = history.index.to_numpy()
+        axes[1].plot(history_x, history["margin_balance"], color=balance_color, linewidth=1.5)
+        year_change = history["date"].dt.year.ne(history["date"].dt.year.shift())
+        year_positions = history.index[year_change].tolist()
+        axes[1].xaxis.set_major_locator(ticker.FixedLocator(year_positions))
+        axes[1].xaxis.set_major_formatter(ticker.FixedFormatter([
+            str(history.iloc[position]["date"].year) for position in year_positions
+        ]))
         self.plotter.fmt_single(
             fig, axes[1], title="融资余额长期走势", ylabel="亿元",
             rotation=15, data=history["margin_balance"],
         )
-        self.plotter.set_no_margins(axes[1])
+        axes[1].set_xlim(0, max(1, len(history) - 1))
 
         path = "output/finance/margin.png"
         self.plotter.save(fig, path)

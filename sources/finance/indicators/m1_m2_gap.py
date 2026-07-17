@@ -3,7 +3,7 @@ import pandas as pd
 from .base import BaseIndicator
 
 class M1M2GapIndicator(BaseIndicator):
-    """M1-M2 剪刀差 (市场活化度指标)"""
+    """M1 与 M2 同比增速差，描述货币结构变化。"""
     
     def fetch_data(self) -> pd.DataFrame:
         try:
@@ -56,7 +56,7 @@ class M1M2GapIndicator(BaseIndicator):
         self.plotter.draw_current_line(df_short['m1_growth'].iloc[-1], ax_top, c_m1)
         self.plotter.draw_current_line(df_short['m2_growth'].iloc[-1], ax_top, c_m2)
         
-        self.plotter.fmt_single(fig, ax_top, title='市场活化度-M1 vs M2增速 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='M1 与 M2 同比增速（近期13月）',
                                ylabel='同比(%)', rotation=15, 
                                data=[df_short['m1_growth'], df_short['m2_growth']])
         self.plotter.set_no_margins(ax_top)
@@ -70,8 +70,8 @@ class M1M2GapIndicator(BaseIndicator):
         ax_bot.bar(df_long['date'], df_long['gap'], color=colors, width=20, alpha=0.8, label='M1-M2剪刀差')
         ax_bot.axhline(y=0, color='#95a5a6', linestyle='--', linewidth=1)
         
-        self.plotter.fmt_single(fig, ax_bot, title='历史剪刀差 (正值=市场活化)', 
-                               ylabel='Gap (%)', rotation=15, 
+        self.plotter.fmt_single(fig, ax_bot, title='M1-M2 同比增速差（20年）',
+                               ylabel='百分点', rotation=15,
                                data=df_long['gap'])
         self.plotter.set_no_margins(ax_bot)
         

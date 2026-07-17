@@ -64,25 +64,15 @@ class PPIIndicator(BaseIndicator):
                              data=df_short['ppi_growth'])
         self.plotter.set_no_margins(ax_top)
         
-        # --- Bottom: History (Show Index trend + Growth bars) ---
+        # --- Bottom: History. The "previous year = 100" index is exactly
+        # growth + 100, so plotting both would duplicate one measurement. ---
         ax_bot = axes[1]
-        # Main line: PPI Index (100-based)
-        ax_bot.plot(df_long['date'], df_long['ppi_index_yoy'], color=c_ppi, linewidth=2, label='PPI指数(上年=100)')
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['ppi_index_yoy'], color=c_ppi)
-        
-        # Secondary axis for Growth % bars
-        ax_bot_r = ax_bot.twinx()
-        # Use semi-transparent bars for growth to avoid clutter
-        ax_bot_r.bar(df_long['date'], df_long['ppi_growth'], width=20, alpha=0.3, color=c_growth, label='同比涨幅')
-        ax_bot_r.axhline(y=0, color='#636e72', linestyle=':', alpha=0.5)
-        
-        self.plotter.fmt_twinx(fig, ax_bot, ax_bot_r,
-                              title='历史走势 (20年)',
-                              ylabel_left='指数',
-                              ylabel_right='涨幅(%)',
-                              rotation=15,
-                              data_left=df_long['ppi_index_yoy'],
-                              data_right=df_long['ppi_growth'])
+        ax_bot.plot(df_long['date'], df_long['ppi_growth'], color=c_growth, linewidth=1.6, label='PPI同比')
+        ax_bot.fill_between(df_long['date'], df_long['ppi_growth'], 0, color=c_growth, alpha=0.18)
+        ax_bot.axhline(y=0, color='#636e72', linestyle='--', alpha=0.5, linewidth=0.8)
+        self.plotter.fmt_single(fig, ax_bot, title='PPI同比（20年）',
+                              ylabel='同比（%）', rotation=15,
+                              data=df_long['ppi_growth'])
         self.plotter.set_no_margins(ax_bot)
         
         path = "output/finance/ppi.png"

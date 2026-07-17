@@ -139,6 +139,7 @@ class Plotter:
         for spine in ax.spines.values():
             spine.set_visible(True)
             spine.set_color('#dfe6e9') # Lighter spines
+            spine.set_linewidth(0.8)
             
         ax.tick_params(axis='both', which='both', colors='#636e72', labelsize=10)
         
@@ -207,8 +208,14 @@ class Plotter:
         # Mirror y-axis formatting for right
         # self._beautify(ax_right, data_right) # Don't re-add grid
         ax_right.tick_params(axis='y', colors='#636e72', labelsize=10)
-        ax_right.spines['left'].set_visible(False)
-        ax_right.spines['right'].set_color('#dfe6e9')
+        for spine in ax_right.spines.values():
+            spine.set_visible(True)
+            spine.set_color('#dfe6e9')
+            spine.set_linewidth(0.8)
+        # The primary axis owns left/top/bottom. Drawing twin-axis spines on
+        # top of them makes those sides darker than the right border.
+        for side in ('left', 'top', 'bottom'):
+            ax_right.spines[side].set_visible(False)
         if ylabel_right:
             ax_right.set_ylabel(ylabel_right, fontsize=11, weight='bold', color='#2d3436')
         ax_right.grid(False)

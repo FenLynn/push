@@ -1,66 +1,109 @@
-import akshare as ak
 import pandas as pd
+import requests
+
 from .base import BaseIndicator
 
+
 class NEVSaleIndicator(BaseIndicator):
-    """新能源车销量 (New Energy Vehicle)"""
+    """CPCA new-energy passenger-car retail sales and retail penetration."""
+
+    SOURCE_URL = "http://data.cpcadata.com/api/chartlist"
+
+    @staticmethod
+    def _month_date(value) -> pd.Timestamp:
+        text = str(value or "").strip().replace("月份", "").replace("月", "")
+        if "-" not in text:
+            return pd.NaT
+        year, month = text.split("-", 1)
+        return pd.to_datetime(f"{year}-{int(month):02d}-01", errors="coerce")
+
+    @classmethod
+    def _normalize(cls, payload) -> pd.DataFrame:
+        if not isinstance(payload, list) or len(payload) < 3:
+            return pd.DataFrame()
+        sales_rows = []
+        for row in payload[0].get("dataList", []):
+            month_text = str(row.get("month") or row.get("月份") or "")
+            month_digits = "".join(char for char in month_text if char.isdigit())
+            if not month_digits:
+                continue
+            for key, values in row.items():
+                if not str(key).endswith("年") or not isinstance(values, list) or len(values) < 3:
+                    continue
+                date = pd.to_datetime(f"{str(key)[:4]}-{int(month_digits):02d}-01", errors="coerce")
+                sales_rows.append({"date": date, "nev_retail_sales": values[2]})
+
+        share_rows = []
+        for row in payload[2].get("dataList", []):
+            date = cls._month_date(row.get("月份"))
+            values = row.get("NEV")
+            if isinstance(values, list) and len(values) >= 4:
+                share_rows.append({"date": date, "nev_retail_share": values[3]})
+
+        sales = pd.DataFrame(sales_rows)
+        shares = pd.DataFrame(share_rows)
+        if sales.empty or shares.empty:
+            return pd.DataFrame()
+        frame = sales.merge(shares, on="date", how="left")
+        for column in ["nev_retail_sales", "nev_retail_share"]:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        return (
+            frame.dropna(subset=["date", "nev_retail_sales"])
+            .drop_duplicates("date", keep="last")
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
     def fetch_data(self) -> pd.DataFrame:
-        try:
-            df = ak.car_market_total_cpca()
-            # 月份, 2024年, 2025年, ...
-            # Melt to long format
-            df_melted = df.melt(id_vars=['月份'], var_name='year', value_name='sales')
-            df_melted['date'] = pd.to_datetime(df_melted['year'] + '-' + df_melted['月份'], format='%Y年-%m月')
-            df_melted['sales'] = pd.to_numeric(df_melted['sales'], errors='coerce')
-            return df_melted[['date', 'sales']].sort_values('date').dropna()
-        except Exception as e:
-            self.logger.error(f"NEV Sale Fetch Error: {e}")
-            raise e
+        response = requests.get(self.SOURCE_URL, params={"charttype": "6"}, timeout=30)
+        response.raise_for_status()
+        frame = self._normalize(response.json())
+        if frame.empty:
+            raise RuntimeError("CPCA NEV retail series returned no valid observations")
+        return frame
 
     def plot(self, df: pd.DataFrame) -> str:
-        fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
-        df['date'] = pd.to_datetime(df['date'])
-        
-        # 1. Standardized 13-month window
-        latest_date = df['date'].max()
-        short_threshold = latest_date - pd.DateOffset(months=13)
-        df_short = df[df['date'] >= short_threshold].copy()
-        
-        # History: last 5 years (60 months)
-        df_long = df.iloc[-60:].copy() 
-        
-        # Color Palette - Energy Green Theme
-        c_bar = '#16a085'  # Green Sea (销量柱状)
-        c_line = '#2ecc71' # Emerald (趋势高亮)
-        
-        # --- Top (Recent) ---
-        ax_top = axes[0]
-        # Bar + Line combo
-        ax_top.bar(df_short['date'], df_short['sales'], color=c_bar, alpha=0.6, width=20, label='月度销量(柱)', zorder=1)
-        ax_top.plot(df_short['date'], df_short['sales'], 'o-', markersize=6, color=c_line, linewidth=2.5, label='趋势(线)', zorder=2)
-        
-        # Data Labels (Optimized)
-        for x, y in zip(df_short['date'], df_short['sales']):
-            ax_top.text(x, y + (y * 0.05), f'{y:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold', color=c_bar)
+        frame = df.sort_values("date").copy()
+        recent = frame.tail(13)
+        if recent.empty:
+            raise RuntimeError("NEV retail series is empty")
+        frame["year"] = frame["date"].dt.year
+        frame["month"] = frame["date"].dt.month
+        frame["nev_retail_ytd"] = frame.groupby("year")["nev_retail_sales"].cumsum()
 
-        # Explicit legend
-        ax_top.legend(loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
-        
-        self.plotter.fmt_single(fig, ax_top, title='行业数据-新能源车销量 (近期13月)', 
-                               ylabel='万辆', rotation=15, 
-                               data=df_short['sales'])
-        self.plotter.set_no_margins(ax_top)
-        
-        # --- Bottom (History) ---
-        ax_bot = axes[1]
-        ax_bot.plot(df_long['date'], df_long['sales'], color=c_line, linewidth=2, label='历史趋势')
-        # Gradient Fill
-        self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['sales'], color=c_line, alpha_top=0.3)
-        
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (5年全景)', ylabel='万辆', rotation=15, 
-                               data=df_long['sales'])
-        self.plotter.set_no_margins(ax_bot)
-        
+        fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
+        sales_color = "#2d8b78"
+        share_color = "#c94844"
+        axes[0].bar(
+            recent["date"], recent["nev_retail_sales"], width=20,
+            color=sales_color, alpha=0.58, label="新能源乘用车零售"
+        )
+        right = axes[0].twinx()
+        right.plot(
+            recent["date"], recent["nev_retail_share"],
+            color=share_color, marker="o", markersize=3.5, linewidth=1.8,
+            label="新能源零售渗透率"
+        )
+        self.plotter.fmt_twinx(
+            fig, axes[0], right, title="新能源乘用车（最近13个月）",
+            ylabel_left="零售销量（万辆）", ylabel_right="零售渗透率（%）",
+            rotation=25, data_left=recent["nev_retail_sales"],
+            data_right=recent["nev_retail_share"]
+        )
+        self.plotter.set_no_margins(axes[0])
+
+        for year, group in frame.groupby("year"):
+            axes[1].plot(
+                group["month"], group["nev_retail_ytd"], marker="o",
+                markersize=3, linewidth=1.6, label=str(year)
+            )
+        axes[1].set_xticks(range(1, 13))
+        self.plotter.fmt_single(
+            fig, axes[1], title="年内累计零售销量对比",
+            xlabel="月份", ylabel="万辆", rotation=0, data=frame["nev_retail_ytd"]
+        )
+        axes[1].set_xlim(1, 12)
+
         path = "output/finance/nev_sale.png"
         self.plotter.save(fig, path)
         return path

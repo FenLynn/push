@@ -15,6 +15,14 @@ ARCHIVE_CATALOG = {
             "ppi_index_yoy": {"label": "PPI 同比指数", "unit": "index"},
         },
     },
+    "scissorsgap": {
+        "label": "CPI-PPI 同比增速差", "source": "Derived from AkShare/NBS", "frequency": "monthly", "quality": "derived",
+        "metrics": {
+            "cpi": {"label": "CPI 同比", "unit": "%"},
+            "ppi": {"label": "PPI 同比", "unit": "%"},
+            "gap": {"label": "CPI-PPI 同比增速差", "unit": "百分点"},
+        },
+    },
     "pmi": {
         "label": "采购经理指数", "source": "AkShare/NBS", "frequency": "monthly",
         "metrics": {
@@ -34,6 +42,14 @@ ARCHIVE_CATALOG = {
         "metrics": {
             "m2": {"label": "M2 余额", "unit": "亿元"},
             "m2_growth": {"label": "M2 同比增速", "unit": "%"},
+        },
+    },
+    "m1m2gap": {
+        "label": "M1-M2 同比增速差", "source": "Derived from AkShare/PBOC", "frequency": "monthly", "quality": "derived",
+        "metrics": {
+            "m1_growth": {"label": "M1 同比", "unit": "%"},
+            "m2_growth": {"label": "M2 同比", "unit": "%"},
+            "gap": {"label": "M1-M2 同比增速差", "unit": "百分点"},
         },
     },
     "socialfinance": {
@@ -97,6 +113,32 @@ ARCHIVE_CATALOG = {
         "metrics": {
             "margin_balance": {"label": "融资余额", "unit": "亿元"},
             "margin_buy": {"label": "融资买入额", "unit": "亿元"},
+        },
+    },
+    "marketpe": {
+        "label": "上证平均市盈率", "source": "AkShare/Legu", "frequency": "daily", "quality": "aggregated",
+        "metrics": {"pe": {"label": "上证平均市盈率", "unit": "倍"}},
+    },
+    "crossborder": {
+        "label": "中美十年期国债利差", "source": "Derived from AkShare/ChinaBond/US Treasury", "frequency": "daily", "quality": "derived",
+        "metrics": {
+            "cn_10y": {"label": "中国国债十年期", "unit": "%"},
+            "us_10y": {"label": "美国国债十年期", "unit": "%"},
+            "spread": {"label": "美债减中债利差", "unit": "百分点"},
+        },
+    },
+    "insurance": {
+        "label": "原保险保费收入", "source": "AkShare/Eastmoney/NFRA", "frequency": "monthly", "quality": "aggregated",
+        "metrics": {
+            "premium_monthly": {"label": "当月原保险保费", "unit": "亿元"},
+            "premium_cumulative_yoy": {"label": "累计保费同比", "unit": "%"},
+        },
+    },
+    "nevsale": {
+        "label": "新能源乘用车零售", "source": "CPCA", "frequency": "monthly", "quality": "industry",
+        "metrics": {
+            "nev_retail_sales": {"label": "新能源乘用车零售销量", "unit": "万辆"},
+            "nev_retail_share": {"label": "新能源零售渗透率", "unit": "%"},
         },
     },
     "realestate": {

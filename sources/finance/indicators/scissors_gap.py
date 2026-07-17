@@ -5,7 +5,7 @@ from .cpi import CPIIndicator
 from .ppi import PPIIndicator
 
 class ScissorsGapIndicator(BaseIndicator):
-    """CPI-PPI 剪刀差 (反映工业利润空间)"""
+    """CPI-PPI 同比增速差；只描述价格结构，不直接等同利润。"""
     def fetch_data(self) -> pd.DataFrame:
         try:
             # Re-use CPI and PPI data fetching logic
@@ -83,14 +83,14 @@ class ScissorsGapIndicator(BaseIndicator):
         
         # Enhanced fill gap with higher alpha
         ax_top.fill_between(df_short['date'], df_short['cpi'], df_short['ppi'], 
-                           where=(df_short['cpi'] >= df_short['ppi']), color=c_cpi, alpha=0.15, label='CPI>PPI (利润压缩)')
+                           where=(df_short['cpi'] >= df_short['ppi']), color=c_cpi, alpha=0.15, label='CPI同比较高')
         ax_top.fill_between(df_short['date'], df_short['cpi'], df_short['ppi'], 
-                           where=(df_short['cpi'] < df_short['ppi']), color=c_ppi, alpha=0.15, label='PPI>CPI (成本上涨)')
+                           where=(df_short['cpi'] < df_short['ppi']), color=c_ppi, alpha=0.15, label='PPI同比较高')
         
         # Explicit legend
         ax_top.legend(loc='upper right', frameon=True, framealpha=0.9, fontsize=9)
         
-        self.plotter.fmt_single(fig, ax_top, title='CPI-PPI 剪刀差: 工业利润空间 (近期13月)', 
+        self.plotter.fmt_single(fig, ax_top, title='CPI 与 PPI 同比（近期13月）',
                                ylabel='同比 (%)', rotation=15, 
                                data=[df_short['cpi'], df_short['ppi']])
         self.plotter.set_no_margins(ax_top)
@@ -104,8 +104,8 @@ class ScissorsGapIndicator(BaseIndicator):
         # Draw current value line
         self.plotter.draw_current_line(df_long.iloc[-1]['gap'], ax_bot, c_gap)
         
-        self.plotter.fmt_single(fig, ax_bot, title='剪刀差历史走势 (10年全景)', 
-                               ylabel='Gap (%)', rotation=15, 
+        self.plotter.fmt_single(fig, ax_bot, title='CPI-PPI 同比增速差（10年）',
+                               ylabel='百分点', rotation=15,
                                data=[df_long['gap']])
         self.plotter.set_no_margins(ax_bot)
         

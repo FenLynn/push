@@ -50,8 +50,6 @@ BLOCKED_INDICATOR_CLASSES = {
     BuffettIndicator,
     KeqiangIndicator,
     LiquidityPortraitIndicator,
-    NEVSaleIndicator,
-    InsuranceIndicator,
 }
 
 class FinanceSource(BaseSource):
@@ -149,7 +147,9 @@ class FinanceSource(BaseSource):
             'liquidity': '流动性与定价 (Liquidity & Pricing)',
             'liquidity_portrait': '流动性与定价 (Liquidity & Pricing)',
             'scissors_gap': '流动性与定价 (Liquidity & Pricing)',
+            'scissorsgap': '流动性与定价 (Liquidity & Pricing)',
             'international_rate': '流动性与定价 (Liquidity & Pricing)',
+            'internationalrate': '流动性与定价 (Liquidity & Pricing)',
             'commodity': '流动性与定价 (Liquidity & Pricing)',
             'forex': '流动性与定价 (Liquidity & Pricing)',
             'margin': '流动性与定价 (Liquidity & Pricing)',
@@ -160,20 +160,27 @@ class FinanceSource(BaseSource):
             'bond': '利率与债市 (Interest Rate & Bond)',
             
             'real_estate': '行业与板块 (Industry & Sector)',
+            'realestate': '行业与板块 (Industry & Sector)',
             'chengdu_real_estate': '行业与板块 (Industry & Sector)',
             'xian_real_estate': '行业与板块 (Industry & Sector)',
             'nev_sale': '行业与板块 (Industry & Sector)',
+            'nevsale': '行业与板块 (Industry & Sector)',
             'oil': '行业与板块 (Industry & Sector)',
             'sox': '行业与板块 (Industry & Sector)',
             'insurance': '行业与板块 (Industry & Sector)',
             'pig': '行业与板块 (Industry & Sector)',
             'sugar': '行业与板块 (Industry & Sector)',
             'energyindex': '行业与板块 (Industry & Sector)',
+            'commodityindex': '行业与板块 (Industry & Sector)',
             
             'm1_m2_gap': '深度分析 (Advanced Analysis)',
+            'm1m2gap': '深度分析 (Advanced Analysis)',
             'market_pe': '深度分析 (Advanced Analysis)',
+            'marketpe': '深度分析 (Advanced Analysis)',
             'cross_border': '深度分析 (Advanced Analysis)',
+            'crossborder': '深度分析 (Advanced Analysis)',
             'real_interest_rate': '深度分析 (Advanced Analysis)',
+            'realinterestrate': '深度分析 (Advanced Analysis)',
         }
         
         # Organize results by category
@@ -211,7 +218,9 @@ class FinanceSource(BaseSource):
                         'liquidity': '流动性画像',
                         'liquidity_portrait': '流动性画像',
                         'scissors_gap': 'CPI-PPI 剪刀差',
+                        'scissorsgap': 'CPI-PPI 同比增速差',
                         'international_rate': '全球央行利率 (Fed/ECB/BOJ)',
+                        'internationalrate': '全球央行利率 (Fed/ECB/BOJ)',
                         'forex': '外汇市场 (USD/EUR/JPY)',
                         'commodity': '商品黄金 (Gold)',
                         'margin': '融资融券 (Leverage)',
@@ -219,19 +228,27 @@ class FinanceSource(BaseSource):
                         'lpr': 'LPR 贷款报价利率',
                         'bond': '国债收益率 (10Y/2Y)',
                         'real_estate': '国房景气指数',
+                        'realestate': '国房景气指数',
                         'chengdu_real_estate': '成都楼市成交 (Transaction)',
                         'xian_real_estate': '西安二手挂牌 (Inventory)',
                         'nev_sale': '新能源车销量',
+                        'nevsale': '新能源乘用车零售',
                         'oil': '成品油价格 (Gas/Diesel)',
                         'sox': '费城半导体指数 (SOX)',
                         'insurance': '保险保费收入',
                         'pig': '猪肉价格 (Pig)',
                         'sugar': '白糖期货 (Sugar)',
+                        'commodityindex': '中国大宗商品价格指数',
+                        'energyindex': '中国能源价格指数',
                         
                         'm1_m2_gap': 'M1-M2 剪刀差 (活化度)',
+                        'm1m2gap': 'M1-M2 同比增速差',
                         'market_pe': '全A市场估值 (上证PE)',
+                        'marketpe': '上证平均市盈率',
                         'cross_border': '中美利差 (10Y)',
+                        'crossborder': '中美利差 (10Y)',
                         'real_interest_rate': '中国实际利率 (真实成本)',
+                        'realinterestrate': '中国事后实际利率代理',
                         
                     }
                     res['display_name'] = names.get(ind.name, ind.name.upper())
