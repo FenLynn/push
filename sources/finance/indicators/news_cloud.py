@@ -9,23 +9,25 @@ class NewsIndicator(BaseIndicator):
     """新闻联播云图 - 关键词分析"""
     def fetch_data(self) -> pd.DataFrame:
         try:
-            # Try last 3 days to find at least one day with data
+            # CCTV is the only accepted source here; a single-stock news fallback
+            # would silently change this indicator's meaning.
             today = datetime.now()
-            for i in range(3):
+            for i in range(7):
                 target_date = (today - timedelta(days=i)).strftime('%Y%m%d')
                 try:
                     self.logger.info(f"Fetching CCTV News for {target_date}...")
                     df = ak.news_cctv(date=target_date)
                     if not df.empty:
+                        df = df.rename(columns={'标题': 'title', '内容': 'content', 'date': 'date', '日期': 'date'})
+                        if 'title' not in df.columns or 'content' not in df.columns:
+                            raise ValueError(f"CCTV 新闻字段变化: {list(df.columns)}")
+                        df['date'] = pd.to_datetime(target_date)
+                        df['news_count'] = len(df)
                         return df
                 except:
                     continue
             
-            # Fallback to stock news if CCTV fails
-            self.logger.warning("CCTV News failed, falling back to EastMoney news...")
-            df = ak.stock_news_em(symbol="sh600000") # Sample big stock for news
-            df = df.rename(columns={'新闻标题': 'title', '新闻内容': 'content'})
-            return df
+            return pd.DataFrame(columns=['date', 'title', 'content', 'news_count'])
         except Exception as e:
             self.logger.error(f"News Fetch Error: {e}")
             raise e
@@ -53,7 +55,9 @@ class NewsIndicator(BaseIndicator):
                       '实现', '做好', '不断', '发挥', '提出', '要求', '进一步'}
         
         # WordCloud implementation with Mask
-        font_path = '/root/miniconda3/envs/py39/lib/python3.9/site-packages/matplotlib/mpl-data/fonts/msyh.ttf'
+        font_path = self.plotter.cjk_font_path
+        if not font_path:
+            raise RuntimeError('未找到可用于新闻词云的中文字体')
         mask_path = '/nfs/python/push/cloud/utils/china.jpg'
         
         mask = None
@@ -68,7 +72,8 @@ class NewsIndicator(BaseIndicator):
             font_path=font_path,
             width=1200,
             height=600,
-            background_color='#1a1a2e', # Global Night Dark
+            mode='RGBA',
+            background_color=None,
             max_words=100,
             mask=mask,
             contour_width=2,

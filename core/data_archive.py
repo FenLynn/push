@@ -194,6 +194,7 @@ class DataArchive:
                 continue
             values = pd.to_numeric(working[column], errors="coerce")
             series_frame = pd.DataFrame({"date": working[date_column], "value": values}).dropna()
+            series_frame = series_frame.drop_duplicates(subset=["date"], keep="last")
             if series_frame.empty:
                 continue
 

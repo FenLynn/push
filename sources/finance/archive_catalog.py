@@ -145,4 +145,61 @@ ARCHIVE_CATALOG = {
         "label": "全国房地产景气指数", "source": "AkShare/NBS", "frequency": "monthly",
         "metrics": {"value": {"label": "全国房地产景气指数", "unit": "index"}},
     },
+    "commodity": {
+        "label": "COMEX 黄金", "source": "AkShare/Sina/COMEX", "frequency": "daily", "quality": "market",
+        "metrics": {"close": {"label": "COMEX 黄金收盘价", "unit": "美元/盎司"}},
+    },
+    "sox": {
+        "label": "费城半导体指数", "source": "AkShare/Sina", "frequency": "daily", "quality": "market",
+        "metrics": {"close": {"label": "费城半导体指数", "unit": "点"}},
+    },
+    "sugar": {
+        "label": "中国食糖综合价格", "source": "AkShare/沐甜科技", "frequency": "daily", "quality": "industry",
+        "metrics": {
+            "price": {"label": "食糖综合价格", "unit": "元/吨"},
+            "spot_price": {"label": "食糖现货价格", "unit": "元/吨"},
+        },
+    },
+    "commodityindex": {
+        "label": "中国大宗商品价格指数", "source": "AkShare/Eastmoney", "frequency": "daily", "quality": "aggregated",
+        "metrics": {"index": {"label": "大宗商品价格指数", "unit": "点"}},
+    },
+    "energyindex": {
+        "label": "中国能源价格指数", "source": "AkShare/Eastmoney", "frequency": "daily", "quality": "aggregated",
+        "metrics": {"index": {"label": "能源价格指数", "unit": "点"}},
+    },
+    "pig": {
+        "label": "生猪市场价格指数", "source": "AkShare/行情宝", "frequency": "weekly", "quality": "industry",
+        "metrics": {
+            "index": {"label": "生猪价格指数", "unit": "点"},
+            "transaction_price": {"label": "生猪成交均价", "unit": "元/公斤"},
+        },
+    },
+    "oil": {
+        "label": "国内汽柴油基准价", "source": "AkShare/Eastmoney", "frequency": "event", "quality": "aggregated",
+        "metrics": {
+            "gasoline": {"label": "汽油基准价", "unit": "元/吨"},
+            "diesel": {"label": "柴油基准价", "unit": "元/吨"},
+        },
+    },
+    "internationalrate": {
+        "label": "主要央行政策利率", "source": "AkShare/金十数据", "frequency": "event", "quality": "aggregated",
+        "metrics": {
+            "usa": {"label": "美联储政策利率", "unit": "%"},
+            "eur": {"label": "欧洲央行政策利率", "unit": "%"},
+            "jpy": {"label": "日本央行政策利率", "unit": "%"},
+        },
+    },
+    "news": {
+        "label": "新闻联播条目数", "source": "AkShare/CCTV", "frequency": "daily", "quality": "official",
+        "metrics": {"news_count": {"label": "当期新闻条目", "unit": "条"}},
+    },
+    "realinterestrate": {
+        "label": "中国事后实际利率代理", "source": "Derived from AkShare/ChinaBond/NBS", "frequency": "monthly", "quality": "derived",
+        "metrics": {
+            "real": {"label": "实际利率代理", "unit": "%"},
+            "nominal": {"label": "十年国债月均收益率", "unit": "%"},
+            "cpi": {"label": "CPI 同比", "unit": "%"},
+        },
+    },
 }

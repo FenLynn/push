@@ -10,21 +10,15 @@ class SugarIndicator(BaseIndicator):
             # Debug: print columns if needed
             # print(f"Sugar columns: {df.columns}")
             
-            cols = df.columns.tolist()
-            # Find date column: look for '日期', 'date', or 'time'
-            date_col = next((c for c in cols if any(x in str(c).lower() for x in ['日期', 'date', 'time'])), None)
-            
-            # Find value column: look for '指数', '价格', 'price', 'value', 'close'
-            val_col = next((c for c in cols if any(x in str(c).lower() for x in ['指数', '价格', 'price', 'value', 'close']) and c != date_col), None)
-            
-            if not date_col or not val_col:
-                # Fallback: assume 0 is date, 1 is value
-                date_col = cols[0]
-                val_col = cols[1]
-
-            df = df.rename(columns={date_col: 'date', val_col: 'price'})
+            required = {'日期', '综合价格'}
+            if not required.issubset(df.columns):
+                raise ValueError(f"食糖源字段变化: {list(df.columns)}")
+            df = df.rename(columns={'日期': 'date', '综合价格': 'price', '现货价格': 'spot_price', '原糖价格': 'raw_sugar_price'})
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
             df['price'] = pd.to_numeric(df['price'], errors='coerce')
+            for column in ('spot_price', 'raw_sugar_price'):
+                if column in df.columns:
+                    df[column] = pd.to_numeric(df[column], errors='coerce')
             return df.dropna(subset=['price', 'date']).sort_values('date')
         except TypeError as e:
             if "Invalid value" in str(e) and "dtype 'str'" in str(e):

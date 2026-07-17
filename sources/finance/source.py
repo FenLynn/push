@@ -201,7 +201,7 @@ class FinanceSource(BaseSource):
                     # Enrich display name
                     names = {
                         'macro_digest': '宏观经济核心指标记分卡 (Macro Scorecard)',
-                        'news': '新闻联播云图 (News Cloud)',
+                        'news': '新闻联播主题 (CCTV)',
                         'cpi': 'CPI 居民消费价格指数', 
                         'socialfinance': '社融规模增量',
                         'ppi': 'PPI 工业生产者价格指数',
@@ -236,8 +236,8 @@ class FinanceSource(BaseSource):
                         'oil': '成品油价格 (Gas/Diesel)',
                         'sox': '费城半导体指数 (SOX)',
                         'insurance': '保险保费收入',
-                        'pig': '猪肉价格 (Pig)',
-                        'sugar': '白糖期货 (Sugar)',
+                        'pig': '生猪市场价格指数与成交均价',
+                        'sugar': '中国食糖综合价格与现货价',
                         'commodityindex': '中国大宗商品价格指数',
                         'energyindex': '中国能源价格指数',
                         

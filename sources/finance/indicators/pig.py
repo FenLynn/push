@@ -8,9 +8,11 @@ class PigIndicator(BaseIndicator):
     def fetch_data(self) -> pd.DataFrame:
         try:
             df = ak.index_hog_spot_price()
-            df = df.rename(columns={'日期': 'date', '指数': 'index'})
+            df = df.rename(columns={'日期': 'date', '指数': 'index', '成交均价': 'transaction_price'})
             df['date'] = pd.to_datetime(df['date'])
             df['index'] = pd.to_numeric(df['index'], errors='coerce')
+            if 'transaction_price' in df.columns:
+                df['transaction_price'] = pd.to_numeric(df['transaction_price'], errors='coerce')
             return df.dropna(subset=['index']).sort_values('date')
         except Exception as e:
             self.logger.error(f"Pig Fetch Error: {e}")

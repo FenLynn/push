@@ -1,6 +1,7 @@
 import akshare as ak
 import pandas as pd
 from .base import BaseIndicator
+from .cpi import CPIIndicator
 
 class RealInterestRateIndicator(BaseIndicator):
     """中国实际利率 (名义利率 - CPI)"""
@@ -14,20 +15,22 @@ class RealInterestRateIndicator(BaseIndicator):
             df_bond['nominal'] = pd.to_numeric(df_bond['nominal'], errors='coerce')
             
             # 2. Inflation (CPI Monthly) - Monthly
-            df_cpi = ak.macro_china_cpi_monthly() # columns: 日期, 今值
-            df_cpi = df_cpi.rename(columns={'日期':'date', '今值':'cpi'})
-            df_cpi['date'] = pd.to_datetime(df_cpi['date'])
-            df_cpi['cpi'] = pd.to_numeric(df_cpi['cpi'], errors='coerce')
+            cached_cpi = self.manager.df_cache.get('cpi')
+            if cached_cpi is not None and not cached_cpi.empty:
+                df_cpi = cached_cpi[['date', 'cpi_y']].rename(columns={'cpi_y': 'cpi'}).copy()
+            else:
+                df_cpi = CPIIndicator._normalize_nbs_frame(ak.macro_china_cpi())
+                df_cpi = df_cpi[['date', 'cpi_y']].rename(columns={'cpi_y': 'cpi'})
             
-            # 3. Merge
-            # We need to map monthly CPI to daily Bond dates
-            # Forward fill CPI (inflation data persists for the month)
-            df = pd.merge_asof(
-                df_bond.sort_values('date'), 
-                df_cpi.sort_values('date'), 
-                on='date', 
-                direction='backward' # Use latest past CPI
-            )
+            # 两种频率先统一为月度：10 年国债取自然月均值，CPI 保持月度同比。
+            # 不把月度 CPI 人为复制成每日值，避免制造不存在的日频“实际利率”。
+            df_bond['month'] = df_bond['date'].dt.to_period('M')
+            df_cpi['month'] = df_cpi['date'].dt.to_period('M')
+            bond_monthly = df_bond.groupby('month', as_index=False)['nominal'].mean()
+            cpi_monthly = df_cpi.groupby('month', as_index=False)['cpi'].last()
+            df = pd.merge(bond_monthly, cpi_monthly, on='month', how='inner')
+            df['date'] = df['month'].dt.to_timestamp('M')
+            df = df.drop(columns=['month'])
             
             # Calculate Real Rate
             df['real'] = df['nominal'] - df['cpi']
