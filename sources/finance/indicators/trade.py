@@ -52,7 +52,7 @@ class TradeIndicator(BaseIndicator):
 
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         export_color = "#c94844"
-        import_color = "#2f8b62"
+        import_color = "#3976A8"
         axes[0].plot(recent["date"], recent["export_yoy"], color=export_color, marker="o", markersize=3.5, label="出口同比")
         axes[0].plot(recent["date"], recent["import_yoy"], color=import_color, marker="o", markersize=3.5, label="进口同比")
         axes[0].axhline(0, color="#8a94a0", linewidth=0.8, alpha=0.55)

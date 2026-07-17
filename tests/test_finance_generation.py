@@ -86,6 +86,8 @@ def test_diverging_gradient_closes_both_sides_of_zero():
         images = plotter.fill_diverging_gradient(ax, dates, pd.Series([2, 1, -1, -2, 1]))
         assert len(images) >= 2
         assert all(image.get_zorder() == 1 for image in images)
+        # The baseline must retain visible colour on a phone screen.
+        assert all(image.get_array()[:, :, 3].min() >= 0.07 for image in images)
     finally:
         import matplotlib.pyplot as plt
         plt.close(fig)

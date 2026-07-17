@@ -58,7 +58,7 @@ class RealInterestRateIndicator(BaseIndicator):
         # --- Top: Nominal vs Real ---
         ax_top = axes[0]
         ax_top.plot(df_short['date'], df_short['nominal'], color=c_nom, label='名义利率(10Y)',
-                    linestyle='--', marker='o', markersize=4)
+                    linestyle='-', marker='o', markersize=4)
         ax_top.plot(df_short['date'], df_short['real'], color=c_real, linewidth=2.5,
                     marker='o', markersize=5, label='实际利率(真实成本)')
 

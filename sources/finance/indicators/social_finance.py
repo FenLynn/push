@@ -51,7 +51,7 @@ class SocialFinanceIndicator(BaseIndicator):
 
         fig, axes = self.plotter.create_ratio_axes(ratios=[3, 1])
         total_color = "#3976a8"
-        loan_color = "#d88932"
+        loan_color = "#C94F45"
 
         self.plotter.gradient_bars(
             axes[0], recent["date"], recent["social_finance_increment"], width=20,

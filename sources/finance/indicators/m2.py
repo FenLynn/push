@@ -41,19 +41,20 @@ class M2Indicator(BaseIndicator):
         # History: 20 years (240 months)
         df_long = df.iloc[-240:].copy() 
         
-        c_m2 = '#2c3e50'     # M2 - Midnight Blue
+        c_m2 = '#3976A8'
         c_growth = '#c0392b' # Growth - Deep Red
         
         # --- Top: Recent ---
         ax_top = axes[0]
         # M2 Total (万亿)
-        ax_top.plot(df_short['date'], df_short['m2']/10000, 'o-', 
-                   color=c_m2, linewidth=3, markersize=8, 
-                   markeredgecolor='white', markeredgewidth=1.5, label='M2总量(万亿)')
+        self.plotter.gradient_bars(
+            ax_top, df_short['date'], df_short['m2'] / 10000, width=20,
+            color=c_m2, label='M2总量(万亿)'
+        )
         
         # Growth Rate (Right Axis)
         ax_top_r = ax_top.twinx()
-        ax_top_r.plot(df_short['date'], df_short['m2_growth'], 'D--', 
+        ax_top_r.plot(df_short['date'], df_short['m2_growth'], 'D-',
                      color=c_growth, linewidth=2, markersize=7, 
                      markeredgecolor='white', markeredgewidth=1, label='M2增速(%)')
         

@@ -8,7 +8,36 @@ from urllib.parse import urljoin
 
 class GDPIndicator(BaseIndicator):
     """GDP 国内生产总值"""
-    
+
+    @staticmethod
+    def _read_official_yoy_table(report_url: str) -> pd.DataFrame:
+        """Parse the first NBS table containing quarterly GDP YoY rates."""
+        for table in pd.read_html(report_url):
+            if table.shape[1] < 5:
+                continue
+            header_rows = table.apply(
+                lambda row: '|'.join(str(value) for value in row.tolist()), axis=1
+            )
+            header_index = next((idx for idx, text in header_rows.items()
+                                 if '年份' in text and '1季度' in text and '4季度' in text), None)
+            if header_index is None:
+                continue
+            header = [str(value) for value in table.loc[header_index].tolist()[:5]]
+            candidate = table.loc[header_index + 1:, table.columns[:5]].copy()
+            candidate.columns = header
+            candidate['年份'] = pd.to_numeric(candidate['年份'], errors='coerce')
+            candidate = candidate.dropna(subset=['年份'])
+            rows = []
+            for _, row in candidate.iterrows():
+                year = int(row['年份'])
+                for quarter in range(1, 5):
+                    value = pd.to_numeric(row.get(f'{quarter}季度'), errors='coerce')
+                    if pd.notna(value):
+                        rows.append({'year': year, 'q_end': quarter, 'quarter_yoy': float(value)})
+            if rows:
+                return pd.DataFrame(rows)
+        raise RuntimeError(f'NBS GDP single-quarter YoY table not found: {report_url}')
+
     @staticmethod
     def _fetch_official_quarter_yoy() -> pd.DataFrame:
         """Read the NBS' latest official *single-quarter* constant-price table."""
@@ -25,34 +54,18 @@ class GDPIndicator(BaseIndicator):
         if not report_url:
             raise RuntimeError('NBS GDP quarterly report link not found')
 
-        for table in pd.read_html(report_url):
-            if table.shape[1] < 5:
-                continue
-            # pandas/HTML parser versions differ here: a mixed table can still
-            # yield float cells during ``apply`` even after ``astype(str)``.
-            # Convert every value at the join boundary for Linux runners too.
-            header_rows = table.apply(
-                lambda row: '|'.join(str(value) for value in row.tolist()), axis=1
-            )
-            header_index = next((idx for idx, text in header_rows.items()
-                                 if '年份' in text and '1季度' in text and '4季度' in text), None)
-            if header_index is None:
-                continue
-            header = table.loc[header_index].tolist()[:5]
-            candidate = table.loc[header_index + 1:, table.columns[:5]].copy()
-            candidate.columns = header
-            candidate['年份'] = pd.to_numeric(candidate['年份'], errors='coerce')
-            candidate = candidate.dropna(subset=['年份'])
-            rows = []
-            for _, row in candidate.iterrows():
-                year = int(row['年份'])
-                for quarter in range(1, 5):
-                    value = pd.to_numeric(row.get(f'{quarter}季度'), errors='coerce')
-                    if pd.notna(value):
-                        rows.append({'year': year, 'q_end': quarter, 'quarter_yoy': float(value)})
-            if rows:
-                return pd.DataFrame(rows)
-        raise RuntimeError('NBS GDP single-quarter YoY table not found')
+        latest = GDPIndicator._read_official_yoy_table(report_url)
+        # The latest release currently starts in 2021.  The NBS 2021 annual
+        # release supplies the preceding official 2016-2020 single-quarter
+        # series, giving the long chart a genuine ten-year window.
+        history_url = 'https://www.stats.gov.cn/sj/zxfb/202302/t20230203_1901345.html'
+        history = GDPIndicator._read_official_yoy_table(history_url)
+        return (
+            pd.concat([history, latest], ignore_index=True)
+            .drop_duplicates(['year', 'q_end'], keep='last')
+            .sort_values(['year', 'q_end'])
+            .reset_index(drop=True)
+        )
 
     def fetch_data(self) -> pd.DataFrame:
         try:
@@ -108,6 +121,7 @@ class GDPIndicator(BaseIndicator):
         quarters = df[(df['q_start'] == 1) & df['q_end'].notna()].copy().sort_values('date')
         recent = quarters.tail(8).copy()
         history = quarters.dropna(subset=['quarter_yoy']).copy()
+        history = history[history['date'] >= history['date'].max() - pd.DateOffset(years=10)]
 
         c_single = '#C94F45'
         c_growth = '#2E7FB8'
@@ -128,14 +142,15 @@ class GDPIndicator(BaseIndicator):
         for bar, value in zip(bars, single_values):
             if pd.notna(value):
                 ax_top.text(bar.get_x() + bar.get_width() / 2, value, f'{value:.1f}',
-                            ha='center', va='bottom', fontsize=8, color='#3C4043')
+                            ha='center', va='bottom', fontsize=11, fontweight='bold', color='#3C4043')
         ax_top.set_xticks(x)
         ax_top.set_xticklabels([f"{int(r.year)}Q{int(r.q_end)}" for _, r in recent.iterrows()])
+        ax_top.set_xlim(-0.5, len(recent) - 0.5)
 
         ax_top_r = ax_top.twinx()
         ax_top_r.plot(x, recent['quarter_yoy'], 'o-', color=c_growth, linewidth=2.4,
                       markersize=6, label='单季度同比', zorder=4)
-        ax_top_r.plot(x, recent['gdp_growth'], 'D--', color='#D49A22', linewidth=1.8,
+        ax_top_r.plot(x, recent['gdp_growth'], 'D-', color='#D49A22', linewidth=1.8,
                       markersize=5, label='年内累计同比', zorder=4)
         self.plotter.fmt_twinx(
             fig, ax_top, ax_top_r, title='GDP：近8个季度规模与增速',
@@ -151,7 +166,7 @@ class GDPIndicator(BaseIndicator):
         ax_bot.plot(history['date'], history['quarter_yoy'], color=c_growth,
                     linewidth=2, label='单季度同比', zorder=4)
         ax_bot.axhline(y=0, color='#636e72', linestyle='--', linewidth=0.8, alpha=0.5)
-        self.plotter.fmt_single(fig, ax_bot, title='官方单季度同比（2021年至今）',
+        self.plotter.fmt_single(fig, ax_bot, title='官方单季度同比（最近10年）',
                                ylabel='同比(%)', rotation=15, data=history['quarter_yoy'])
         self.plotter.set_no_margins(ax_bot)
         

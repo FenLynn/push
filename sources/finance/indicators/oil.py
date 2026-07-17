@@ -12,6 +12,10 @@ class OilIndicator(BaseIndicator):
             df['gasoline'] = pd.to_numeric(df['gasoline'], errors='coerce')
             df['diesel'] = pd.to_numeric(df['diesel'], errors='coerce')
             df = df.dropna(subset=['gasoline']).sort_values('date').copy()
+            # The feed may publish the next adjustment before its effective
+            # date.  The miniapp's "current price" must not jump early.
+            today = pd.Timestamp.now(tz='Asia/Shanghai').tz_localize(None).normalize()
+            df = df[df['date'] <= today].copy()
             # Approximate pump-equivalent values using standard reference
             # densities. These are explicitly estimates, not local retail quotes.
             df['gasoline_liter_est'] = df['gasoline'] * 0.00074
@@ -45,13 +49,6 @@ class OilIndicator(BaseIndicator):
         ax_top = axes[0]
         ax_top.step(df_short['date'], df_short['gasoline'], where='post', color=c_gasoline, linewidth=3.5, label='汽油价格', zorder=3)
         ax_top.step(df_short['date'], df_short['diesel'], where='post', color=c_diesel, linewidth=3, label='柴油价格', zorder=2)
-        latest = df_short.iloc[-1]
-        ax_top.text(
-            0.02, 0.96,
-            f"估算：汽油 {latest['gasoline_liter_est']:.2f} 元/L · 柴油 {latest['diesel_liter_est']:.2f} 元/L · 已持续 {int(latest['days_current'])} 天",
-            transform=ax_top.transAxes, va='top', ha='left', fontsize=10, color='#4B5563',
-        )
-        
         # Draw current value line for gasoline
         self.plotter.draw_current_line(df_short['gasoline'].iloc[-1], ax_top, c_gasoline)
         

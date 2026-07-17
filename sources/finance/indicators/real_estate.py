@@ -35,6 +35,10 @@ class RealEstateIndicator(BaseIndicator):
         
         # --- Top (Recent) ---
         ax_top = axes[0]
+        top_baseline = df_short['value'].min() * 0.995
+        self.plotter.fill_gradient(ax_top, df_short['date'], df_short['value'], color=c_index,
+                                   alpha_top=0.42, baseline=top_baseline, zorder=1,
+                                   alpha_floor=0.07)
         ax_top.plot(df_short['date'], df_short['value'], color=c_index, linewidth=3.5, marker='o', markersize=6, label='国房景气指数', zorder=3)
         
         # 100 baseline (neutral) - Strengthened
@@ -55,7 +59,8 @@ class RealEstateIndicator(BaseIndicator):
         ax_bot = axes[1]
         baseline = df_long['value'].min() * 0.98
         self.plotter.fill_gradient(ax_bot, df_long['date'], df_long['value'], color=c_index,
-                                   alpha_top=0.25, baseline=baseline, zorder=1)
+                                   alpha_top=0.42, baseline=baseline, zorder=1,
+                                   alpha_floor=0.07)
         ax_bot.plot(df_long['date'], df_long['value'], color=c_index, linewidth=1.8,
                     label='历史走势', zorder=3)
         ax_bot.axhline(y=100, color='#bdc3c7', linestyle='--', alpha=0.5, linewidth=1)

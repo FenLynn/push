@@ -84,7 +84,8 @@ class NEVSaleIndicator(BaseIndicator):
             if pd.notna(yoy):
                 axes[0].text(
                     bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(),
-                    f'{yoy:+.0f}%', ha='center', va='bottom', fontsize=7,
+                    f'{yoy:+.0f}%', ha='center', va='bottom', fontsize=11,
+                    fontweight='bold',
                     color='#C95A55' if yoy >= 0 else '#3D8B68', zorder=5,
                 )
         right = axes[0].twinx()

@@ -7,6 +7,7 @@ from sources.finance.indicators.social_finance import SocialFinanceIndicator
 from sources.finance.indicators.trade import TradeIndicator
 from sources.finance.indicators.insurance import InsuranceIndicator
 from sources.finance.indicators.nev_sale import NEVSaleIndicator
+from sources.finance.indicators.oil import OilIndicator
 
 
 def test_social_finance_keeps_monthly_observations_without_interpolation():
@@ -113,3 +114,17 @@ def test_nev_uses_retail_sales_and_retail_penetration_fields():
 
     assert normalized.iloc[0]["nev_retail_sales"] == 100.6753
     assert normalized.iloc[0]["nev_retail_share"] == 62.8
+
+
+def test_oil_does_not_publish_future_effective_price(monkeypatch):
+    raw = pd.DataFrame({
+        "调整日期": ["2020-01-01", "2099-01-01"],
+        "汽油价格": [8000, 9999],
+        "柴油价格": [7000, 8888],
+    })
+    monkeypatch.setattr("sources.finance.indicators.oil.ak.energy_oil_hist", lambda: raw)
+
+    frame = OilIndicator(None, None).fetch_data()
+
+    assert frame["date"].dt.strftime("%Y-%m-%d").tolist() == ["2020-01-01"]
+    assert frame.iloc[-1]["gasoline"] == 8000

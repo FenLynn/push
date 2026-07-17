@@ -28,8 +28,9 @@ class CommodityIndexIndicator(BaseIndicator):
         short_threshold = latest_date - pd.DateOffset(months=15)
         df_short = df[df['date'] >= short_threshold].copy()
         
-        # History: 20 years (Weekly data, ensure enough rows)
-        df_long = df.iloc[-1040:].copy() # 52 weeks * 20 years = 1040
+        # This source is daily and begins in 2011.  Do not mistake 1040 daily
+        # rows for twenty years of weekly history; retain the full source span.
+        df_long = df.copy()
         
         color = '#3976A8'
         
@@ -49,7 +50,8 @@ class CommodityIndexIndicator(BaseIndicator):
                                    color=color, baseline=baseline, zorder=1)
         ax_bot.plot(df_long['date'], df_long['index'], color=color, linewidth=1.5, zorder=4)
         
-        self.plotter.fmt_single(fig, ax_bot, title='历史走势 (20年)', ylabel='指数', rotation=15, data=df_long['index'])
+        first_year = int(df_long['date'].min().year)
+        self.plotter.fmt_single(fig, ax_bot, title=f'全历史走势（{first_year}年至今，日度）', ylabel='指数', rotation=15, data=df_long['index'])
         self.plotter.set_no_margins(ax_bot)
         
         path = "output/finance/commodity_index.png"

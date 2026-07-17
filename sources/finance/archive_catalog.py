@@ -33,6 +33,8 @@ ARCHIVE_CATALOG = {
     "gdp": {
         "label": "国内生产总值", "source": "AkShare/NBS", "frequency": "quarterly",
         "metrics": {
+            "quarter_yoy": {"label": "GDP 单季度同比", "unit": "%"},
+            "gdp_single": {"label": "GDP 当季值", "unit": "亿元"},
             "gdp_growth": {"label": "GDP 同比增速", "unit": "%"},
             "gdp_cumulative": {"label": "GDP 累计值", "unit": "亿元"},
         },
@@ -171,8 +173,9 @@ ARCHIVE_CATALOG = {
         "metrics": {"index": {"label": "能源价格指数", "unit": "点"}},
     },
     "pig": {
-        "label": "生猪市场价格指数", "source": "AkShare/行情宝", "frequency": "weekly", "quality": "industry",
+        "label": "生猪市场价格", "source": "AkShare/搜猪/行情宝", "frequency": "daily", "quality": "industry",
         "metrics": {
+            "daily_price": {"label": "全国瘦肉型生猪日价", "unit": "元/公斤"},
             "index": {"label": "生猪价格指数", "unit": "点"},
             "transaction_price": {"label": "生猪成交均价", "unit": "元/公斤"},
         },

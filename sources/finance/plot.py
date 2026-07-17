@@ -185,8 +185,9 @@ class Plotter:
                     transform=ax.transAxes, fontsize=14, color='#7f8c8d', 
                     ha='center', va='center', alpha=0.5, weight='bold')
 
-    def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.3,
-                      baseline=0, where=None, zorder=1, step=None):
+    def fill_gradient(self, ax, x, y, color='#273c75', alpha_top=0.38,
+                      baseline=0, where=None, zorder=1, step=None,
+                      alpha_floor=0.055):
         """绘制从基准线向数据线逐渐加深、且交叉处无白缝的渐变阴影。"""
         import numpy as np
         import pandas as pd
@@ -216,7 +217,11 @@ class Plotter:
             span = max(abs(ymin - baseline), abs(ymax - baseline), 1e-12)
             # Ease-in keeps the area near the x/baseline visibly lighter on a
             # small phone screen, instead of looking like a flat solid block.
-            alpha = np.power(np.clip(np.abs(levels - baseline) / span, 0, 1), 1.7) * alpha_top
+            distance = np.power(np.clip(np.abs(levels - baseline) / span, 0, 1), 1.35)
+            # Keep a faint but visible colour at the baseline.  A zero-alpha
+            # floor made red/green regions disappear around zero on phones.
+            floor = min(max(float(alpha_floor), 0.0), float(alpha_top))
+            alpha = floor + distance * (float(alpha_top) - floor)
             rgba = np.empty((256, 1, 4), dtype=float)
             rgba[:, :, :3] = rgb
             rgba[:, 0, 3] = alpha
@@ -233,14 +238,28 @@ class Plotter:
         return images
 
     def gradient_bars(self, ax, x, height, width=0.7, color='#3976A8',
-                      bottom=0, alpha_top=0.82, alpha_bottom=0.16,
+                      bottom=None, alpha_top=0.98, alpha_bottom=0.01,
                       label=None, zorder=2):
         """Draw bars whose colour is light at the base and deep at the top."""
         import numpy as np
         import pandas as pd
 
-        heights = np.asarray(pd.to_numeric(height, errors='coerce'), dtype=float)
-        bottoms = np.broadcast_to(np.asarray(bottom, dtype=float), heights.shape)
+        values = np.asarray(pd.to_numeric(height, errors='coerce'), dtype=float)
+        if bottom is None:
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size:
+                minimum, maximum = finite_values.min(), finite_values.max()
+                if minimum < 0 < maximum:
+                    auto_bottom = 0.0
+                else:
+                    span = maximum - minimum
+                    auto_bottom = minimum - (span * 0.12 if span else max(abs(minimum) * 0.04, 0.5))
+            else:
+                auto_bottom = 0.0
+            bottoms = np.full(values.shape, auto_bottom, dtype=float)
+        else:
+            bottoms = np.broadcast_to(np.asarray(bottom, dtype=float), values.shape)
+        heights = values - bottoms
         bars = ax.bar(
             x, heights, width=width, bottom=bottoms, color=color,
             alpha=alpha_bottom, edgecolor='none', label=label, zorder=zorder,
@@ -254,6 +273,7 @@ class Plotter:
             levels = np.linspace(0, 1, 256)
             if value < 0:
                 levels = levels[::-1]
+            levels = np.power(levels, 1.65)
             rgba = np.empty((256, 1, 4), dtype=float)
             rgba[:, :, :3] = rgb
             rgba[:, 0, 3] = alpha_bottom + (alpha_top - alpha_bottom) * levels
@@ -265,17 +285,20 @@ class Plotter:
 
     def fill_diverging_gradient(self, ax, x, y, baseline=0,
                                 positive_color='#C94F45', negative_color='#3D8B68',
-                                alpha_top=0.28, zorder=1):
+                                alpha_top=0.46, zorder=1):
         """按基准线上红、线下绿绘制连续渐变。"""
         import numpy as np
         import pandas as pd
         values = np.asarray(pd.to_numeric(y, errors='coerce'), dtype=float)
         finite = np.isfinite(values)
+        # Older call sites supplied 0.2x alpha values that are nearly invisible
+        # on a transparent chart. Enforce one readable global floor.
+        effective_top = max(float(alpha_top), 0.46)
         return (
-            self.fill_gradient(ax, x, values, positive_color, alpha_top, baseline,
-                               finite & (values >= baseline), zorder)
-            + self.fill_gradient(ax, x, values, negative_color, alpha_top, baseline,
-                                 finite & (values <= baseline), zorder)
+            self.fill_gradient(ax, x, values, positive_color, effective_top, baseline,
+                               finite & (values >= baseline), zorder, alpha_floor=0.075)
+            + self.fill_gradient(ax, x, values, negative_color, effective_top, baseline,
+                                 finite & (values <= baseline), zorder, alpha_floor=0.075)
         )
 
     def _add_internal_title(self, ax, text):

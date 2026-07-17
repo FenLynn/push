@@ -60,7 +60,7 @@ class CPIIndicator(BaseIndicator):
                    color=c_infl_line, linewidth=2.5, markersize=8, 
                    markeredgecolor='white', markeredgewidth=1.5,
                    label='CPI同比')
-        ax_top.plot(df_short['date'], df_short['cpi_m'], 'o--',
+        ax_top.plot(df_short['date'], df_short['cpi_m'], 'o-',
                     color=c_mom, linewidth=2, markersize=6, label='CPI环比')
         
         # Current Value Annotation
