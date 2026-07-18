@@ -29,7 +29,7 @@ class ETFSource(BaseSource):
                 if c.startswith(('sh', 'sz')): formatted_codes.append(c)
                 else: formatted_codes.append(('sh' if c.startswith(('51', '60', '000001')) else 'sz') + c)
             
-            url = f"http://qt.gtimg.cn/q={','.join(formatted_codes)}"
+            url = f"https://qt.gtimg.cn/q={','.join(formatted_codes)}"
             resp = requests.get(url, timeout=5)
             resp.encoding = 'gbk' # Fix encoding for Chinese characters
             if resp.status_code == 200:
@@ -174,6 +174,10 @@ class ETFSource(BaseSource):
     def run(self):
         self.logger.info("Fetching ETF V2.0 Premium Dashboard Data...")
         df, market_info = self._fetch_data()
+        self.latest_data = {
+            'items': df.to_dict('records') if not df.empty else [],
+            'market': market_info,
+        }
         html_content = self._render_html(df, market_info)
         
         # Minify to ensure fit in single PushPlus message (20kb limit)

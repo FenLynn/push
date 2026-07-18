@@ -2,6 +2,11 @@ name: "Module: Game Schedule"
 
 on:
   workflow_dispatch:
+    inputs:
+      notify:
+        description: "是否检查并通知临近的重点比赛"
+        required: false
+        default: "true"
 
 jobs:
   run:
@@ -29,5 +34,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
         
-      - name: Run Game
-        run: python main.py run game --topic baobao
+      - name: Refresh game snapshot
+        run: python main.py gen game --force
+
+      - name: Notify one important match at most once
+        if: ${{ inputs.notify != 'false' }}
+        run: python scripts/notify_game.py

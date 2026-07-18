@@ -144,6 +144,7 @@ class NightSource(BaseSource):
             'summary': summary_text,
             'version': 'V7.1 Global AI (Sorted)'
         }
+        self.latest_data = {'indexes': all_indices, 'stocks': stocks}
         
         html_content = self.render_template('night.html', context)
         

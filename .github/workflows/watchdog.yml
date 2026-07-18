@@ -2,6 +2,9 @@ name: Watchdog Sentinel
 
 on:
   workflow_dispatch:
+  schedule:
+    # GitHub schedule can be delayed; minute 17 avoids the busiest top-of-hour slot.
+    - cron: '17 * * * *'
 
 permissions:
   actions: read
@@ -11,24 +14,25 @@ jobs:
   watchdog:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Load workflow .env
+        uses: ./.github/actions/load-dotenv
+        with:
+          env_text: ${{ secrets.PUSH_ENV_FILE }}
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas chinese_calendar yfinance feedparser
+          pip install requests
 
       - name: Run Sentinel Watchdog
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
         run: python core/watchdog.py

@@ -24,7 +24,7 @@ class PushPlusChannel(ChannelInterface):
             raise ValueError("PushPlus token not provided")
         
         self.topic = topic
-        self.api_url = "http://www.pushplus.plus/send"
+        self.api_url = "https://www.pushplus.plus/send"
     
     def send(self, message: Message) -> bool:
         """

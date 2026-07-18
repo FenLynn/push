@@ -1,19 +1,30 @@
-import sys
+"""Low-noise GitHub Actions watchdog with a persistent 48-hour alert threshold."""
+
+from __future__ import annotations
+
+import json
+import logging
 import os
+import sys
+from datetime import datetime, timedelta, timezone
+
+import requests
+
 sys.path.insert(0, os.getcwd())
 
-import logging
-import requests
-from datetime import datetime, timedelta, timezone
-from core import Message, ContentType
+from core import ContentType, Message
+from core.d1_client import D1Client
+
 
 logger = logging.getLogger('Push.Watchdog')
-
 WATCHDOG_WORKFLOW_NAME = 'Watchdog Sentinel'
-WORKFLOW_IDLE_ALERT_MINUTES = max(70, int(os.getenv('WATCHDOG_WORKFLOW_IDLE_MINUTES', '95') or '95'))
+STATE_KEY = 'watchdog_persistent_state_v2'
+PERSIST_HOURS = max(48, int(os.getenv('WATCHDOG_PERSIST_HOURS', '48') or '48'))
+IDLE_HOURS = max(3, int(os.getenv('WATCHDOG_BUSINESS_IDLE_HOURS', '4') or '4'))
+FAILED_CONCLUSIONS = {'failure', 'cancelled', 'timed_out', 'action_required', 'stale'}
 
 
-def _github_headers(token: str) -> dict:
+def _github_headers(token):
     return {
         'Accept': 'application/vnd.github+json',
         'Authorization': f'Bearer {token}',
@@ -22,116 +33,175 @@ def _github_headers(token: str) -> dict:
     }
 
 
-def _parse_github_time(value: str):
-    if not value:
-        return None
+def _parse_time(value):
     try:
-        return datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
-    except Exception:
+        return datetime.fromisoformat(str(value or '').replace('Z', '+00:00'))
+    except ValueError:
         return None
 
 
-def _fetch_recent_workflow_runs(limit: int = 20):
+def fetch_recent_workflow_runs(limit=100):
     token = os.getenv('GITHUB_TOKEN')
     repository = os.getenv('GITHUB_REPOSITORY')
     if not token or not repository:
-        logger.warning('Watchdog missing GITHUB_TOKEN or GITHUB_REPOSITORY; skipping workflow idle check.')
-        return []
-
-    url = f'https://api.github.com/repos/{repository}/actions/runs'
+        raise RuntimeError('missing GITHUB_TOKEN or GITHUB_REPOSITORY')
     response = requests.get(
-        url,
+        f'https://api.github.com/repos/{repository}/actions/runs',
         headers=_github_headers(token),
-        params={'per_page': limit},
+        params={'per_page': min(100, max(1, limit))},
         timeout=20,
     )
     response.raise_for_status()
-    payload = response.json() or {}
-    return payload.get('workflow_runs', []) or []
+    return (response.json() or {}).get('workflow_runs') or []
 
 
-def _check_workflow_idle(now_utc: datetime):
-    try:
-        runs = _fetch_recent_workflow_runs(limit=30)
-    except Exception as exc:
-        return f'❓ GitHub Actions 最近运行记录检查失败: {exc}'
-
+def detect_issues(runs, now=None):
+    now = now or datetime.now(timezone.utc)
+    latest_by_workflow = {}
     business_runs = []
     for run in runs:
         name = str(run.get('name') or '').strip()
         if not name or name == WATCHDOG_WORKFLOW_NAME:
             continue
-        started_at = _parse_github_time(run.get('run_started_at') or run.get('created_at') or '')
+        started_at = _parse_time(run.get('run_started_at') or run.get('created_at'))
         if not started_at:
             continue
-        business_runs.append({
+        item = {
             'name': name,
-            'status': run.get('status') or '',
-            'conclusion': run.get('conclusion') or '',
-            'started_at': started_at,
-            'html_url': run.get('html_url') or '',
-        })
+            'startedAt': started_at,
+            'status': str(run.get('status') or ''),
+            'conclusion': str(run.get('conclusion') or ''),
+            'url': str(run.get('html_url') or ''),
+        }
+        business_runs.append(item)
+        if name not in latest_by_workflow or started_at > latest_by_workflow[name]['startedAt']:
+            latest_by_workflow[name] = item
+
+    issues = {}
+    for name, item in latest_by_workflow.items():
+        if item['status'] == 'completed' and item['conclusion'] in FAILED_CONCLUSIONS:
+            issues[f'workflow:{name}'] = (
+                f"{name} 最近一次运行仍为 {item['conclusion']}，"
+                f"开始于 {item['startedAt'].astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')} BJT。"
+            )
 
     if not business_runs:
-        return '💤 GitHub Actions 最近没有业务 workflow 运行记录（排除了 Watchdog 自身）。'
+        issues['workflow:idle'] = 'GitHub Actions 没有可读取的业务运行记录。'
+    else:
+        latest = max(business_runs, key=lambda item: item['startedAt'])
+        idle_hours = (now - latest['startedAt']).total_seconds() / 3600
+        if idle_hours >= IDLE_HOURS:
+            issues['workflow:idle'] = (
+                f"业务 workflow 已连续约 {idle_hours:.1f} 小时没有运行；"
+                f"最近一次是 {latest['name']}。"
+            )
+    return issues
 
-    latest_run = max(business_runs, key=lambda item: item['started_at'])
-    idle_minutes = (now_utc - latest_run['started_at']).total_seconds() / 60.0
-    if idle_minutes <= WORKFLOW_IDLE_ALERT_MINUTES:
-        logger.info(
-            'Watchdog idle check ok: latest workflow=%s, idle=%.1f min',
-            latest_run['name'],
-            idle_minutes,
+
+def evaluate_alert_state(state, issues, now=None):
+    now = now or datetime.now(timezone.utc)
+    now_text = now.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+    old = state.get('issues') if isinstance(state, dict) and isinstance(state.get('issues'), dict) else {}
+    current = {}
+    due = []
+    for issue_id, message in issues.items():
+        previous = old.get(issue_id) if isinstance(old.get(issue_id), dict) else {}
+        first_seen = _parse_time(previous.get('firstSeen')) or now
+        record = {
+            'firstSeen': first_seen.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            'lastSeen': now_text,
+            'message': str(message),
+            'notifiedAt': str(previous.get('notifiedAt') or ''),
+        }
+        if (now - first_seen) >= timedelta(hours=PERSIST_HOURS) and not record['notifiedAt']:
+            due.append((issue_id, record['message']))
+        current[issue_id] = record
+    return {'version': 2, 'updatedAt': now_text, 'issues': current}, due
+
+
+def _result_rows(result):
+    data = result.get('data') or [] if result.get('success') else []
+    return data[0].get('results') or [] if data and isinstance(data[0], dict) else []
+
+
+class WatchdogStateStore:
+    def __init__(self, client=None):
+        self.client = client or D1Client()
+        if self.client.enabled:
+            self.client.ensure_table('sys_kv', '''
+                CREATE TABLE IF NOT EXISTS sys_kv (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+    def load(self):
+        if not self.client.enabled:
+            raise RuntimeError('D1 is unavailable')
+        result = self.client.query('SELECT value FROM sys_kv WHERE key = ?', [STATE_KEY])
+        if not result.get('success'):
+            raise RuntimeError(result.get('error') or 'watchdog state read failed')
+        rows = _result_rows(result)
+        if not rows:
+            return {}
+        try:
+            value = json.loads(rows[0].get('value') or '{}')
+            return value if isinstance(value, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    def save(self, state):
+        result = self.client.query(
+            "INSERT OR REPLACE INTO sys_kv (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+            [STATE_KEY, json.dumps(state, ensure_ascii=False, separators=(',', ':'))],
         )
-        return None
+        if not result.get('success'):
+            raise RuntimeError(result.get('error') or 'watchdog state write failed')
 
-    started_bjt = latest_run['started_at'].astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
-    return (
-        f"🚨 GitHub Actions 业务 workflow 空窗过长：最近一次是 [{latest_run['name']}]，"
-        f"开始于 {started_bjt} BJT，距今约 {idle_minutes:.1f} 分钟。"
+
+def send_critical_alert(due):
+    from channels.pushplus import PushPlusChannel
+
+    content = '\n'.join(f'• {message}' for _, message in due)
+    message = Message(
+        title='🛡️ 持续 48 小时的系统故障',
+        content=f'以下故障已持续至少 {PERSIST_HOURS} 小时，短期波动已自动忽略：\n\n{content}',
+        type=ContentType.TEXT,
+        tags=['watchdog', 'persistent-alert'],
     )
+    if not PushPlusChannel(topic='me').send(message):
+        raise RuntimeError('PushPlus rejected watchdog alert')
+
 
 def run_watchdog():
-    """
-    自检心跳：检查 GitHub Actions 业务 workflow 是否出现异常空窗。
-    """
-    now_utc = datetime.now(timezone.utc)
-    now_bjt = now_utc.astimezone(timezone(timedelta(hours=8)))
-    alerts = []
-
-    idle_alert = _check_workflow_idle(now_utc)
-    if idle_alert:
-        alerts.append(idle_alert)
-
-    if alerts:
-        send_critical_alert("\n".join(alerts))
-    else:
-        logger.info("Watchdog: workflow heartbeat nominal at %s.", now_bjt.strftime('%H:%M'))
-
-def send_critical_alert(content):
-    """发送加急告警 (直接通过通道)"""
-    print(f"[Watchdog Alert]\n{content}")
-    msg = Message(
-        title="🛡️ 哨兵拦截：系统运行异常",
-        content=f"检测到以下任务未按预期执行，请检查云端状态：\n\n{content}",
-        type=ContentType.TEXT,
-        tags=['watchdog', 'alert']
-    )
-    
+    now = datetime.now(timezone.utc)
     try:
-        from channels.pushplus import PushPlusChannel
-        channel = PushPlusChannel()
-        if channel.token:
-            success = channel.send(msg)
-            if success:
-                print("[Watchdog] Critical alert sent successfully.")
-            else:
-                print("[Watchdog] PushPlus rejected the alert.")
-        else:
-            print("[Watchdog] PUSHPLUS_TOKEN not found, alert suppressed.")
-    except Exception as e:
-        print(f"[Watchdog] Error sending alert: {e}")
+        issues = detect_issues(fetch_recent_workflow_runs(), now=now)
+    except Exception as exc:
+        issues = {'watchdog:github-api': f'Watchdog 无法检查 GitHub Actions：{exc}'}
 
-if __name__ == "__main__":
+    store = WatchdogStateStore()
+    try:
+        state, due = evaluate_alert_state(store.load(), issues, now=now)
+        # Persist first so a send retry cannot erase the original firstSeen timestamp.
+        store.save(state)
+    except Exception as exc:
+        logger.error('Watchdog state unavailable; suppressing alert to avoid noisy stateless retries: %s', exc)
+        return
+
+    if due:
+        send_critical_alert(due)
+        notified_at = now.isoformat().replace('+00:00', 'Z')
+        for issue_id, _ in due:
+            if issue_id in state['issues']:
+                state['issues'][issue_id]['notifiedAt'] = notified_at
+        store.save(state)
+        logger.warning('Watchdog notified %s persistent issue(s).', len(due))
+    else:
+        logger.info('Watchdog checked %s active issue(s); none has crossed %sh.', len(issues), PERSIST_HOURS)
+
+
+if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     run_watchdog()

@@ -34,4 +34,4 @@ jobs:
         run: pip install -r requirements.txt
         
       - name: Run Stock/ETF
-        run: python main.py run stock --topic stock
+        run: python scripts/refresh_market.py stock

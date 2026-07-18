@@ -10,6 +10,7 @@ from sources.base import BaseSource
 from core import Message, ContentType
 from core.template import TemplateEngine
 from core.dashboard_snapshot import export_dashboard_snapshot
+from core.utils.lol_esports import WATCHED_TEAM_CODES, fetch_watched_matches
 
 # 导入原有的 cloud 库
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
@@ -25,7 +26,7 @@ class GameSource(BaseSource):
                      '欧洲杯', 'TI14', 'LEC', '刀塔', 'LPL', 'PCL', 'S赛', 'TI',
                      '男篮世界杯', '男篮欧锦赛', '欧冠','MSI']
     
-    HIGHLIGHTED_TEAMS = ['世界杯','HLE', 'T1', 'GEN', 'BLG']
+    HIGHLIGHTED_TEAMS = list(WATCHED_TEAM_CODES)
     
     WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     
@@ -40,6 +41,8 @@ class GameSource(BaseSource):
     def run(self) -> Message:
         try:
             days_data = self._get_formatted_data()
+            official_matches = self._get_official_lol_matches()
+            days_data = self._merge_official_matches(days_data, official_matches)
             # 挑选 Hero Match (推荐赛事)
             hero_match = self._pick_hero_match(days_data)
             total_matches = sum(len(day.get('matches', [])) for day in days_data)
@@ -49,6 +52,10 @@ class GameSource(BaseSource):
                 'totalDays': len(days_data),
                 'totalMatches': total_matches,
                 'highlightedTeams': self.HIGHLIGHTED_TEAMS,
+                'watchedTeams': self.HIGHLIGHTED_TEAMS,
+                'liveMatches': [match for match in official_matches if match.get('live')],
+                'hasLive': any(match.get('live') for match in official_matches),
+                'liveSource': 'LoL Esports' if official_matches else 'schedule-fallback',
             })
 
             # --- Smart Truncation Logic ---
@@ -110,6 +117,7 @@ class GameSource(BaseSource):
                 'totalDays': 0,
                 'totalMatches': 0,
                 'highlightedTeams': self.HIGHLIGHTED_TEAMS,
+                'watchedTeams': self.HIGHLIGHTED_TEAMS,
                 'error': str(e),
             })
             return Message(
@@ -174,6 +182,59 @@ class GameSource(BaseSource):
             }
         
         return None
+
+    def _get_official_lol_matches(self):
+        try:
+            return fetch_watched_matches()
+        except Exception as exc:
+            self.logger.warning('LoL Esports live data unavailable; keeping schedule fallback: %s', exc)
+            return []
+
+    def _merge_official_matches(self, days_data, official_matches):
+        """Replace duplicate watched LoL rows and append missing official matches."""
+        by_date = {str(day.get('date') or ''): {**day, 'matches': list(day.get('matches') or [])} for day in days_data}
+        today = datetime.now().strftime('%Y-%m-%d')
+        for match in official_matches:
+            if match.get('status') == 'completed' or not match.get('date'):
+                continue
+            date_str = match['date']
+            day = by_date.get(date_str)
+            if not day:
+                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                day = {
+                    'date': date_str,
+                    'date_label': '今天' if date_str == today else date_obj.strftime('%m-%d'),
+                    'weekday': self.WEEKDAYS[date_obj.weekday()],
+                    'is_today': date_str == today,
+                    'matches': [],
+                }
+
+            normalized = {
+                **match,
+                'team_a': match.get('teamA', ''),
+                'team_b': match.get('teamB', ''),
+                'type': 'LOL',
+                'media': 'LoL Esports',
+                'highlight': True,
+            }
+            duplicate_index = -1
+            for index, old in enumerate(day['matches']):
+                old_id = str(old.get('providerId') or old.get('id') or '')
+                if old_id and old_id == match.get('providerId'):
+                    duplicate_index = index
+                    break
+                old_teams = (str(old.get('team_a') or '').upper(), str(old.get('team_b') or '').upper())
+                codes = (str(match.get('teamACode') or ''), str(match.get('teamBCode') or ''))
+                if all(any(code and code in team for team in old_teams) for code in codes):
+                    duplicate_index = index
+                    break
+            if duplicate_index >= 0:
+                day['matches'][duplicate_index] = {**day['matches'][duplicate_index], **normalized}
+            else:
+                day['matches'].append(normalized)
+            day['matches'].sort(key=lambda item: str(item.get('time') or ''))
+            by_date[date_str] = day
+        return sorted(by_date.values(), key=lambda day: str(day.get('date') or ''))
 
     def _get_formatted_data(self):
         """获取并格式化数据"""

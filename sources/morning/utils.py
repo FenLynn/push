@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import logging
 import re
+import os
 from datetime import datetime
 
 logger = logging.getLogger('Push.Morning.Utils')
@@ -11,7 +12,10 @@ def get_quota_info():
     """获取 VPN 流量信息 (JustMySocks 真实接口)"""
     try:
         # 真实的 JustMySocks 接口
-        api_url = 'https://justmysocks3.net/members/getbwcounter.php?service=1004623&id=485b1fe9-fb27-4938-8671-9bdeed1973cc'
+        api_url = os.getenv('JUSTMYSOCKS_BW_COUNTER_URL', '').strip()
+        if not api_url:
+            logger.warning("JUSTMYSOCKS_BW_COUNTER_URL is not configured")
+            return None
         r = requests.get(api_url, timeout=10)
         import json
         itxt = json.loads(r.text)

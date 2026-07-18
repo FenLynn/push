@@ -30,4 +30,4 @@ jobs:
         run: pip install -r requirements.txt
         
       - name: Run Morning
-        run: python main.py run morning --topic family
+        run: python main.py gen morning --force

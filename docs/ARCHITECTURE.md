@@ -151,7 +151,7 @@ class PushPlusChannel(ChannelInterface):
 
 **API 调用**:
 ```python
-url = "http://www.pushplus.plus/send"
+url = "https://www.pushplus.plus/send"
 data = {
     "token": self.token,
     "title": message.title,

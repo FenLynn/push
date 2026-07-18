@@ -30,4 +30,4 @@ jobs:
         run: pip install -r requirements.txt
         
       - name: Run Night
-        run: python main.py run night --topic stock
+        run: python scripts/refresh_market.py night

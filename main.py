@@ -125,6 +125,7 @@ def gen_modules(modules_to_run, topic='me', token=None, force=False):
     
     engine = get_engine(token, require_channel=False)
     
+    failed_modules = []
     for name in modules_to_run:
         module_key = name
         extra_kwargs = {}
@@ -141,6 +142,7 @@ def gen_modules(modules_to_run, topic='me', token=None, force=False):
         
         if module_key not in MODULES:
             logger.error(f"Error: Unknown module '{name}'")
+            failed_modules.append(name)
             continue
             
         info = MODULES[module_key]
@@ -157,6 +159,8 @@ def gen_modules(modules_to_run, topic='me', token=None, force=False):
                 logger.info(f"Generated: {path}")
         except Exception as e:
             logger.error(f"Failed to generate {name}: {e}")
+            failed_modules.append(name)
+    return len(failed_modules) == 0
 
 def run_modules(modules_to_run, topic='me', token=None, title=None, **kwargs):
     """Generate and Send (Standard Run)"""
@@ -239,11 +243,14 @@ def run_modules(modules_to_run, topic='me', token=None, title=None, **kwargs):
                 except Exception as hook_error:
                     logger.warning(f"after_send_success hook failed for {module_key}: {hook_error}")
             
-            # Record success (even if some messages failed to send via channel, the module itself "ran")
-            # But for CI/CD, we might want to know if everything was sent.
-            # Let's consider the module successful if it ran without exception.
-            scheduler.record_success(module_key)
-            success_count += 1
+            if module_msg_success != len(results):
+                detail = f'PushPlus sent {module_msg_success}/{len(results)} message(s)'
+                logger.error('%s failed: %s', module_key, detail)
+                failed_modules.append(name)
+                scheduler.record_failure(module_key, detail)
+            else:
+                scheduler.record_success(module_key)
+                success_count += 1
             
         except Exception as e:
             logger.critical(f"Error running {name}: {e}", exc_info=True)
@@ -391,7 +398,9 @@ def main():
                 logger.error("Some modules failed to run.")
                 sys.exit(1)
         else:
-            gen_modules(mods, topic=args.topic, token=args.token, force=args.force)
+            if not gen_modules(mods, topic=args.topic, token=args.token, force=args.force):
+                logger.error("Some modules failed to generate.")
+                sys.exit(1)
     else:
         parser.print_help()
 

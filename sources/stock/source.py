@@ -111,6 +111,7 @@ class StockSource(BaseSource):
             self.logger.error(f"Error collecting market data: {e}")
             # 继续使用已收集的部分数据
         self._export_market_breadth_snapshot(data)
+        self.latest_data = data
         # 渲染 HTML（智能裁剪以避免超过 PushPlus 单条消息限制）
         max_len = PUSHPLUS_MAX_CONTENT_LENGTH
         

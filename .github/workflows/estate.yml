@@ -30,4 +30,4 @@ jobs:
         run: pip install -r requirements.txt
         
       - name: Run Estate
-        run: python main.py run estate --topic family
+        run: python main.py gen estate --force
