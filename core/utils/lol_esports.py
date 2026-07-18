@@ -25,22 +25,22 @@ def _parse_time(value: Any) -> Optional[datetime]:
     text = str(value or "").strip()
     if not text:
         return None
-
-
-def _strip_esports_word(value: Any) -> str:
-    text = re.sub(r'\bEsports\b', '', str(value or ''), flags=re.IGNORECASE)
-    return re.sub(r'\s{2,}', ' ', text).strip()
     try:
         return datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
 
 
+def _strip_display_words(value: Any) -> str:
+    text = re.sub(r'\b(?:Esports|Gaming)\b', '', str(value or ''), flags=re.IGNORECASE)
+    return re.sub(r'\s{2,}', ' ', text).strip()
+
+
 def _normalize_team(team: Dict[str, Any]) -> Dict[str, Any]:
     result = team.get("result") if isinstance(team.get("result"), dict) else {}
     code = str(team.get("code") or "").strip().upper()
     raw_id = str(team.get("id") or "").strip()
-    team_name = _strip_esports_word(team.get("name") or code)
+    team_name = _strip_display_words(team.get("name") or code)
     return {
         "id": raw_id,
         "provider_id": raw_id.rsplit(":", 1)[-1],
@@ -194,7 +194,7 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "time": local_start.strftime("%H:%M") if local_start else "",
         "startTime": start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if start else "",
         "scheduledAt": start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if start else "",
-        "league": _strip_esports_word(league.get("name")),
+        "league": _strip_display_words(league.get("name")),
         "leagueSlug": str(league.get("slug") or "").strip(),
         "leagueLogo": _https_url(league.get("image")),
         "stage": str(event.get("blockName") or tournament.get("name") or "").strip(),

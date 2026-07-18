@@ -32,6 +32,7 @@ def test_normalizes_exact_watched_live_match():
     assert match['live'] is True
     assert match['currentGame'] == 2
     assert match['scoreText'] == '1:0'
+    assert match['startTime'] == '2026-07-18T11:00:00Z'
     assert match['teamALogo'] == 'https://img/a.png'
     assert match['leagueLogo'] == 'https://img/lck.png'
 
@@ -42,9 +43,11 @@ def test_non_watched_match_is_ignored():
 
 def test_team_names_drop_redundant_esports_word():
     event = _event()
+    event['matchTeams'][0]['name'] = 'Bilibili Gaming'
     event['matchTeams'][1]['name'] = 'Gen.G Esports'
     event['league']['name'] = 'Esports World Cup'
     match = normalize_event(event)
+    assert match['teamA'] == 'Bilibili'
     assert match['teamB'] == 'Gen.G'
     assert match['league'] == 'World Cup'
 

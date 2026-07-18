@@ -55,7 +55,7 @@ class GameSource(BaseSource):
                 'watchedTeams': self.HIGHLIGHTED_TEAMS,
                 'liveMatches': [match for match in official_matches if match.get('live')],
                 'hasLive': any(match.get('live') for match in official_matches),
-                'liveSource': 'LoL Esports' if official_matches else 'schedule-fallback',
+                'liveSource': 'LOL Official' if official_matches else 'schedule-fallback',
             })
 
             # --- Smart Truncation Logic ---
