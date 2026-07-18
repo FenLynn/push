@@ -214,7 +214,7 @@ class GameSource(BaseSource):
                 'team_a': match.get('teamA', ''),
                 'team_b': match.get('teamB', ''),
                 'type': 'LOL',
-                'media': 'LoL Esports',
+                'media': 'LOL',
                 'highlight': True,
             }
             duplicate_index = -1

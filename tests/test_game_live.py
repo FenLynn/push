@@ -40,6 +40,13 @@ def test_non_watched_match_is_ignored():
     assert normalize_event(_event('KT', 'DK')) is None
 
 
+def test_team_names_drop_redundant_esports_word():
+    event = _event()
+    event['matchTeams'][1]['name'] = 'Gen.G Esports'
+    match = normalize_event(event)
+    assert match['teamB'] == 'Gen.G'
+
+
 def test_live_completed_game_winner_uses_official_team_id():
     class Response:
         def raise_for_status(self):

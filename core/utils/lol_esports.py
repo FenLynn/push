@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any, Dict, Iterable, List, Optional
 
 import requests
@@ -34,10 +35,12 @@ def _normalize_team(team: Dict[str, Any]) -> Dict[str, Any]:
     result = team.get("result") if isinstance(team.get("result"), dict) else {}
     code = str(team.get("code") or "").strip().upper()
     raw_id = str(team.get("id") or "").strip()
+    team_name = re.sub(r'\bEsports\b', '', str(team.get("name") or code), flags=re.IGNORECASE)
+    team_name = re.sub(r'\s{2,}', ' ', team_name).strip()
     return {
         "id": raw_id,
         "provider_id": raw_id.rsplit(":", 1)[-1],
-        "name": str(team.get("name") or code).strip(),
+        "name": team_name or code,
         "code": code,
         "image": _https_url(team.get("image") or team.get("lightImage")),
         "score": int(result.get("gameWins") or 0),
