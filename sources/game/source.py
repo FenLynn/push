@@ -195,7 +195,9 @@ class GameSource(BaseSource):
         by_date = {str(day.get('date') or ''): {**day, 'matches': list(day.get('matches') or [])} for day in days_data}
         today = datetime.now().strftime('%Y-%m-%d')
         for match in official_matches:
-            if match.get('status') == 'completed' or not match.get('date'):
+            if not match.get('date'):
+                continue
+            if match.get('status') == 'completed' and match.get('date') != today:
                 continue
             date_str = match['date']
             day = by_date.get(date_str)
@@ -267,6 +269,10 @@ class GameSource(BaseSource):
                 
             matches = []
             for _, row in day_games.iterrows():
+                def row_value(key, default=None):
+                    value = row.get(key, default)
+                    return default if pd.isna(value) else value
+
                 # 获取内容
                 if 'league' in row and 'team_a' in row and 'team_b' in row:
                     league = row.get('league', '')
@@ -290,6 +296,9 @@ class GameSource(BaseSource):
                         is_highlight_row = True
                 
                 matches.append({
+                    'id': row_value('id', ''),
+                    'provider': row_value('provider', ''),
+                    'provider_id': row_value('provider_id', ''),
                     'time': row['time'],
                     'type': row['type'],
                     'league': league,
@@ -298,7 +307,15 @@ class GameSource(BaseSource):
                     'team_a_logo': row.get('team_a_logo', ''),
                     'team_b_logo': row.get('team_b_logo', ''),
                     'media': row['media'],
-                    'highlight': is_highlight_row
+                    'highlight': is_highlight_row,
+                    'status': row_value('status', 'not_started'),
+                    'status_known': bool(row_value('status_known', False)),
+                    'live': bool(row_value('live', False)),
+                    'score_a': row_value('score_a'),
+                    'score_b': row_value('score_b'),
+                    'period_text': row_value('period_text', ''),
+                    'current_game': row_value('current_game'),
+                    'winner': row_value('winner', ''),
                 })
             
             # 日期标签

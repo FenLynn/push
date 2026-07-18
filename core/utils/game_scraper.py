@@ -3,7 +3,58 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
+
+
+SCORE_ENDPOINT = "https://bifen4pc2.qiumibao.com/json/{date}/v2/{match_id}.htm"
+
+
+def _nullable_score(value):
+    if value in (None, ''):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_score_payload(payload, match=None):
+    """Normalize a zhibo8 score payload without guessing an unavailable state."""
+    if not isinstance(payload, dict):
+        return {}
+    match = match or {}
+    state = str(payload.get('state') or '').strip()
+    period_text = str(payload.get('period_cn') or payload.get('period_state') or '').strip()
+    if re.search(r'取消|延期|推迟', period_text):
+        status = 'cancelled'
+    elif state == '2':
+        status = 'running'
+    elif state == '3':
+        status = 'finished'
+    else:
+        return {}
+
+    left = payload.get('left') if isinstance(payload.get('left'), dict) else {}
+    right = payload.get('right') if isinstance(payload.get('right'), dict) else {}
+    score_a = _nullable_score(left.get('score'))
+    score_b = _nullable_score(right.get('score'))
+    current_game_match = re.search(r'第\s*(\d+)\s*局', period_text)
+    current_game = int(current_game_match.group(1)) if current_game_match else None
+    winner = ''
+    if status == 'finished' and score_a is not None and score_b is not None and score_a != score_b:
+        winner = str(match.get('team_a') if score_a > score_b else match.get('team_b') or '').strip()
+
+    return {
+        'status': status,
+        'status_known': True,
+        'live': status == 'running',
+        'score_a': score_a,
+        'score_b': score_b,
+        'period_text': period_text,
+        'current_game': current_game,
+        'winner': winner,
+    }
 
 class GameSchedule:
     """直播8 (zhibo8.cc) 赛程抓取器"""
@@ -16,6 +67,45 @@ class GameSchedule:
 
     def __init__(self, target_keywords=None):
         self.target_keywords = target_keywords or []
+
+    def _fetch_score_status(self, match):
+        match_id = str(match.get('id') or '').strip()
+        date_str = str(match.get('date') or '').strip()
+        if not match_id or not date_str:
+            return match_id, {}
+        try:
+            response = requests.get(
+                SCORE_ENDPOINT.format(date=date_str, match_id=match_id),
+                headers=self.HEADERS,
+                timeout=6,
+            )
+            if response.status_code != 200:
+                return match_id, {}
+            return match_id, normalize_score_payload(response.json(), match)
+        except (requests.RequestException, ValueError):
+            return match_id, {}
+
+    def _enrich_started_matches(self, results):
+        now = datetime.now()
+        candidates = []
+        for match in results:
+            raw_time = str(match.get('raw_time') or '').strip()
+            try:
+                starts_at = datetime.strptime(raw_time, '%Y-%m-%d %H:%M')
+            except ValueError:
+                continue
+            if starts_at.date() == now.date() and starts_at <= now:
+                candidates.append(match)
+        if not candidates:
+            return
+
+        by_id = {str(match.get('id') or ''): match for match in candidates}
+        with ThreadPoolExecutor(max_workers=min(8, len(candidates))) as executor:
+            futures = [executor.submit(self._fetch_score_status, match) for match in candidates]
+            for future in as_completed(futures):
+                match_id, status_data = future.result()
+                if match_id in by_id and status_data:
+                    by_id[match_id].update(status_data)
 
     def get_all_game_info(self) -> pd.DataFrame:
         """抓取并解析赛程"""
@@ -106,6 +196,10 @@ class GameSchedule:
                     fragment = f'<span class="_league">{league}</span><span class="_teams">{team_a} vs {team_b}</span>'
 
                     results.append({
+                        'id': str(li.get('id') or '').replace('saishi', '').strip(),
+                        'provider': 'zhibo8',
+                        'provider_id': str(li.get('id') or '').replace('saishi', '').strip(),
+                        'raw_time': raw_time,
                         'date': date_str,
                         'time': time_str,
                         'type': game_type, 
@@ -115,9 +209,18 @@ class GameSchedule:
                         'team_b': team_b,
                         'team_a_logo': team_a_logo,
                         'team_b_logo': team_b_logo,
-                        'media': "视频/互动"
+                        'media': "视频/互动",
+                        'status': 'not_started',
+                        'status_known': False,
+                        'live': False,
+                        'score_a': None,
+                        'score_b': None,
+                        'period_text': '',
+                        'current_game': None,
+                        'winner': '',
                     })
-            
+
+            self._enrich_started_matches(results)
             df = pd.DataFrame(results)
             return df
             
