@@ -52,7 +52,7 @@ def test_live_completed_game_winner_uses_official_team_id():
                     'redTeamMetadata': {'esportsTeamId': 'team-T1'},
                 },
                 'frames': [{
-                    'gameState': 'finished',
+                    'gameState': 'in_game',
                     'blueTeam': {'towers': 5},
                     'redTeam': {'towers': 11},
                 }],
@@ -66,6 +66,33 @@ def test_live_completed_game_winner_uses_official_team_id():
     enriched = enrich_live_game_winners(match, datetime.now(timezone.utc), session=Session())
     assert enriched['games'][0]['winner'] == 'T1'
     assert enriched['games'][1]['winner'] == ''
+
+
+def test_series_score_fills_unresolved_surrendered_game():
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                'gameMetadata': {
+                    'blueTeamMetadata': {'esportsTeamId': 'team-T1'},
+                    'redTeamMetadata': {'esportsTeamId': 'team-GEN'},
+                },
+                'frames': [{
+                    'gameState': 'finished',
+                    'blueTeam': {'towers': 7},
+                    'redTeam': {'towers': 3},
+                }],
+            }
+
+    class Session:
+        def get(self, *args, **kwargs):
+            return Response()
+
+    match = normalize_event(_event())
+    enriched = enrich_live_game_winners(match, datetime.now(timezone.utc), session=Session())
+    assert enriched['games'][0]['winner'] == 'T1'
 
 
 def test_notification_is_once_and_only_near_start():

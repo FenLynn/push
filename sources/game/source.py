@@ -291,6 +291,8 @@ class GameSource(BaseSource):
                     'league': league,
                     'team_a': team_a, # 包含 HTML
                     'team_b': team_b, # 包含 HTML
+                    'team_a_logo': row.get('team_a_logo', ''),
+                    'team_b_logo': row.get('team_b_logo', ''),
                     'media': row['media'],
                     'highlight': is_highlight_row
                 })

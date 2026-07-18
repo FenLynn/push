@@ -63,29 +63,34 @@ def _resolve_completed_game_winner(
         game_number = max(1, int(game.get("number") or 1))
         latest_useful_time = parsed_match_start + timedelta(minutes=game_number * 90)
         query_time = min(query_time, latest_useful_time)
-    starting_time = query_time.isoformat(timespec="seconds").replace("+00:00", "Z")
-    try:
-        response = session.get(
-            f"{LOL_LIVE_WINDOW_ENDPOINT}/{game_id}",
-            params={"startingTime": starting_time},
-            headers={
-                "Origin": "https://lolesports.com",
-                "Referer": "https://lolesports.com/",
-                "User-Agent": "Push-Game-Snapshot/1.0",
-            },
-            timeout=10,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except Exception:
-        return ""
+    query_time = query_time.replace(second=0, microsecond=0)
+    payload: Dict[str, Any] = {}
+    for offset_minutes in (0, 10, 30):
+        starting_time = (query_time - timedelta(minutes=offset_minutes)).isoformat(timespec="seconds").replace("+00:00", "Z")
+        try:
+            response = session.get(
+                f"{LOL_LIVE_WINDOW_ENDPOINT}/{game_id}",
+                params={"startingTime": starting_time},
+                headers={
+                    "Origin": "https://lolesports.com",
+                    "Referer": "https://lolesports.com/",
+                    "User-Agent": "Push-Game-Snapshot/1.0",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            candidate = response.json()
+            if isinstance(candidate, dict) and candidate.get("frames"):
+                payload = candidate
+                break
+        except Exception:
+            continue
 
     frames = payload.get("frames") if isinstance(payload, dict) else []
     if not isinstance(frames, list) or not frames:
         return ""
-    final_frame = next((frame for frame in reversed(frames)
-                        if str(frame.get("gameState") or "").strip().lower() == "finished"), None)
-    if not isinstance(final_frame, dict):
+    final_frame = frames[-1] if isinstance(frames[-1], dict) else None
+    if not final_frame:
         return ""
 
     blue_towers = int((final_frame.get("blueTeam") or {}).get("towers") or 0)
@@ -119,6 +124,26 @@ def enrich_live_game_winners(match: Dict[str, Any], now: datetime, session: Any 
                 match_start=match.get("startedAt") or match.get("startTime") or match.get("scheduledAt"),
                 session=session,
             )
+    completed_games = [game for game in match.get("games", []) if game.get("state") == "completed"]
+    unresolved_games = [game for game in completed_games if not game.get("winner")]
+    team_a_code = str(match.get("teamACode") or "").strip().upper()
+    team_b_code = str(match.get("teamBCode") or "").strip().upper()
+    team_a_wins = int(match.get("scoreA") or 0)
+    team_b_wins = int(match.get("scoreB") or 0)
+    known_a_wins = sum(1 for game in completed_games if game.get("winner") == team_a_code)
+    known_b_wins = sum(1 for game in completed_games if game.get("winner") == team_b_code)
+    remaining_a_wins = team_a_wins - known_a_wins
+    remaining_b_wins = team_b_wins - known_b_wins
+    if unresolved_games and remaining_a_wins >= 0 and remaining_b_wins >= 0 \
+            and remaining_a_wins + remaining_b_wins == len(unresolved_games):
+        if remaining_a_wins == len(unresolved_games):
+            for game in unresolved_games:
+                game["winner"] = team_a_code
+        elif remaining_b_wins == len(unresolved_games):
+            for game in unresolved_games:
+                game["winner"] = team_b_code
+        elif len(unresolved_games) == 1:
+            unresolved_games[0]["winner"] = team_a_code if remaining_a_wins == 1 else team_b_code
     return match
 
 

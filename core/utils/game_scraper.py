@@ -73,10 +73,15 @@ class GameSchedule:
                     # 2. 从 DOM 原生结构精准提取联赛名与队伍名
                     span_league = li.find('span', class_='_league')
                     span_teams = li.find('span', class_='_teams')
+                    team_a_logo = ''
+                    team_b_logo = ''
                     
                     if span_league and span_teams:
                         league = span_league.get_text(separator=" ", strip=True)
                         teams_str = span_teams.get_text(separator=" ", strip=True) # 使用空格分隔以免文字粘连
+                        team_images = [str(image.get('src') or '').strip() for image in span_teams.find_all('img')]
+                        team_a_logo = team_images[0] if len(team_images) > 0 else ''
+                        team_b_logo = team_images[1] if len(team_images) > 1 else ''
                         
                         # 3. 安全分割主客队队伍
                         if '-' in teams_str:
@@ -108,6 +113,8 @@ class GameSchedule:
                         'league': league,
                         'team_a': team_a,
                         'team_b': team_b,
+                        'team_a_logo': team_a_logo,
+                        'team_b_logo': team_b_logo,
                         'media': "视频/互动"
                     })
             
