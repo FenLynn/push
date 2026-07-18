@@ -10,7 +10,7 @@ def _event(code_a='T1', code_b='GEN', state='inProgress'):
         'id': 'event-1',
         'startTime': '2026-07-18T11:00:00Z',
         'state': state,
-        'league': {'name': 'LCK', 'slug': 'lck'},
+        'league': {'name': 'LCK', 'slug': 'lck', 'image': 'http://img/lck.png'},
         'match': {
             'id': 'match-1',
             'state': state,
@@ -21,7 +21,7 @@ def _event(code_a='T1', code_b='GEN', state='inProgress'):
             ],
         },
         'matchTeams': [
-            {'code': code_a, 'name': code_a, 'image': 'http://img/a.png', 'result': {'gameWins': 1}},
+            {'code': code_a, 'name': code_a, 'image': 'http://img/a.png', 'lightImage': 'http://img/a-white.png', 'result': {'gameWins': 1}},
             {'code': code_b, 'name': code_b, 'image': 'http://img/b.png', 'result': {'gameWins': 0}},
         ],
     }
@@ -32,7 +32,8 @@ def test_normalizes_exact_watched_live_match():
     assert match['live'] is True
     assert match['currentGame'] == 2
     assert match['scoreText'] == '1:0'
-    assert match['teamALogo'].startswith('https://')
+    assert match['teamALogo'] == 'https://img/a.png'
+    assert match['leagueLogo'] == 'https://img/lck.png'
 
 
 def test_non_watched_match_is_ignored():

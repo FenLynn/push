@@ -36,7 +36,7 @@ def _normalize_team(team: Dict[str, Any]) -> Dict[str, Any]:
         "id": str(team.get("id") or "").strip(),
         "name": str(team.get("name") or code).strip(),
         "code": code,
-        "image": _https_url(team.get("lightImage") or team.get("image")),
+        "image": _https_url(team.get("image") or team.get("lightImage")),
         "score": int(result.get("gameWins") or 0),
         "outcome": str(result.get("outcome") or "").strip(),
     }
@@ -84,6 +84,7 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "scheduledAt": start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if start else "",
         "league": str(league.get("name") or "").strip(),
         "leagueSlug": str(league.get("slug") or "").strip(),
+        "leagueLogo": _https_url(league.get("image")),
         "stage": str(event.get("blockName") or tournament.get("name") or "").strip(),
         "status": state,
         "live": state.lower() == "inprogress",
