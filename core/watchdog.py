@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -13,6 +14,7 @@ import requests
 sys.path.insert(0, os.getcwd())
 
 from core import ContentType, Message
+from core.dashboard_snapshot import DashboardSnapshotExporter
 from core.d1_client import D1Client
 
 
@@ -21,6 +23,7 @@ WATCHDOG_WORKFLOW_NAME = 'Watchdog Sentinel'
 STATE_KEY = 'watchdog_persistent_state_v2'
 PERSIST_HOURS = max(48, int(os.getenv('WATCHDOG_PERSIST_HOURS', '48') or '48'))
 IDLE_HOURS = max(3, int(os.getenv('WATCHDOG_BUSINESS_IDLE_HOURS', '4') or '4'))
+GAME_STALE_HOURS = max(18, int(os.getenv('WATCHDOG_GAME_STALE_HOURS', '20') or '20'))
 FAILED_CONCLUSIONS = {'failure', 'cancelled', 'timed_out', 'action_required', 'stale'}
 
 
@@ -96,6 +99,37 @@ def detect_issues(runs, now=None):
                 f"最近一次是 {latest['name']}。"
             )
     return issues
+
+
+def detect_game_snapshot_issues(snapshot, now=None):
+    now = now or datetime.now(timezone.utc)
+    if not isinstance(snapshot, dict) or not snapshot:
+        return {'game:snapshot-missing': '赛事 KV 快照不存在或无法读取。'}
+    issues = {}
+    generated_at = _parse_time(snapshot.get('generatedAt'))
+    if not generated_at:
+        issues['game:snapshot-time-invalid'] = '赛事 KV 快照缺少有效 generatedAt。'
+    else:
+        age_hours = (now - generated_at.astimezone(timezone.utc)).total_seconds() / 3600
+        if age_hours >= GAME_STALE_HOURS:
+            issues['game:snapshot-stale'] = f'赛事 KV 快照已连续约 {age_hours:.1f} 小时未更新。'
+
+    payload = snapshot.get('payload') if isinstance(snapshot.get('payload'), dict) else {}
+    health = payload.get('health') if isinstance(payload.get('health'), dict) else {}
+    for item in health.get('issues') or []:
+        if not isinstance(item, dict):
+            continue
+        code = re.sub(r'[^a-z0-9_-]+', '-', str(item.get('code') or 'unknown').strip().lower()).strip('-') or 'unknown'
+        message = str(item.get('message') or code).strip()
+        issues[f'game:{code}'] = f'赛事数据健康检查：{message}'
+    return issues
+
+
+def fetch_game_snapshot_issues(now=None):
+    exporter = DashboardSnapshotExporter()
+    if not exporter.kv_client.enabled:
+        return {}
+    return detect_game_snapshot_issues(exporter.load('game'), now=now)
 
 
 def evaluate_alert_state(state, issues, now=None):
@@ -180,6 +214,11 @@ def run_watchdog():
         issues = detect_issues(fetch_recent_workflow_runs(), now=now)
     except Exception as exc:
         issues = {'watchdog:github-api': f'Watchdog 无法检查 GitHub Actions：{exc}'}
+
+    try:
+        issues.update(fetch_game_snapshot_issues(now=now))
+    except Exception as exc:
+        issues['watchdog:game-health'] = f'Watchdog 无法读取赛事健康状态：{exc}'
 
     store = WatchdogStateStore()
     try:

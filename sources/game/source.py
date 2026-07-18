@@ -27,6 +27,12 @@ class GameSource(BaseSource):
                      '男篮世界杯', '男篮欧锦赛', '欧冠','MSI']
     
     HIGHLIGHTED_TEAMS = list(WATCHED_TEAM_CODES)
+    WATCHED_TEAM_ALIASES = {
+        'T1': {'T1', 'SKTT1', 'SKTELECOMT1'},
+        'HLE': {'HLE', 'HANWHALIFE', 'HANWHALIFEESPORTS'},
+        'GEN': {'GEN', 'GENG', 'GENGESPORTS'},
+        'BLG': {'BLG', 'BILIBILI', 'BILIBILIGAMING'},
+    }
     
     WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     
@@ -35,6 +41,8 @@ class GameSource(BaseSource):
         self.topic = topic
         self.games = games or self.DEFAULT_GAMES
         self.template = TemplateEngine()
+        self._official_error = ''
+        self._source_diagnostics = {}
     
     MAX_MESSAGE_SIZE = 19000  # Increased to 19KB as per user request
 
@@ -43,6 +51,8 @@ class GameSource(BaseSource):
             days_data = self._get_formatted_data()
             official_matches = self._get_official_lol_matches()
             days_data = self._merge_official_matches(days_data, official_matches)
+            checked_at = datetime.now().astimezone().isoformat()
+            health = self._build_health(days_data, official_matches, checked_at)
             # 挑选 Hero Match (推荐赛事)
             hero_match = self._pick_hero_match(days_data)
             total_matches = sum(len(day.get('matches', [])) for day in days_data)
@@ -56,6 +66,10 @@ class GameSource(BaseSource):
                 'liveMatches': [match for match in official_matches if match.get('live')],
                 'hasLive': any(match.get('live') for match in official_matches),
                 'liveSource': 'LOL Official' if official_matches else 'schedule-fallback',
+                'liveUpdatedAt': checked_at if official_matches else '',
+                'liveError': self._official_error,
+                'sourceDiagnostics': self._source_diagnostics,
+                'health': health,
             })
 
             # --- Smart Truncation Logic ---
@@ -119,6 +133,11 @@ class GameSource(BaseSource):
                 'highlightedTeams': self.HIGHLIGHTED_TEAMS,
                 'watchedTeams': self.HIGHLIGHTED_TEAMS,
                 'error': str(e),
+                'health': {
+                    'status': 'warning',
+                    'checkedAt': datetime.now().astimezone().isoformat(),
+                    'issues': [{'code': 'game-pipeline-error', 'message': str(e)}],
+                },
             })
             return Message(
                 title='Game Error',
@@ -185,13 +204,77 @@ class GameSource(BaseSource):
 
     def _get_official_lol_matches(self):
         try:
-            return fetch_watched_matches()
+            matches = fetch_watched_matches()
+            self._official_error = ''
+            return matches
         except Exception as exc:
+            self._official_error = str(exc)
             self.logger.warning('LoL Esports live data unavailable; keeping schedule fallback: %s', exc)
             return []
 
+    @staticmethod
+    def _plain_team(value):
+        return re.sub(r'<[^>]*>', '', str(value or '')).strip().upper()
+
+    @classmethod
+    def _team_key(cls, value):
+        return re.sub(r'[^A-Z0-9]', '', cls._plain_team(value))
+
+    @classmethod
+    def _is_watched_team(cls, value):
+        key = cls._team_key(value)
+        return any(key in aliases for aliases in cls.WATCHED_TEAM_ALIASES.values())
+
+    def _has_watched_schedule(self, days_data):
+        for day in days_data:
+            for match in day.get('matches') or []:
+                if self._is_watched_team(match.get('team_a')) or self._is_watched_team(match.get('team_b')):
+                    return True
+        return False
+
+    def _build_health(self, days_data, official_matches, checked_at):
+        issues = []
+        if self._official_error:
+            issues.append({'code': 'official-source-unavailable', 'message': self._official_error})
+        elif not official_matches and self._has_watched_schedule(days_data):
+            issues.append({
+                'code': 'official-watched-matches-missing',
+                'message': '赛程中存在关注队伍，但官方 LoL 数据未返回对应比赛',
+            })
+        for match in official_matches:
+            if str(match.get('status') or '').lower() in ('completed', 'complete', 'finished'):
+                score_a = match.get('scoreA')
+                score_b = match.get('scoreB')
+                if score_a in (None, '') or score_b in (None, '') or (score_a == 0 and score_b == 0):
+                    issues.append({
+                        'code': 'final-score-missing',
+                        'message': f"{match.get('teamACode') or match.get('teamA')} vs {match.get('teamBCode') or match.get('teamB')} 已结束但缺少有效比分",
+                    })
+        severe_conflicts = [
+            item for item in self._source_diagnostics.get('conflicts', [])
+            if item.get('severity') == 'error'
+        ]
+        if severe_conflicts:
+            issues.append({
+                'code': 'source-identity-conflict',
+                'message': f"双源存在 {len(severe_conflicts)} 个队伍身份冲突",
+            })
+        return {
+            'status': 'warning' if issues else 'ok',
+            'checkedAt': checked_at,
+            'issues': issues,
+        }
+
     def _merge_official_matches(self, days_data, official_matches):
         """Replace duplicate watched LoL rows and append missing official matches."""
+        diagnostics = {
+            'checkedAt': datetime.now().astimezone().isoformat(),
+            'officialCount': len(official_matches),
+            'matchedCount': 0,
+            'appendedCount': 0,
+            'conflictCount': 0,
+            'conflicts': [],
+        }
         by_date = {str(day.get('date') or ''): {**day, 'matches': list(day.get('matches') or [])} for day in days_data}
         today = datetime.now().strftime('%Y-%m-%d')
         for match in official_matches:
@@ -235,11 +318,51 @@ class GameSource(BaseSource):
                     duplicate_index = index
                     break
             if duplicate_index >= 0:
-                day['matches'][duplicate_index] = {**day['matches'][duplicate_index], **normalized}
+                old = day['matches'][duplicate_index]
+                diagnostics['matchedCount'] += 1
+                old_id = str(old.get('providerId') or old.get('provider_id') or old.get('id') or '')
+                if old_id and old_id == str(match.get('providerId') or ''):
+                    old_teams = {self._plain_team(old.get('team_a')), self._plain_team(old.get('team_b'))}
+                    official_teams = {self._plain_team(match.get('teamA')), self._plain_team(match.get('teamB'))}
+                    if all(old_teams) and all(official_teams) and old_teams.isdisjoint(official_teams):
+                        diagnostics['conflicts'].append({
+                            'type': 'team-identity',
+                            'severity': 'error',
+                            'providerId': match.get('providerId'),
+                            'message': '同一比赛 ID 的队伍信息不一致',
+                        })
+                old_time = re.match(r'^(\d{1,2}):(\d{2})', str(old.get('time') or ''))
+                official_time = re.match(r'^(\d{1,2}):(\d{2})', str(match.get('time') or ''))
+                time_gap = None
+                if old_time and official_time:
+                    old_minutes = int(old_time.group(1)) * 60 + int(old_time.group(2))
+                    official_minutes = int(official_time.group(1)) * 60 + int(official_time.group(2))
+                    time_gap = min(abs(old_minutes - official_minutes), 24 * 60 - abs(old_minutes - official_minutes))
+                if time_gap is not None and time_gap > 15:
+                    diagnostics['conflicts'].append({
+                        'type': 'scheduled-time',
+                        'severity': 'info',
+                        'providerId': match.get('providerId'),
+                        'message': '赛程时间与官方源不一致',
+                    })
+                old_scores = (old.get('score_a'), old.get('score_b'))
+                official_scores = (match.get('scoreA'), match.get('scoreB'))
+                if all(value is not None for value in old_scores + official_scores) and old_scores != official_scores:
+                    diagnostics['conflicts'].append({
+                        'type': 'score',
+                        'severity': 'info',
+                        'providerId': match.get('providerId'),
+                        'message': '快照比分落后于官方源',
+                    })
+                day['matches'][duplicate_index] = {**old, **normalized}
             else:
+                diagnostics['appendedCount'] += 1
                 day['matches'].append(normalized)
             day['matches'].sort(key=lambda item: str(item.get('time') or ''))
             by_date[date_str] = day
+        diagnostics['conflicts'] = diagnostics['conflicts'][:20]
+        diagnostics['conflictCount'] = len(diagnostics['conflicts'])
+        self._source_diagnostics = diagnostics
         return sorted(by_date.values(), key=lambda day: str(day.get('date') or ''))
 
     def _get_formatted_data(self):
