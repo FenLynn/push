@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from core.utils.lol_esports import normalize_event
+from core.utils.lol_esports import enrich_live_game_winners, normalize_event
 from scripts.notify_game import select_notification_candidates
 
 
@@ -21,8 +21,8 @@ def _event(code_a='T1', code_b='GEN', state='inProgress'):
             ],
         },
         'matchTeams': [
-            {'code': code_a, 'name': code_a, 'image': 'http://img/a.png', 'lightImage': 'http://img/a-white.png', 'result': {'gameWins': 1}},
-            {'code': code_b, 'name': code_b, 'image': 'http://img/b.png', 'result': {'gameWins': 0}},
+            {'id': f'match-1:team-{code_a}', 'code': code_a, 'name': code_a, 'image': 'http://img/a.png', 'lightImage': 'http://img/a-white.png', 'result': {'gameWins': 1}},
+            {'id': f'match-1:team-{code_b}', 'code': code_b, 'name': code_b, 'image': 'http://img/b.png', 'result': {'gameWins': 0}},
         ],
     }
 
@@ -38,6 +38,34 @@ def test_normalizes_exact_watched_live_match():
 
 def test_non_watched_match_is_ignored():
     assert normalize_event(_event('KT', 'DK')) is None
+
+
+def test_live_completed_game_winner_uses_official_team_id():
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                'gameMetadata': {
+                    'blueTeamMetadata': {'esportsTeamId': 'team-GEN'},
+                    'redTeamMetadata': {'esportsTeamId': 'team-T1'},
+                },
+                'frames': [{
+                    'gameState': 'finished',
+                    'blueTeam': {'towers': 5},
+                    'redTeam': {'towers': 11},
+                }],
+            }
+
+    class Session:
+        def get(self, *args, **kwargs):
+            return Response()
+
+    match = normalize_event(_event())
+    enriched = enrich_live_game_winners(match, datetime.now(timezone.utc), session=Session())
+    assert enriched['games'][0]['winner'] == 'T1'
+    assert enriched['games'][1]['winner'] == ''
 
 
 def test_notification_is_once_and_only_near_start():

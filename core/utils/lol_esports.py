@@ -9,6 +9,7 @@ import requests
 
 
 LOL_ESPORTS_ENDPOINT = "https://lolesports.com/api/gql"
+LOL_LIVE_WINDOW_ENDPOINT = "https://feed.lolesports.com/livestats/v1/window"
 HOME_EVENTS_QUERY_ID = "7246add6f577cf30b304e651bf9e25fc6a41fe49aeafb0754c16b5778060fc0a"
 WATCHED_TEAM_CODES = ("T1", "HLE", "GEN", "BLG")
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -32,14 +33,93 @@ def _parse_time(value: Any) -> Optional[datetime]:
 def _normalize_team(team: Dict[str, Any]) -> Dict[str, Any]:
     result = team.get("result") if isinstance(team.get("result"), dict) else {}
     code = str(team.get("code") or "").strip().upper()
+    raw_id = str(team.get("id") or "").strip()
     return {
-        "id": str(team.get("id") or "").strip(),
+        "id": raw_id,
+        "provider_id": raw_id.rsplit(":", 1)[-1],
         "name": str(team.get("name") or code).strip(),
         "code": code,
         "image": _https_url(team.get("image") or team.get("lightImage")),
         "score": int(result.get("gameWins") or 0),
         "outcome": str(result.get("outcome") or "").strip(),
     }
+
+
+def _resolve_completed_game_winner(
+    game: Dict[str, Any],
+    teams: List[Dict[str, Any]],
+    now: datetime,
+    match_start: Any = None,
+    session: Any = requests,
+) -> str:
+    """Resolve a completed game's winner from the official live-data final frame."""
+    game_id = str(game.get("id") or "").strip()
+    if not game_id or str(game.get("state") or "").strip().lower() != "completed":
+        return ""
+
+    query_time = now.astimezone(timezone.utc)
+    parsed_match_start = _parse_time(match_start)
+    if parsed_match_start:
+        game_number = max(1, int(game.get("number") or 1))
+        latest_useful_time = parsed_match_start + timedelta(minutes=game_number * 90)
+        query_time = min(query_time, latest_useful_time)
+    starting_time = query_time.isoformat(timespec="seconds").replace("+00:00", "Z")
+    try:
+        response = session.get(
+            f"{LOL_LIVE_WINDOW_ENDPOINT}/{game_id}",
+            params={"startingTime": starting_time},
+            headers={
+                "Origin": "https://lolesports.com",
+                "Referer": "https://lolesports.com/",
+                "User-Agent": "Push-Game-Snapshot/1.0",
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return ""
+
+    frames = payload.get("frames") if isinstance(payload, dict) else []
+    if not isinstance(frames, list) or not frames:
+        return ""
+    final_frame = next((frame for frame in reversed(frames)
+                        if str(frame.get("gameState") or "").strip().lower() == "finished"), None)
+    if not isinstance(final_frame, dict):
+        return ""
+
+    blue_towers = int((final_frame.get("blueTeam") or {}).get("towers") or 0)
+    red_towers = int((final_frame.get("redTeam") or {}).get("towers") or 0)
+    if blue_towers == 11 and red_towers != 11:
+        side = "blueTeamMetadata"
+    elif red_towers == 11 and blue_towers != 11:
+        side = "redTeamMetadata"
+    else:
+        return ""
+
+    metadata = payload.get("gameMetadata") if isinstance(payload.get("gameMetadata"), dict) else {}
+    winner_id = str((metadata.get(side) or {}).get("esportsTeamId") or "").strip()
+    winner = next((team for team in teams if team.get("provider_id") == winner_id), None)
+    return str((winner or {}).get("code") or "").strip().upper()
+
+
+def enrich_live_game_winners(match: Dict[str, Any], now: datetime, session: Any = requests) -> Dict[str, Any]:
+    if not match.get("live"):
+        return match
+    teams = [
+        {"provider_id": match.get("teamAProviderId"), "code": match.get("teamACode")},
+        {"provider_id": match.get("teamBProviderId"), "code": match.get("teamBCode")},
+    ]
+    for game in match.get("games") if isinstance(match.get("games"), list) else []:
+        if not game.get("winner"):
+            game["winner"] = _resolve_completed_game_winner(
+                game,
+                teams,
+                now,
+                match_start=match.get("startedAt") or match.get("startTime") or match.get("scheduledAt"),
+                session=session,
+            )
+    return match
 
 
 def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -99,6 +179,8 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "teamB": teams[1]["name"],
         "teamACode": teams[0]["code"],
         "teamBCode": teams[1]["code"],
+        "teamAProviderId": teams[0]["provider_id"],
+        "teamBProviderId": teams[1]["provider_id"],
         "teamALogo": teams[0]["image"],
         "teamBLogo": teams[1]["image"],
         "games": games,
@@ -148,4 +230,5 @@ def fetch_watched_matches(
         raise RuntimeError(str(payload["errors"][0].get("message") or "LoL Esports query failed"))
     events: Iterable[Dict[str, Any]] = (((payload.get("data") or {}).get("esports") or {}).get("events") or [])
     matches = [normalized for normalized in (normalize_event(event) for event in events) if normalized]
+    matches = [enrich_live_game_winners(match, now, session=session) for match in matches]
     return sorted(matches, key=lambda item: item.get("startTime") or "")
