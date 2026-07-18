@@ -2,8 +2,6 @@ name: "Module: Estate Push"
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '35 10 * * 1-5'
 
 jobs:
   run:
