@@ -33,6 +33,21 @@ class GameSource(BaseSource):
         'GEN': {'GEN', 'GENG', 'GENGESPORTS'},
         'BLG': {'BLG', 'BILIBILI', 'BILIBILIGAMING'},
     }
+
+    # 首页和小程序共享同一份赛程快照。LOL 只发布一级联赛和国际大赛，
+    # 避免宽泛的 “LOL” 抓取词把 LJL、学院及次级联赛全部带入前端。
+    LOL_MAJOR_EVENT_KEYWORDS = (
+        'LPL', 'LCK', 'LEC', 'LCS', 'LTA', 'LCP',
+        'MSI', 'MID-SEASON', '季中冠军',
+        'WORLD CHAMPIONSHIP', 'WORLDS', '全球总决赛', 'S赛',
+        'ESPORTS WORLD CUP', 'EWC', '电竞世界杯',
+        'FIRST STAND', '先锋赛', '亚运会',
+    )
+    LOL_DEVELOPMENT_EVENT_KEYWORDS = (
+        'LJL', 'LDL', 'LCK CL', 'LCK CHALLENGERS',
+        'ACADEMY', 'CHALLENGERS', 'DEVELOPMENT',
+        '学院', '次级', '发展联赛', '青训',
+    )
     
     WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     
@@ -225,6 +240,18 @@ class GameSource(BaseSource):
         key = cls._team_key(value)
         return any(key in aliases for aliases in cls.WATCHED_TEAM_ALIASES.values())
 
+    @classmethod
+    def _should_publish_match(cls, game_type, league, team_a='', team_b=''):
+        """Keep the public schedule useful without hiding followed teams."""
+        if cls._is_watched_team(team_a) or cls._is_watched_team(team_b):
+            return True
+        if str(game_type or '').strip().upper() != 'LOL':
+            return True
+        league_text = str(league or '').strip().upper()
+        if any(keyword.upper() in league_text for keyword in cls.LOL_DEVELOPMENT_EVENT_KEYWORDS):
+            return False
+        return any(keyword.upper() in league_text for keyword in cls.LOL_MAJOR_EVENT_KEYWORDS)
+
     def _has_watched_schedule(self, days_data):
         for day in days_data:
             for match in day.get('matches') or []:
@@ -403,6 +430,9 @@ class GameSource(BaseSource):
                     team_b = row.get('team_b', '')
                 else:
                     league, team_a, team_b = self._parse_content(row.get('content', ''))
+
+                if not self._should_publish_match(row.get('type'), league, team_a, team_b):
+                    continue
                 
                 # 高亮处理 logic
                 # 标记整行是否高亮 (用于背景色)
@@ -441,6 +471,9 @@ class GameSource(BaseSource):
                     'winner': row_value('winner', ''),
                 })
             
+            if not matches:
+                continue
+
             # 日期标签
             date_obj = datetime.strptime(date_str, "%Y-%m-%d")
             weekday = self.WEEKDAYS[date_obj.weekday()]
