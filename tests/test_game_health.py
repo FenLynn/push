@@ -19,6 +19,7 @@ def test_public_schedule_keeps_major_lol_events_and_filters_ljl():
     assert source._should_publish_match('LOL', 'LEC Summer', 'G2', 'KC')
     assert source._should_publish_match('LOL', '英雄联盟全球总决赛', 'AAA', 'BBB')
     assert not source._should_publish_match('LOL', 'LJL Summer Split', 'AAA', 'BBB')
+    assert not source._should_publish_match('电竞', 'LJL BO5 第2局', 'New Meta', 'UWInks')
     assert not source._should_publish_match('LOL', 'LCK CL常规赛', 'AAA', 'BBB')
     assert not source._should_publish_match('LOL', '学院联赛', 'AAA', 'BBB')
 

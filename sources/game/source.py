@@ -245,11 +245,11 @@ class GameSource(BaseSource):
         """Keep the public schedule useful without hiding followed teams."""
         if cls._is_watched_team(team_a) or cls._is_watched_team(team_b):
             return True
-        if str(game_type or '').strip().upper() != 'LOL':
-            return True
         league_text = str(league or '').strip().upper()
         if any(keyword.upper() in league_text for keyword in cls.LOL_DEVELOPMENT_EVENT_KEYWORDS):
             return False
+        if str(game_type or '').strip().upper() != 'LOL':
+            return True
         return any(keyword.upper() in league_text for keyword in cls.LOL_MAJOR_EVENT_KEYWORDS)
 
     def _has_watched_schedule(self, days_data):
