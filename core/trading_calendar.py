@@ -35,6 +35,18 @@ _cache = {}
 _holiday_data = {}
 _d1_client = None
 
+# 国务院办公厅公布的 2026 年放假调休安排。仅在远端数据不可用时兜底，
+# 不能把某一年的固定日期机械套用到下一年。
+OFFICIAL_CHINA_HOLIDAYS_2026 = [
+    ("元旦", "2026-01-01", "2026-01-03", ["2026-01-04"]),
+    ("春节", "2026-02-15", "2026-02-23", ["2026-02-14", "2026-02-28"]),
+    ("清明节", "2026-04-04", "2026-04-06", []),
+    ("劳动节", "2026-05-01", "2026-05-05", ["2026-05-09"]),
+    ("端午节", "2026-06-19", "2026-06-21", []),
+    ("中秋节", "2026-09-25", "2026-09-27", []),
+    ("国庆节", "2026-10-01", "2026-10-07", ["2026-09-20", "2026-10-10"]),
+]
+
 def get_d1():
     """Get or initialize D1 client"""
     global _d1_client
@@ -136,7 +148,11 @@ def _load_holidays(year: int) -> Dict[str, bool]:
     if data_json:
         try:
             data = json.loads(data_json)
-            day_map = {d['date']: d['isHoliday'] for d in data.get('days', [])}
+            day_map = {
+                item['date']: bool(item.get('isOffDay', item.get('isHoliday')))
+                for item in data.get('days', [])
+                if item.get('date') and ('isOffDay' in item or 'isHoliday' in item)
+            }
             _holiday_data[year] = day_map
             return day_map
         except:
@@ -204,7 +220,10 @@ def get_china_holiday_name(d: Optional[date] = None) -> Optional[str]:
             data = json.loads(data_json)
             date_str = d.strftime('%Y-%m-%d')
             for day in data.get('days', []):
-                if day['date'] == date_str and day['isHoliday']:
+                if (
+                    day.get('date') == date_str
+                    and bool(day.get('isOffDay', day.get('isHoliday')))
+                ):
                     return day['name']
         except:
             pass
@@ -217,6 +236,105 @@ def get_china_holiday_name(d: Optional[date] = None) -> Optional[str]:
     except:
         pass
     return None
+
+
+def _load_holiday_periods(year: int) -> List[tuple]:
+    """Load and group holiday-cn rows into (name, start, end, makeup-days)."""
+    key = f'holidays_{year}'
+    data_json = None
+    d1 = get_d1()
+
+    if d1:
+        res = d1.query("SELECT value FROM sys_kv WHERE key = ?", [key])
+        if res['success'] and res['data'] and res['data'][0]['results']:
+            data_json = res['data'][0]['results'][0]['value']
+
+    cache_file = os.path.join(_get_data_dir(), f'holidays_{year}.json')
+    if not data_json and os.path.exists(cache_file):
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            data_json = f.read()
+
+    if not data_json and sync_holidays_from_remote(year):
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data_json = f.read()
+
+    grouped = {}
+    if data_json:
+        try:
+            data = json.loads(data_json)
+            for item in data.get('days', []):
+                name = str(item.get('name') or '').strip()
+                day = str(item.get('date') or '').strip()
+                if not name or not day or ('isOffDay' not in item and 'isHoliday' not in item):
+                    continue
+                is_off_day = bool(item.get('isOffDay', item.get('isHoliday')))
+                grouped.setdefault(name, {'off': [], 'work': []})
+                grouped[name]['off' if is_off_day else 'work'].append(day)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            grouped = {}
+
+    periods = []
+    for name, group in grouped.items():
+        off_days = sorted(group['off'])
+        if off_days:
+            periods.append((name, off_days[0], off_days[-1], sorted(group['work'])))
+    return periods
+
+
+def get_upcoming_china_holidays(
+    start_date: Optional[date] = None,
+    limit: int = 2,
+    years_ahead: int = 2,
+) -> List[Dict]:
+    """Return upcoming statutory holidays and their real makeup workdays."""
+    today = start_date or date.today()
+    periods = []
+
+    for year in range(today.year, today.year + max(1, years_ahead)):
+        year_periods = _load_holiday_periods(year)
+        if year_periods:
+            periods.extend(year_periods)
+        elif year == 2026:
+            periods.extend(OFFICIAL_CHINA_HOLIDAYS_2026)
+
+    results = []
+    seen = set()
+    for name, start_iso, end_iso, makeup_days in sorted(periods, key=lambda item: item[1]):
+        identity = (name, start_iso, end_iso)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        try:
+            start = datetime.strptime(start_iso, '%Y-%m-%d').date()
+            end = datetime.strptime(end_iso, '%Y-%m-%d').date()
+        except ValueError:
+            continue
+        if end < today:
+            continue
+
+        valid_makeup_days = []
+        for item in makeup_days:
+            try:
+                makeup_date = datetime.strptime(item, '%Y-%m-%d').date()
+            except ValueError:
+                continue
+            if not start <= makeup_date <= end:
+                valid_makeup_days.append(makeup_date.strftime('%m/%d'))
+
+        results.append({
+            'name': name,
+            'days': max(0, (start - today).days),
+            'date': start.strftime('%m月%d日'),
+            'end_date': end.strftime('%m月%d日'),
+            'date_iso': start.isoformat(),
+            'end_date_iso': end.isoformat(),
+            'duration': (end - start).days + 1,
+            'makeup_days': ', '.join(valid_makeup_days) or None,
+        })
+        if len(results) >= max(1, limit):
+            break
+    return results
 
 def is_a_share_trading_day(d: Optional[date] = None) -> bool:
     """

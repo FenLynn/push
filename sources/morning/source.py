@@ -33,7 +33,8 @@ import yfinance as yf
 from core.trading_calendar import (
     is_china_workday, 
     is_china_holiday, 
-    get_china_holiday_name
+    get_china_holiday_name,
+    get_upcoming_china_holidays,
 )
 
 # 天气图标映射
@@ -221,49 +222,11 @@ class MorningSource(BaseSource):
 
     # ========== 2. 法定假期倒计时 ==========
     def _get_upcoming_holidays(self) -> List[Dict]:
-        """获取最近2个法定假期"""
-        now = datetime.now()
-        year = now.year
-        
-        # 法定假期列表 (只包含国家法定的放假节日)
-        # 格式: (名称, 月, 日, 放假天数, 补班日期)
-        LEGAL_HOLIDAYS = [
-            ('元旦', 1, 1, 1, None),
-            ('春节', 2, 15, 9, '02/14, 02/28'),   # 除夕(2/15)~初七(2/23), 补班2/14(周六)、2/28(周六)
-            ('清明节', 4, 4, 3, None),
-            ('劳动节', 5, 1, 5, '04/26'),          # 5天
-            ('端午节', 5, 31, 1, None),            # 1天 (2026年农历)
-            ('中秋节', 9, 25, 3, '09/27'),         # 3天 (2026年农历)
-            ('国庆节', 10, 1, 7, '09/27, 10/11'),  # 7天
-        ]
-        
-        results = []
-        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        for name, m, d, duration, makeup in LEGAL_HOLIDAYS:
-            try:
-                target = datetime(year, m, d)
-                if target < today:
-                    target = datetime(year + 1, m, d)
-                
-                delta = (target - today).days
-                end_date = target + timedelta(days=duration - 1)
-                
-                results.append({
-                    'name': name,
-                    'days': delta,
-                    'date': target.strftime('%m月%d日'),
-                    'end_date': end_date.strftime('%m月%d日'),
-                    'duration': duration,
-                    'emoji': self._get_holiday_emoji(name),
-                    'makeup_days': makeup,
-                })
-            except:
-                continue
-        
-        # 排序并取最近2个
-        results.sort(key=lambda x: x['days'])
-        return results[:2]
+        """获取最近两个法定假期及准确的调休安排。"""
+        results = get_upcoming_china_holidays(date.today(), limit=2)
+        for item in results:
+            item['emoji'] = self._get_holiday_emoji(item['name'])
+        return results
     
     def _get_holiday_emoji(self, name: str) -> str:
         mapping = {
