@@ -26,6 +26,48 @@ def test_social_finance_keeps_monthly_observations_without_interpolation():
     assert len(normalized) == 2
 
 
+def test_social_finance_parses_pbc_cumulative_reports_and_derives_real_months():
+    may_html = """
+      <main>二、前五个月社会融资规模增量累计为17.48万亿元
+      其中，对实体经济发放的人民币贷款增加9万亿元。三、广义货币增长</main>
+    """
+    june_html = """
+      <main>二、上半年社会融资规模增量累计为20.84万亿元
+      其中，对实体经济发放的人民币贷款增加10.76万亿元。三、广义货币增长</main>
+    """
+    rows = [
+        SocialFinanceIndicator._parse_official_report("2026年5月金融统计数据报告", may_html),
+        SocialFinanceIndicator._parse_official_report("2026年上半年金融统计数据报告", june_html),
+    ]
+    monthly = SocialFinanceIndicator._monthly_from_cumulative(rows)
+
+    assert monthly["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-05-31", "2026-06-30"]
+    assert monthly["social_finance_increment"].tolist() == [174800, 33600]
+    assert monthly["rmb_loan_increment"].tolist() == [90000, 17600]
+
+
+def test_social_finance_official_rows_override_stale_akshare_months(monkeypatch):
+    raw = pd.DataFrame({
+        "月份": ["202604", "202605"],
+        "社会融资规模增量": [6245, 100],
+        "其中-人民币贷款": [-4006, 50],
+    })
+    official = pd.DataFrame({
+        "date": pd.to_datetime(["2026-05-31", "2026-06-30"]),
+        "social_finance_increment": [20300, 33600],
+        "rmb_loan_increment": [5000, 17600],
+    })
+    indicator = object.__new__(SocialFinanceIndicator)
+    indicator.logger = __import__("logging").getLogger("test.socialfinance")
+    monkeypatch.setattr("sources.finance.indicators.social_finance.ak.macro_china_shrzgm", lambda: raw)
+    monkeypatch.setattr(SocialFinanceIndicator, "_fetch_pbc_latest_months", classmethod(lambda cls: official))
+
+    frame = indicator.fetch_data()
+
+    assert frame["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-04-30", "2026-05-31", "2026-06-30"]
+    assert frame["social_finance_increment"].tolist() == [6245, 20300, 33600]
+
+
 def test_trade_uses_customs_monthly_amounts_and_converts_thousand_usd():
     raw = pd.DataFrame({
         "月份": ["2026年06月份"],

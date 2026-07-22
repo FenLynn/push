@@ -3,6 +3,7 @@ import pandas as pd
 from core.data_archive import DataArchive
 from core.image_upload import R2Uploader
 from sources.finance.indicators.cpi import CPIIndicator
+from sources.finance.archive_catalog import ARCHIVE_CATALOG
 
 
 class FakeD1Client:
@@ -89,6 +90,14 @@ def test_replace_observations_prunes_stale_source_dates_after_successful_write()
     cleanup = [call for call in client.calls if "DELETE FROM data_observations" in call[0]]
     assert len(cleanup) == 1
     assert cleanup[0][1][0] == "finance.internationalrate.all.rate"
+
+
+def test_finance_catalog_exposes_native_web_chart_companions():
+    assert ARCHIVE_CATALOG["lpr"]["replace_observations"] is True
+    assert "cumulative" in ARCHIVE_CATALOG["electricity"]["metrics"]
+    assert "premium_cumulative" in ARCHIVE_CATALOG["insurance"]["metrics"]
+    assert "sh_close" in ARCHIVE_CATALOG["margin"]["metrics"]
+    assert "sh_close" in ARCHIVE_CATALOG["marketpe"]["metrics"]
 
 
 def test_r2_legacy_aliases_and_public_url(monkeypatch):

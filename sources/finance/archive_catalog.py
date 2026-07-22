@@ -63,6 +63,7 @@ ARCHIVE_CATALOG = {
     },
     "lpr": {
         "label": "贷款市场报价利率", "source": "AkShare/PBOC", "frequency": "monthly",
+        "replace_observations": True,
         "metrics": {
             "lpr1y": {"label": "LPR 1年期", "unit": "%"},
             "lpr5y": {"label": "LPR 5年期以上", "unit": "%"},
@@ -109,6 +110,7 @@ ARCHIVE_CATALOG = {
     "electricity": {
         "label": "全社会用电量", "source": "AkShare/Sina/NEA", "frequency": "monthly", "quality": "aggregated",
         "metrics": {
+            "cumulative": {"label": "全社会累计用电量", "unit": "亿千瓦时"},
             "electricity_monthly": {"label": "当月用电量", "unit": "亿千瓦时"},
             "electricity_cumulative_yoy": {"label": "累计用电同比", "unit": "%"},
         },
@@ -118,11 +120,15 @@ ARCHIVE_CATALOG = {
         "metrics": {
             "margin_balance": {"label": "融资余额", "unit": "亿元"},
             "margin_buy": {"label": "融资买入额", "unit": "亿元"},
+            "sh_close": {"label": "上证指数收盘", "unit": "点"},
         },
     },
     "marketpe": {
         "label": "上证平均市盈率", "source": "AkShare/Legu", "frequency": "daily", "quality": "aggregated",
-        "metrics": {"pe": {"label": "上证平均市盈率", "unit": "倍"}},
+        "metrics": {
+            "pe": {"label": "上证平均市盈率", "unit": "倍"},
+            "sh_close": {"label": "上证指数收盘", "unit": "点"},
+        },
     },
     "crossborder": {
         "label": "中美十年期国债利差", "source": "Derived from AkShare/ChinaBond/US Treasury", "frequency": "daily", "quality": "derived",
@@ -136,6 +142,7 @@ ARCHIVE_CATALOG = {
         "label": "原保险保费收入", "source": "AkShare/Eastmoney/NFRA", "frequency": "monthly", "quality": "aggregated",
         "metrics": {
             "premium_monthly": {"label": "当月原保险保费", "unit": "亿元"},
+            "premium_cumulative": {"label": "累计原保险保费", "unit": "亿元"},
             "premium_cumulative_yoy": {"label": "累计保费同比", "unit": "%"},
         },
     },
