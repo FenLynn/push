@@ -16,7 +16,7 @@ from .indicators import (
     MacroDigestIndicator, StockShareholderIndicator,
     ERPIndicator, MarketLeverageIndicator, BuffettIndicator,
     KeqiangIndicator, LiquidityPortraitIndicator,
-    M1M2GapIndicator, MarketPEIndicator, CrossBorderIndicator, RealInterestRateIndicator,
+    M1M2GapIndicator, MarketPEIndicator, MarketReviewIndicator, CrossBorderIndicator, RealInterestRateIndicator,
     ChengduRealEstateIndicator, XianRealEstateIndicator
 )
 from datetime import datetime
@@ -103,6 +103,7 @@ class FinanceSource(BaseSource):
             # Phase 10: Advanced Market & Valuation
             M1M2GapIndicator(self.manager, self.plotter),
             MarketPEIndicator(self.manager, self.plotter),
+            MarketReviewIndicator(self.manager, self.plotter),
             CrossBorderIndicator(self.manager, self.plotter),
             RealInterestRateIndicator(self.manager, self.plotter),
             # Phase 9: Estate Daily Trend (Split)
@@ -184,6 +185,7 @@ class FinanceSource(BaseSource):
             'm1m2gap': '深度分析 (Advanced Analysis)',
             'market_pe': '深度分析 (Advanced Analysis)',
             'marketpe': '深度分析 (Advanced Analysis)',
+            'marketreview': '深度分析 (Advanced Analysis)',
             'cross_border': '深度分析 (Advanced Analysis)',
             'crossborder': '深度分析 (Advanced Analysis)',
             'real_interest_rate': '深度分析 (Advanced Analysis)',
@@ -252,6 +254,7 @@ class FinanceSource(BaseSource):
                         'm1m2gap': 'M1-M2 同比增速差',
                         'market_pe': '全A市场估值 (上证PE)',
                         'marketpe': '上证平均市盈率',
+                        'marketreview': '市场中周期复盘',
                         'cross_border': '中美利差 (10Y)',
                         'crossborder': '中美利差 (10Y)',
                         'real_interest_rate': '中国实际利率 (真实成本)',

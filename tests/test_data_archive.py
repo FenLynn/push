@@ -98,6 +98,9 @@ def test_finance_catalog_exposes_native_web_chart_companions():
     assert "premium_cumulative" in ARCHIVE_CATALOG["insurance"]["metrics"]
     assert "sh_close" in ARCHIVE_CATALOG["margin"]["metrics"]
     assert "sh_close" in ARCHIVE_CATALOG["marketpe"]["metrics"]
+    assert "median_pe" in ARCHIVE_CATALOG["marketreview"]["metrics"]
+    assert "buffett_ratio" in ARCHIVE_CATALOG["marketreview"]["metrics"]
+    assert "industry_801010" in ARCHIVE_CATALOG["marketreview"]["metrics"]
 
 
 def test_r2_legacy_aliases_and_public_url(monkeypatch):
