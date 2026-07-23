@@ -52,6 +52,17 @@ def _normalize_team(team: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _normalize_state(value: Any) -> str:
+    state = str(value or "").strip().lower()
+    if re.fullmatch(r"in_?progress", state):
+        return "inProgress"
+    if state in {"complete", "completed", "finished"}:
+        return "completed"
+    if state in {"unstarted", "not_started", "notstarted", "scheduled"}:
+        return "unstarted"
+    return str(value or "").strip()
+
+
 def _resolve_completed_game_winner(
     game: Dict[str, Any],
     teams: List[Dict[str, Any]],
@@ -168,7 +179,11 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     strategy = match.get("strategy") if isinstance(match.get("strategy"), dict) else {}
     start = _parse_time(event.get("startTime"))
     local_start = start.astimezone(BEIJING_TZ) if start else None
-    state = str(event.get("state") or match.get("state") or "").strip()
+    # The nested match is the canonical series state. The event wrapper has
+    # occasionally reported "completed" for a match that is still unstarted.
+    match_state = _normalize_state(match.get("state"))
+    event_state = _normalize_state(event.get("state"))
+    source_state = match_state or event_state or "unstarted"
     games = []
     for raw_game in match.get("games") if isinstance(match.get("games"), list) else []:
         if not isinstance(raw_game, dict) or raw_game.get("state") == "unneeded":
@@ -176,12 +191,34 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         games.append({
             "id": str(raw_game.get("id") or "").strip(),
             "number": int(raw_game.get("number") or 0),
-            "state": str(raw_game.get("state") or "").strip(),
+            "state": _normalize_state(raw_game.get("state")),
         })
-    active = next((game for game in games if game["state"].lower() == "inprogress"), None)
+    active = next((game for game in games if game["state"] == "inProgress"), None)
     completed = sum(1 for game in games if game["state"] == "completed")
     best_of = int(strategy.get("count") or 0)
-    current_game = active["number"] if active else (0 if state == "completed" else min(completed + 1, best_of or completed + 1))
+    required_wins = best_of // 2 + 1 if best_of > 0 else 0
+    outcome_winner = next((team for team in teams if team["outcome"].lower() == "win"), None)
+    score_winner = None
+    if required_wins and max(teams[0]["score"], teams[1]["score"]) >= required_wins:
+        score_winner = teams[0] if teams[0]["score"] > teams[1]["score"] else teams[1]
+    elif match_state == "completed" and teams[0]["score"] != teams[1]["score"]:
+        score_winner = teams[0] if teams[0]["score"] > teams[1]["score"] else teams[1]
+    winner_team = outcome_winner or score_winner
+    terminal = bool(winner_team) or (source_state == "completed" and completed > 0 and active is None)
+    if terminal:
+        state = "completed"
+    elif active:
+        state = "inProgress"
+    elif source_state == "completed":
+        state = "unstarted"
+    else:
+        state = source_state
+    has_started = state in {"inProgress", "completed"}
+    current_game = active["number"] if active else (
+        0 if state == "completed"
+        else min(completed + 1, best_of or completed + 1) if has_started
+        else None
+    )
     league = event.get("league") if isinstance(event.get("league"), dict) else {}
     tournament = event.get("tournament") if isinstance(event.get("tournament"), dict) else {}
     match_id = str(match.get("id") or event.get("id") or "").strip()
@@ -199,14 +236,15 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "leagueLogo": _https_url(league.get("image")),
         "stage": str(event.get("blockName") or tournament.get("name") or "").strip(),
         "status": state,
-        "live": state.lower() == "inprogress",
+        "live": state == "inProgress",
         "watched": True,
         "highlight": True,
         "bestOf": best_of,
         "currentGame": current_game,
-        "scoreA": teams[0]["score"],
-        "scoreB": teams[1]["score"],
-        "scoreText": f'{teams[0]["score"]}:{teams[1]["score"]}',
+        "scoreA": teams[0]["score"] if has_started else None,
+        "scoreB": teams[1]["score"] if has_started else None,
+        "scoreText": f'{teams[0]["score"]}:{teams[1]["score"]}' if has_started else "",
+        "winner": winner_team["code"] if winner_team else "",
         "teamA": teams[0]["name"],
         "teamB": teams[1]["name"],
         "teamACode": teams[0]["code"],

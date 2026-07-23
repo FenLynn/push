@@ -41,6 +41,31 @@ def test_non_watched_match_is_ignored():
     assert normalize_event(_event('KT', 'DK')) is None
 
 
+def test_nested_unstarted_state_rejects_false_completed_wrapper():
+    event = _event('TT', 'BLG', state='completed')
+    event['startTime'] = '2026-07-23T09:00:00Z'
+    event['match']['id'] = '116566854547769568'
+    event['match']['state'] = 'unstarted'
+    event['match']['strategy'] = {'count': 3}
+    event['match']['games'] = [
+        {'id': 'g1', 'number': 1, 'state': 'unstarted'},
+        {'id': 'g2', 'number': 2, 'state': 'unstarted'},
+        {'id': 'g3', 'number': 3, 'state': 'unstarted'},
+    ]
+    event['matchTeams'][0]['result'] = {'gameWins': 0}
+    event['matchTeams'][1]['result'] = {'gameWins': 0}
+
+    match = normalize_event(event)
+
+    assert match['status'] == 'unstarted'
+    assert match['live'] is False
+    assert match['currentGame'] is None
+    assert match['scoreA'] is None
+    assert match['scoreB'] is None
+    assert match['scoreText'] == ''
+    assert match['winner'] == ''
+
+
 def test_team_names_drop_redundant_esports_word():
     event = _event()
     event['matchTeams'][0]['name'] = 'Bilibili Gaming'
@@ -109,7 +134,14 @@ def test_series_score_fills_unresolved_surrendered_game():
 
 def test_notification_is_once_and_only_near_start():
     now = datetime.now(timezone.utc)
-    match = normalize_event(_event(state='unstarted'))
+    scheduled_event = _event(state='unstarted')
+    scheduled_event['match']['games'] = [
+        {'id': 'g1', 'number': 1, 'state': 'unstarted'},
+        {'id': 'g2', 'number': 2, 'state': 'unstarted'},
+    ]
+    scheduled_event['matchTeams'][0]['result'] = {'gameWins': 0}
+    scheduled_event['matchTeams'][1]['result'] = {'gameWins': 0}
+    match = normalize_event(scheduled_event)
     match['startTime'] = (now + timedelta(minutes=40)).isoformat().replace('+00:00', 'Z')
     assert select_notification_candidates([match], {}, now=now) == [match]
     assert select_notification_candidates([match], {'match-1': now.isoformat()}, now=now) == []
