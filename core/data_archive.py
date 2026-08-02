@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import math
 import re
@@ -53,9 +54,25 @@ SCHEMA_STATEMENTS = (
         created_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS estate_events (
+        source TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        city TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        occurred_on TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        detail_json TEXT NOT NULL DEFAULT '{}',
+        source_url TEXT NOT NULL DEFAULT '',
+        quality TEXT NOT NULL DEFAULT 'official',
+        collected_at TEXT NOT NULL,
+        PRIMARY KEY (source, external_id)
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_data_series_domain ON data_series(domain, group_name, location)",
     "CREATE INDEX IF NOT EXISTS idx_data_observations_lookup ON data_observations(series_id, resolution, observed_on DESC)",
     "CREATE INDEX IF NOT EXISTS idx_data_collection_runs_created ON data_collection_runs(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_estate_events_lookup ON estate_events(city, event_type, occurred_on DESC)",
 )
 
 
@@ -224,9 +241,11 @@ class DataArchive:
                 retention_days = self.DAILY_RETENTION_DAYS.get(domain, 730)
                 cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=retention_days)
                 daily = series_frame[series_frame["date"] >= cutoff]
+                monthly_series = series_frame.set_index("date")["value"].resample("MS")
                 monthly = (
-                    series_frame.set_index("date")["value"]
-                    .resample("MS").mean().dropna().reset_index()
+                    monthly_series.sum(min_count=1).dropna().reset_index()
+                    if str(spec.get("rollup") or "mean").lower() == "sum"
+                    else monthly_series.mean().dropna().reset_index()
                 )
                 observation_frames = [("daily", daily, quality), ("monthly", monthly, "rollup")]
 
@@ -264,23 +283,98 @@ class DataArchive:
     def store_points(self, domain: str, group_name: str, points: Iterable[Mapping[str, Any]], source: str) -> int:
         if not self.ensure_schema():
             return 0
-        saved = 0
+        grouped: Dict[tuple, List[Mapping[str, Any]]] = {}
         for point in points:
+            category = str(point.get("category") or point.get("label") or "value").strip()
+            key = (
+                str(point.get("city") or ""),
+                category,
+                str(point.get("unit") or ""),
+                str(point.get("source") or source),
+                str(point.get("quality") or "observed"),
+                str(point.get("rollup") or "mean"),
+            )
+            grouped.setdefault(key, []).append(point)
+
+        saved = 0
+        for (city, category, unit, point_source, quality, rollup), series_points in grouped.items():
             frame = pd.DataFrame([{
                 "date": point.get("sourceDate") or point.get("date"),
-                "value": point.get("value"),
-            }])
+                category: point.get("value"),
+            } for point in series_points])
             saved += self.store_dataframe(
                 domain=domain,
                 group_name=group_name,
                 frame=frame,
-                metrics={"value": {"label": point.get("label") or point.get("category"), "unit": point.get("unit", "")}},
-                label=str(point.get("label") or point.get("category") or group_name),
-                source=str(point.get("source") or source),
+                metrics={category: {
+                    "label": series_points[-1].get("label") or category,
+                    "unit": unit,
+                    "rollup": rollup,
+                }},
+                label=str(series_points[-1].get("label") or category or group_name),
+                source=point_source,
                 frequency="daily",
-                location=str(point.get("city") or ""),
-                quality=str(point.get("quality") or "observed"),
+                location=city,
+                quality=quality,
             )
+        return saved
+
+    def store_estate_events(self, events: Iterable[Mapping[str, Any]]) -> int:
+        """Upsert official project-level estate notices without creating KV history."""
+        if not self.ensure_schema():
+            return 0
+        normalized = []
+        collected_at = _iso_now()
+        for event in events:
+            source = str(event.get("source") or "").strip()
+            external_id = str(event.get("externalId") or event.get("external_id") or "").strip()
+            occurred_on = _date_text(event.get("occurredOn") or event.get("occurred_on"))
+            if not source or not external_id or not occurred_on:
+                continue
+            detail = event.get("detail") if isinstance(event.get("detail"), Mapping) else {}
+            normalized.append({
+                "source": source,
+                "external_id": external_id,
+                "city": str(event.get("city") or "").strip(),
+                "event_type": str(event.get("eventType") or event.get("event_type") or "notice").strip(),
+                "occurred_on": occurred_on,
+                "title": str(event.get("title") or "").strip(),
+                "detail_json": json.dumps(detail, ensure_ascii=False, separators=(",", ":")),
+                "source_url": str(event.get("sourceUrl") or event.get("source_url") or "").strip(),
+                "quality": str(event.get("quality") or "official").strip(),
+                "collected_at": collected_at,
+            })
+
+        saved = 0
+        for offset in range(0, len(normalized), 8):
+            batch = normalized[offset:offset + 8]
+            placeholders = ",".join(["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"] * len(batch))
+            params: List[Any] = []
+            for row in batch:
+                params.extend(row.values())
+            result = self.client.query(
+                f"""
+                INSERT INTO estate_events
+                  (source, external_id, city, event_type, occurred_on, title,
+                   detail_json, source_url, quality, collected_at)
+                VALUES {placeholders}
+                ON CONFLICT(source, external_id) DO UPDATE SET
+                  city=excluded.city,
+                  event_type=excluded.event_type,
+                  occurred_on=excluded.occurred_on,
+                  title=excluded.title,
+                  detail_json=excluded.detail_json,
+                  source_url=excluded.source_url,
+                  quality=excluded.quality,
+                  collected_at=excluded.collected_at
+                """,
+                params,
+            )
+            if result.get("success"):
+                saved += len(batch)
+            else:
+                self.logger.error("D1 estate event batch failed: %s", result.get("error"))
+        self.record_run("estate", "official_notices", "success" if saved else "empty", saved)
         return saved
 
     def record_run(self, domain: str, collector: str, status: str, row_count: int, detail: str = "") -> None:

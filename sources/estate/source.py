@@ -8,6 +8,8 @@ import sys, os, time, re, requests
 import logging
 import pandas as pd
 import akshare as ak
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 from sources.base import BaseSource
 from core import Message, ContentType
 from core.d1_client import D1Client
@@ -116,16 +118,22 @@ class EstateSource(BaseSource):
             return []
 
         try:
-            city_row = max(
-                rows,
-                key=lambda item: float(item.get('clf_countnum') or 0) + float(item.get('spf_countnum') or 0),
+            city_row = next(
+                (item for item in rows if str(item.get('region_type') or '').strip() == '全市'),
+                None,
             )
+            if city_row is None:
+                self.logger.warning("Chengdu gateway lacks an explicit citywide row; using the largest aggregate")
+                city_row = max(
+                    rows,
+                    key=lambda item: float(item.get('clf_countnum') or 0) + float(item.get('spf_countnum') or 0),
+                )
             source_date = str(city_row.get('dated') or time.strftime('%Y-%m-%d'))
             return [
-                {'city': 'Chengdu', 'category': 'NewHome_Area', 'value': float(city_row.get('spf_area') or 0), 'unit': 'sqm', 'sourceDate': source_date},
-                {'city': 'Chengdu', 'category': 'NewHome_Count', 'value': float(city_row.get('spf_countnum') or 0), 'unit': 'units', 'sourceDate': source_date},
-                {'city': 'Chengdu', 'category': 'SecondHand_Area', 'value': float(city_row.get('clf_area') or 0), 'unit': 'sqm', 'sourceDate': source_date},
-                {'city': 'Chengdu', 'category': 'SecondHand_Count', 'value': float(city_row.get('clf_countnum') or 0), 'unit': 'units', 'sourceDate': source_date},
+                {'city': 'Chengdu', 'category': 'NewHome_Area', 'label': '新房成交面积', 'value': float(city_row.get('spf_area') or 0), 'unit': 'sqm', 'source': 'Chengdu-Housing-Bureau', 'quality': 'official', 'sourceDate': source_date},
+                {'city': 'Chengdu', 'category': 'NewHome_Count', 'label': '新房成交套数', 'value': float(city_row.get('spf_countnum') or 0), 'unit': 'units', 'source': 'Chengdu-Housing-Bureau', 'quality': 'official', 'sourceDate': source_date},
+                {'city': 'Chengdu', 'category': 'SecondHand_Area', 'label': '二手房成交面积', 'value': float(city_row.get('clf_area') or 0), 'unit': 'sqm', 'source': 'Chengdu-Housing-Bureau', 'quality': 'official', 'sourceDate': source_date},
+                {'city': 'Chengdu', 'category': 'SecondHand_Count', 'label': '二手房成交套数', 'value': float(city_row.get('clf_countnum') or 0), 'unit': 'units', 'source': 'Chengdu-Housing-Bureau', 'quality': 'official', 'sourceDate': source_date},
             ]
         except Exception as exc:
             self.logger.error(f"Chengdu gateway parse error: {exc}")
@@ -222,42 +230,136 @@ class EstateSource(BaseSource):
                 })
         return latest_items
 
-    def _scrape_xian(self):
-        """
-        Read Xi'an's public residential second-hand listing total.
+    @staticmethod
+    def _count_presale_buildings(value):
+        text = str(value or '').strip()
+        if not text:
+            return 0
+        matches = re.findall(r'[^,，、;；\s]+?(?:幢|栋|号楼)', text)
+        if matches:
+            return len(set(matches))
+        return len([item for item in re.split(r'[,，、;；\s]+', text) if item])
 
-        The former Anjuke desktop page now frequently returns a verification
-        shell. Fang's mobile page exposes the current total as a hidden field
-        and is used here without browser state.
-        """
-        url = "https://m.fang.com/esf/xian/"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-        }
-
-        try:
-            self.logger.info("Fetching Xi'an data (Fang mobile)...")
-            response = requests.get(url, headers=headers, timeout=(8, 25))
-            response.raise_for_status()
-            response.encoding = 'utf-8'
-            match = re.search(r'data-id="total"\s+value="(\d+)"', response.text, re.IGNORECASE)
-            count = int(match.group(1)) if match else 0
-            if count <= 0:
-                self.logger.warning("Xi'an: listing total missing from Fang mobile page")
-                return []
-            return [{
+    @classmethod
+    def _parse_xian_presale_html(cls, html, page_url):
+        soup = BeautifulSoup(str(html or ''), 'lxml')
+        events = []
+        for row in soup.select('tr.listtr.ysztr'):
+            cells = row.find_all('td', recursive=False)
+            if len(cells) < 6:
+                continue
+            permit_no = cells[0].get_text(' ', strip=True)
+            project = cells[1].get_text(' ', strip=True)
+            address = cells[2].get_text(' ', strip=True)
+            developer = cells[3].get_text(' ', strip=True)
+            buildings = cells[4].get_text(' ', strip=True)
+            issued_on = cells[5].get_text(' ', strip=True)
+            if not permit_no or not project or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', issued_on):
+                continue
+            link = cells[1].find('a') or cells[0].find('a')
+            source_url = urljoin(page_url, link.get('href', '')) if link else page_url
+            events.append({
+                'source': 'Xian-Housing-Bureau-Presale',
+                'externalId': permit_no,
                 'city': 'Xian',
-                # Keep the legacy category so existing D1 history remains continuous.
-                'category': 'SecondHand_Count_Anjuke',
-                'value': count,
-                'unit': 'units',
-                'source': 'fang-mobile',
-                'sourceDate': time.strftime('%Y-%m-%d'),
-            }]
-        except Exception as exc:
-            self.logger.error(f"Xi'an Fang fetch error: {exc}")
-            return []
+                'eventType': 'presale_permit',
+                'occurredOn': issued_on,
+                'title': project,
+                'sourceUrl': source_url,
+                'quality': 'official',
+                'detail': {
+                    'permitNo': permit_no,
+                    'project': project,
+                    'address': address,
+                    'developer': developer,
+                    'buildings': buildings,
+                    'buildingCount': cls._count_presale_buildings(buildings),
+                },
+            })
+        return events
+
+    def _request_xian_presale_page(self, page):
+        base_url = 'https://zjj.xa.gov.cn/ygsf/index.aspx'
+        url = base_url if page <= 1 else f'{base_url}?page={page}'
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Referer': 'https://zjj.xa.gov.cn/',
+        }
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = requests.get(url, headers=headers, timeout=(8, 30))
+                response.raise_for_status()
+                html = response.content.decode('utf-8', errors='replace')
+                events = self._parse_xian_presale_html(html, url)
+                if events:
+                    return events
+                last_error = ValueError('official page returned no recognizable permit rows')
+            except Exception as exc:
+                last_error = exc
+            if attempt < 2:
+                time.sleep(0.8 * (attempt + 1))
+        raise RuntimeError(f'Xi\'an official presale page {page} failed: {last_error}')
+
+    def _scrape_xian_presales(self, lookback_days=45, max_pages=12):
+        """Collect recent official presale permits; sparse dates are not filled with zeroes."""
+        cutoff = datetime.date.today() - datetime.timedelta(days=max(1, int(lookback_days)))
+        events = []
+        seen = set()
+        for page in range(1, max(1, int(max_pages)) + 1):
+            try:
+                page_events = self._request_xian_presale_page(page)
+            except Exception as exc:
+                if page == 1:
+                    self.logger.error("Xi'an presale fetch error: %s", exc)
+                    return []
+                self.logger.warning("Xi'an presale pagination stopped on page %s: %s", page, exc)
+                break
+            oldest = None
+            for event in page_events:
+                event_date = datetime.date.fromisoformat(event['occurredOn'])
+                oldest = min(oldest, event_date) if oldest else event_date
+                if event_date < cutoff or event['externalId'] in seen:
+                    continue
+                seen.add(event['externalId'])
+                events.append(event)
+            if oldest and oldest < cutoff:
+                break
+        return sorted(events, key=lambda item: (item['occurredOn'], item['externalId']), reverse=True)
+
+    @staticmethod
+    def _aggregate_xian_presales(events):
+        by_date = {}
+        for event in events:
+            issued_on = str(event.get('occurredOn') or '')
+            if not issued_on:
+                continue
+            bucket = by_date.setdefault(issued_on, {'permits': set(), 'projects': set(), 'buildings': 0})
+            bucket['permits'].add(str(event.get('externalId') or ''))
+            bucket['projects'].add(str(event.get('title') or ''))
+            bucket['buildings'] += int((event.get('detail') or {}).get('buildingCount') or 0)
+
+        specs = (
+            ('PresalePermit_Count', '商品房预售许可', 'permits', lambda value: len(value['permits'])),
+            ('PresaleProject_Count', '预售项目', 'projects', lambda value: len(value['projects'])),
+            ('PresaleBuilding_Count', '可售楼幢', 'buildings', lambda value: value['buildings']),
+        )
+        points = []
+        for issued_on, bucket in sorted(by_date.items()):
+            for category, label, unit, getter in specs:
+                points.append({
+                    'city': 'Xian',
+                    'category': category,
+                    'label': label,
+                    'value': float(getter(bucket)),
+                    'unit': unit,
+                    'source': 'Xian-Housing-Bureau-Presale',
+                    'quality': 'official',
+                    'rollup': 'sum',
+                    'sourceDate': issued_on,
+                })
+        return points
 
     def _merge_recent_snapshot(self, current_items):
         """Retain a city's last good values when one upstream fails temporarily."""
@@ -274,12 +376,25 @@ class EstateSource(BaseSource):
             for item in previous_items:
                 city = item.get('city') if isinstance(item, dict) else None
                 key = (city, item.get('category')) if isinstance(item, dict) else (None, None)
+                if key[1] == 'SecondHand_Count_Anjuke':
+                    continue
                 if city and key not in current_keys:
                     cached_item = dict(item)
                     cached_item['stale'] = True
                     cached_item['sourceDate'] = str(item.get('sourceDate') or payload.get('date') or '')
                     merged.append(cached_item)
         return merged
+
+    def _merge_recent_permits(self, current_events):
+        if current_events:
+            return [dict(item, stale=False) for item in current_events[:12]]
+        previous = load_dashboard_snapshot('estate') or {}
+        payload = previous.get('payload') if isinstance(previous.get('payload'), dict) else {}
+        generated_at = str(previous.get('generatedAt') or '')
+        cached = payload.get('recentPermits') if isinstance(payload.get('recentPermits'), list) else []
+        if self._snapshot_age_days(generated_at) <= 7:
+            return [dict(item, stale=True) for item in cached[:12] if isinstance(item, dict)]
+        return []
 
     @staticmethod
     def _snapshot_age_days(generated_at):
@@ -302,33 +417,39 @@ class EstateSource(BaseSource):
         cd_data = self._scrape_chengdu()
         current_data.extend(cd_data)
         
-        # Xi'an
-        xa_data = self._scrape_xian() 
-        current_data.extend(xa_data)
+        # Xi'an official presale supply. A day with no permit remains missing,
+        # rather than being converted to a synthetic zero.
+        xian_events = self._scrape_xian_presales()
+        xian_supply_points = self._aggregate_xian_presales(xian_events)
+        if xian_supply_points:
+            latest_xian_date = max(item['sourceDate'] for item in xian_supply_points)
+            current_data.extend([
+                item for item in xian_supply_points if item['sourceDate'] == latest_xian_date
+            ])
 
         all_data = self._merge_recent_snapshot(current_data + price_index_items)
+        recent_permits = self._merge_recent_permits(xian_events)
 
         if all_data:
             export_dashboard_snapshot('estate', {
                 'date': time.strftime('%Y-%m-%d'),
                 'items': all_data,
                 'cities': sorted(list(set(item['city'] for item in all_data))),
+                'recentPermits': recent_permits,
             })
         
         # 3. Store to D1
         if self.d1.enabled:
-            self._push_to_d1(current_data)
-            transaction_points = [
-                point for point in current_data
-                if point.get('category') != 'SecondHand_Count_Anjuke'
-            ]
-            self.archive.store_points('estate', 'transactions', transaction_points, 'city-public-gateway')
+            self._push_to_d1(cd_data + xian_supply_points)
+            self.archive.store_points('estate', 'transactions', cd_data, 'Chengdu-Housing-Bureau')
+            self.archive.store_points('estate', 'presale_supply', xian_supply_points, 'Xian-Housing-Bureau-Presale')
+            self.archive.store_estate_events(xian_events)
             self.archive.run_retention()
         else:
             self.logger.warning("D1 config missing. Data NOT saved.")
 
         # 4. Generate Report
-        text = f'🏠 房产成交日报 ({time.strftime("%Y-%m-%d")})\n'
+        text = f'🏠 房产观察日报 ({time.strftime("%Y-%m-%d")})\n'
         text += '--------------------------------\n'
         
         if not all_data:
@@ -352,7 +473,7 @@ class EstateSource(BaseSource):
             text += f"\n❌ D1 尚未配置，数据未保存"
             
         return Message(
-            title=f'房产日报({time.strftime("%m-%d")})', 
+            title=f'房产观察({time.strftime("%m-%d")})',
             content=text, 
             type=ContentType.TEXT, 
             tags=['estate', self.topic]

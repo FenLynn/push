@@ -70,6 +70,81 @@ def test_daily_series_keeps_daily_and_builds_monthly_resolution():
     assert "monthly" in params
 
 
+def test_store_points_keeps_estate_metrics_in_separate_series():
+    client = FakeD1Client()
+    archive = DataArchive(client)
+
+    saved = archive.store_points("estate", "transactions", [
+        {"city": "Chengdu", "category": "NewHome_Count", "label": "新房成交套数", "value": 10, "unit": "units", "sourceDate": "2026-07-15"},
+        {"city": "Chengdu", "category": "SecondHand_Count", "label": "二手房成交套数", "value": 20, "unit": "units", "sourceDate": "2026-07-15"},
+    ], "official-test")
+
+    assert saved == 4
+    series_ids = [
+        values[0]
+        for sql, values in client.calls
+        if "INSERT INTO data_series" in sql
+    ]
+    assert series_ids == [
+        "estate.transactions.chengdu.newhome_count",
+        "estate.transactions.chengdu.secondhand_count",
+    ]
+
+
+def test_daily_event_series_uses_monthly_sum_rollup():
+    client = FakeD1Client()
+    archive = DataArchive(client)
+    frame = pd.DataFrame({
+        "date": ["2026-07-01", "2026-07-02"],
+        "permits": [2, 3],
+    })
+
+    archive.store_dataframe(
+        domain="estate",
+        group_name="presale_supply",
+        frame=frame,
+        metrics={"permits": {"label": "预售许可", "unit": "permits", "rollup": "sum"}},
+        label="西安预售供应",
+        source="official-test",
+        frequency="daily",
+        location="Xian",
+        quality="official",
+    )
+
+    observation_params = [
+        values for sql, values in client.calls if "INSERT INTO data_observations" in sql
+    ][0]
+    monthly_offset = observation_params.index("monthly") - 2
+    assert observation_params[monthly_offset:monthly_offset + 4] == [
+        "estate.presale_supply.xian.permits", "2026-07-01", "monthly", 5.0,
+    ]
+
+
+def test_store_estate_events_upserts_official_details():
+    client = FakeD1Client()
+    archive = DataArchive(client)
+
+    saved = archive.store_estate_events([{
+        "source": "Xian-Housing-Bureau-Presale",
+        "externalId": "2026328",
+        "city": "Xian",
+        "eventType": "presale_permit",
+        "occurredOn": "2026-07-31",
+        "title": "天谷府二期",
+        "sourceUrl": "https://zjj.xa.gov.cn/ygsf/Lpb.aspx?id=1",
+        "quality": "official",
+        "detail": {"buildings": "30幢,31幢", "buildingCount": 2},
+    }])
+
+    assert saved == 1
+    event_call = next(call for call in client.calls if "INSERT INTO estate_events" in call[0])
+    assert event_call[1][0:6] == [
+        "Xian-Housing-Bureau-Presale", "2026328", "Xian",
+        "presale_permit", "2026-07-31", "天谷府二期",
+    ]
+    assert '"buildingCount":2' in event_call[1][6]
+
+
 def test_replace_observations_prunes_stale_source_dates_after_successful_write():
     client = FakeD1Client()
     archive = DataArchive(client)

@@ -20,8 +20,9 @@ GitHub Actions (push)
 - Finance 仅将 CPI、PPI、PMI、GDP、M2、LPR、SHIBOR、国债、汇率和全国房地产景气指数写入长期库。
 - 随机数据、固定默认值和代理拼接指标默认停用。临时排障时可设置
   `FINANCE_ENABLE_EXPERIMENTAL=true`，但这些指标仍不会自动进入长期库。
-- Estate 的长期主序列为成都、西安 70 城月度新房/二手房价格指数。
-- 成都日成交保留为补充序列；西安网页挂牌量因历史统计口径突变，不写入长期趋势库。
+- Estate 的长期价格序列为成都、西安 70 城月度新房/二手房价格指数。
+- 成都日成交保存为官方成交序列；西安住建局预售许可保存为官方供应序列和项目级公示。
+- 西安旧网页挂牌量已停止续写，只保留历史审计记录，不再出现在最新快照。
 
 ## 留存规则
 
@@ -56,8 +57,9 @@ Worker Secret，浏览器和小程序不会接触。R2 bucket 本身不需要开
 - `GET /api/miniprogram/finance/macro/series?id=...&resolution=monthly`
 - `GET /api/miniprogram/estate`
 - `GET /api/miniprogram/estate/series?id=...&resolution=monthly`
+- `GET /api/miniprogram/estate/events?city=Xian&type=presale_permit`
 
-四个接口均要求有效的小程序会话。图片代理是公开只读接口，只允许
+以上接口均要求有效的小程序会话。图片代理是公开只读接口，只允许
 `finance/`、`estate/`、`images/` 下的图片扩展名。
 
 ## 启用顺序
