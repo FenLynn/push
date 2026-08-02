@@ -133,6 +133,52 @@ class DashboardSnapshotTests(unittest.TestCase):
         self.assertEqual([item for item in items if item['category'] == 'SecondHand_Count'][0]['value'], 20)
         self.assertEqual(items[0]['sourceDate'], '2026-07-15')
 
+    def test_estate_accepts_chengdu_xml_gateway_time(self):
+        response = MagicMock()
+        response.json.side_effect = ValueError('not json')
+        response.text = '<Response><data><timestamp>1785686400123</timestamp></data></Response>'
+
+        self.assertEqual(EstateSource._parse_chengdu_timestamp(response), '1785686400123')
+
+    def test_estate_parses_xian_monthly_transaction_wording(self):
+        count_first = EstateSource._parse_xian_monthly_transaction_text(
+            '2026年6月份二手房网签情况',
+            '6月份，全市存量房（二手房）网签备案面积105.52万平方米，'
+            '其中住宅网签备案9710套，面积99.69万平方米。',
+            'https://zjj.xa.gov.cn/example-2026.html',
+        )
+        area_first = EstateSource._parse_xian_monthly_transaction_text(
+            '2023年1月份二手房网签情况',
+            '全市存量房（二手房）网签备案面积71.37万平方米；其中，'
+            '住宅网签备案面积51.10万平方米（5148套）。',
+            'https://zjj.xa.gov.cn/example-2023.html',
+        )
+
+        self.assertEqual(count_first['date'], '2026-06-01')
+        self.assertEqual(count_first['second_hand_residential_count'], 9710)
+        self.assertEqual(count_first['second_hand_total_area'], 1055200)
+        self.assertEqual(area_first['second_hand_residential_count'], 5148)
+        self.assertEqual(area_first['second_hand_residential_area'], 511000)
+
+    def test_estate_parses_xian_search_result(self):
+        html = '''
+        <div class="search_info">
+          <div class="info_title"><a href="/zw/zfxxgkml/tjxx/1.html">2026年5月份二手房 网签情况</a></div>
+          <p>5月份，全市存量房（二手房）网签备案面积108.71万平方米；
+          其中，住宅网签备案9549套，面积99.32万平方米。</p>
+        </div>
+        '''
+
+        records = EstateSource._parse_xian_transaction_search_html(
+            html,
+            'https://zjj.xa.gov.cn/search.html',
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['date'], '2026-05-01')
+        self.assertEqual(records[0]['second_hand_residential_count'], 9549)
+        self.assertEqual(records[0]['source_url'], 'https://zjj.xa.gov.cn/zw/zfxxgkml/tjxx/1.html')
+
     def test_estate_parses_and_aggregates_xian_official_presales(self):
         html = '''
         <table><tr class="listtr ysztr">

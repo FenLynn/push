@@ -47,17 +47,31 @@ class EstateSource(BaseSource):
             self.d1.ensure_table(self.table_name, self.schema_sql)
 
     @staticmethod
-    def _request_chengdu_gateway(base_url, resource, headers):
+    def _parse_chengdu_timestamp(response):
+        """Accept both response formats currently served by the public gateway."""
+        try:
+            payload = response.json()
+        except (TypeError, ValueError):
+            payload = {}
+        timestamp = str(((payload.get('data') or {}).get('timestamp')) or '') if isinstance(payload, dict) else ''
+        if timestamp:
+            return timestamp
+
+        text = str(getattr(response, 'text', '') or '')
+        match = re.search(r'<timestamp>\s*(\d+)\s*</timestamp>', text, flags=re.I)
+        if match:
+            return match.group(1)
+        raise ValueError('gateway timestamp missing')
+
+    @classmethod
+    def _request_chengdu_gateway(cls, base_url, resource, headers):
         time_response = requests.get(
             f'{base_url}/fplc/Ticket/getTime',
             headers=headers,
             timeout=30,
         )
         time_response.raise_for_status()
-        time_payload = time_response.json()
-        timestamp = str(((time_payload.get('data') or {}).get('timestamp')) or '')
-        if not timestamp:
-            raise ValueError('gateway timestamp missing')
+        timestamp = cls._parse_chengdu_timestamp(time_response)
 
         nonce = secrets.token_hex(4)
         message = f'{resource}:{timestamp}:{nonce}'.encode('utf-8')
@@ -96,10 +110,13 @@ class EstateSource(BaseSource):
         resource = "/fcytx/qsmzq-all-api/qsmzq-zfytx-api/zjryb_mrcj"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': f'{base_url}/fplc_daas_portal/',
-            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': f'{base_url}/fplc_daas_portal/#/todayDeal',
+            'Origin': base_url,
+            'Content-Type': 'application/json;charset=UTF-8',
         }
 
+        self._last_chengdu_error = ''
         rows = []
         last_error = None
         for attempt in range(2):
@@ -114,6 +131,7 @@ class EstateSource(BaseSource):
                 time.sleep(0.6)
 
         if not rows:
+            self._last_chengdu_error = str(last_error or 'public gateway returned no daily rows')
             self.logger.error(f"Chengdu gateway error: {last_error}")
             return []
 
@@ -136,8 +154,195 @@ class EstateSource(BaseSource):
                 {'city': 'Chengdu', 'category': 'SecondHand_Count', 'label': '二手房成交套数', 'value': float(city_row.get('clf_countnum') or 0), 'unit': 'units', 'source': 'Chengdu-Housing-Bureau', 'quality': 'official', 'sourceDate': source_date},
             ]
         except Exception as exc:
+            self._last_chengdu_error = str(exc)
             self.logger.error(f"Chengdu gateway parse error: {exc}")
             return []
+
+    @staticmethod
+    def _parse_xian_monthly_transaction_text(title, text, source_url=''):
+        """Parse one official Xi'an monthly second-hand transaction notice."""
+        title_text = re.sub(r'\s+', '', str(title or ''))
+        month_match = re.search(r'(\d{4})年(\d{1,2})月份?二手房网签情况', title_text)
+        if not month_match:
+            return None
+
+        normalized = re.sub(r'\s+', '', str(text or ''))
+        total_match = re.search(
+            r'(?:全市)?存量房(?:（二手房）)?网签备案(?:情况，)?面积(?:为)?([\d.]+)万平方米',
+            normalized,
+        )
+        count_first = re.search(
+            r'住宅网签备案(?:约)?(\d+)套[、，,；;]?(?:面积)?([\d.]+)万平方米',
+            normalized,
+        )
+        area_first = re.search(
+            r'住宅网签备案面积([\d.]+)万平方米[（(](\d+)套[）)]',
+            normalized,
+        )
+        if count_first:
+            residential_count = int(count_first.group(1))
+            residential_area = float(count_first.group(2))
+        elif area_first:
+            residential_count = int(area_first.group(2))
+            residential_area = float(area_first.group(1))
+        else:
+            residential_count = None
+            residential_area = None
+
+        return {
+            'date': f'{int(month_match.group(1)):04d}-{int(month_match.group(2)):02d}-01',
+            'second_hand_total_area': round(float(total_match.group(1)) * 10000, 2) if total_match else None,
+            'second_hand_residential_count': residential_count,
+            'second_hand_residential_area': round(residential_area * 10000, 2) if residential_area is not None else None,
+            'source_url': str(source_url or ''),
+        }
+
+    @classmethod
+    def _parse_xian_transaction_search_html(cls, html, page_url):
+        soup = BeautifulSoup(str(html or ''), 'lxml')
+        records = []
+        for info in soup.select('.search_info'):
+            links = [
+                link for link in info.select('a[href]')
+                if '/tjxx/' in str(link.get('href') or '') or '/fcscjy/' in str(link.get('href') or '')
+            ]
+            if not links:
+                continue
+            link = next((item for item in links if '/tjxx/' in str(item.get('href') or '')), links[0])
+            title = link.get_text(' ', strip=True)
+            source_url = urljoin(page_url, link.get('href', ''))
+            record = cls._parse_xian_monthly_transaction_text(
+                title,
+                info.get_text(' ', strip=True),
+                source_url,
+            )
+            if record:
+                record['title'] = re.sub(r'\s+', ' ', title).strip()
+                records.append(record)
+        return records
+
+    @staticmethod
+    def _xian_transaction_complete(record):
+        return all(record.get(key) is not None for key in (
+            'second_hand_total_area',
+            'second_hand_residential_count',
+            'second_hand_residential_area',
+        ))
+
+    def _request_xian_public_page(self, url, params=None):
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Referer': 'https://zjj.xa.gov.cn/',
+        }
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = requests.get(url, params=params, headers=headers, timeout=(8, 30))
+                response.raise_for_status()
+                return response.content.decode('utf-8', errors='replace')
+            except Exception as exc:
+                last_error = exc
+            if attempt < 2:
+                time.sleep(0.8 * (attempt + 1))
+        raise RuntimeError(f"Xi'an official page failed: {last_error}")
+
+    def _scrape_xian_monthly_transactions(self, max_pages=5):
+        """Collect the official monthly second-hand signing history from public notices."""
+        self._last_xian_transactions_error = ''
+        search_url = 'https://zjj.xa.gov.cn/search.html'
+        base_params = {
+            'tab': 'all',
+            'sortType': 'time',
+            'scope': 'title,resourceSummary,resourceContent,mc_0_listtitle',
+            'keywords': '网签情况',
+        }
+        by_month = {}
+        try:
+            for page in range(1, max(1, int(max_pages)) + 1):
+                params = dict(base_params)
+                if page > 1:
+                    params.update({'page': page, 'keyAdd': 'false'})
+                html = self._request_xian_public_page(search_url, params=params)
+                records = self._parse_xian_transaction_search_html(html, search_url)
+                for record in records:
+                    existing = by_month.get(record['date'])
+                    current_score = sum(value is not None for key, value in record.items() if key.startswith('second_hand_'))
+                    existing_score = sum(value is not None for key, value in (existing or {}).items() if key.startswith('second_hand_'))
+                    canonical = '/tjxx/' in record.get('source_url', '')
+                    existing_canonical = '/tjxx/' in (existing or {}).get('source_url', '')
+                    if existing is None or current_score > existing_score or (
+                        canonical and not existing_canonical and current_score >= existing_score
+                    ):
+                        by_month[record['date']] = record
+
+            for month, record in list(by_month.items()):
+                if self._xian_transaction_complete(record):
+                    continue
+                detail_html = self._request_xian_public_page(record['source_url'])
+                soup = BeautifulSoup(detail_html, 'lxml')
+                for node in soup(['script', 'style']):
+                    node.decompose()
+                parsed = self._parse_xian_monthly_transaction_text(
+                    record.get('title'),
+                    soup.get_text(' ', strip=True),
+                    record.get('source_url'),
+                )
+                if parsed:
+                    by_month[month] = {**record, **parsed}
+        except Exception as exc:
+            self._last_xian_transactions_error = str(exc)
+            self.logger.error("Xi'an monthly transaction fetch error: %s", exc)
+            return []
+
+        complete = [record for record in by_month.values() if self._xian_transaction_complete(record)]
+        incomplete_count = len(by_month) - len(complete)
+        if incomplete_count:
+            self.logger.warning("Xi'an monthly transactions skipped %s incomplete notices", incomplete_count)
+        if not complete:
+            self._last_xian_transactions_error = 'official search returned no complete monthly records'
+        return sorted(complete, key=lambda item: item['date'])
+
+    @staticmethod
+    def _latest_xian_transaction_points(records):
+        if not records:
+            return []
+        latest = max(records, key=lambda item: item['date'])
+        specs = (
+            ('SecondHand_Residential_Count', '二手住宅网签套数', 'second_hand_residential_count', 'units'),
+            ('SecondHand_Total_Area', '二手房网签总面积', 'second_hand_total_area', 'sqm'),
+            ('SecondHand_Residential_Area', '二手住宅网签面积', 'second_hand_residential_area', 'sqm'),
+        )
+        return [{
+            'city': 'Xian',
+            'category': category,
+            'label': label,
+            'value': float(latest[field]),
+            'unit': unit,
+            'source': 'Xian-Housing-Bureau-Monthly-SecondHand',
+            'quality': 'official',
+            'sourceDate': latest['date'],
+        } for category, label, field, unit in specs]
+
+    def _archive_xian_monthly_transactions(self, records):
+        if not records or not self.archive.enabled:
+            return 0
+        frame = pd.DataFrame(records)
+        return self.archive.store_dataframe(
+            domain='estate',
+            group_name='transactions',
+            frame=frame,
+            metrics={
+                'second_hand_residential_count': {'label': '二手住宅网签套数', 'unit': 'units'},
+                'second_hand_total_area': {'label': '二手房网签总面积', 'unit': 'sqm'},
+                'second_hand_residential_area': {'label': '二手住宅网签面积', 'unit': 'sqm'},
+            },
+            label='西安二手房月度网签',
+            source='Xian-Housing-Bureau-Monthly-SecondHand',
+            frequency='monthly',
+            location='Xian',
+            quality='official',
+        )
 
     def _push_to_d1(self, data_points):
         """Push data points to D1"""
@@ -416,6 +621,11 @@ class EstateSource(BaseSource):
         # Chengdu
         cd_data = self._scrape_chengdu()
         current_data.extend(cd_data)
+
+        # Xi'an publishes a monthly official second-hand signing report. This
+        # is a transaction series and must not be mixed with daily presale supply.
+        xian_transaction_records = self._scrape_xian_monthly_transactions()
+        current_data.extend(self._latest_xian_transaction_points(xian_transaction_records))
         
         # Xi'an official presale supply. A day with no permit remains missing,
         # rather than being converted to a synthetic zero.
@@ -442,8 +652,23 @@ class EstateSource(BaseSource):
         if self.d1.enabled:
             self._push_to_d1(cd_data + xian_supply_points)
             self.archive.store_points('estate', 'transactions', cd_data, 'Chengdu-Housing-Bureau')
+            self._archive_xian_monthly_transactions(xian_transaction_records)
             self.archive.store_points('estate', 'presale_supply', xian_supply_points, 'Xian-Housing-Bureau-Presale')
             self.archive.store_estate_events(xian_events)
+            self.archive.record_run(
+                'estate',
+                'chengdu_daily_transactions',
+                'success' if cd_data else 'error',
+                len(cd_data),
+                str(getattr(self, '_last_chengdu_error', '') or ''),
+            )
+            self.archive.record_run(
+                'estate',
+                'xian_monthly_transactions',
+                'success' if xian_transaction_records else 'error',
+                len(xian_transaction_records),
+                str(getattr(self, '_last_xian_transactions_error', '') or ''),
+            )
             self.archive.run_retention()
         else:
             self.logger.warning("D1 config missing. Data NOT saved.")
