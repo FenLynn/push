@@ -17,7 +17,10 @@ from .indicators import (
     ERPIndicator, MarketLeverageIndicator, BuffettIndicator,
     KeqiangIndicator, LiquidityPortraitIndicator,
     M1M2GapIndicator, MarketPEIndicator, MarketReviewIndicator, CrossBorderIndicator, RealInterestRateIndicator,
-    ChengduRealEstateIndicator, XianRealEstateIndicator
+    ChengduRealEstateIndicator, XianRealEstateIndicator,
+    PopulationIndicator, DemographyIndicator, FertilityIndicator, AgeingIndicator, MarriageIndicator,
+    UnemploymentIndicator, LabourIndicator, FiscalIndicator,
+    FiscalMonthlyIndicator, TaxStructureIndicator, GovernmentDebtIndicator
 )
 from datetime import datetime
 import logging
@@ -109,6 +112,18 @@ class FinanceSource(BaseSource):
             # Phase 9: Estate Daily Trend (Split)
             ChengduRealEstateIndicator(self.manager, self.plotter),
             XianRealEstateIndicator(self.manager, self.plotter),
+            # Phase 11: structural population, labour and public finance
+            PopulationIndicator(self.manager, self.plotter),
+            DemographyIndicator(self.manager, self.plotter),
+            FertilityIndicator(self.manager, self.plotter),
+            AgeingIndicator(self.manager, self.plotter),
+            MarriageIndicator(self.manager, self.plotter),
+            UnemploymentIndicator(self.manager, self.plotter),
+            LabourIndicator(self.manager, self.plotter),
+            FiscalIndicator(self.manager, self.plotter),
+            FiscalMonthlyIndicator(self.manager, self.plotter),
+            TaxStructureIndicator(self.manager, self.plotter),
+            GovernmentDebtIndicator(self.manager, self.plotter),
         ]
         if str(os.getenv('FINANCE_ENABLE_EXPERIMENTAL') or '').strip().lower() not in {'1', 'true', 'yes'}:
             self.indicators = [
@@ -151,6 +166,17 @@ class FinanceSource(BaseSource):
             'buffett': '宏观经济 (Macro Economy)',
             'buffett_indicator': '宏观经济 (Macro Economy)',
             'erp': '宏观经济 (Macro Economy)',
+            'population': '宏观经济 (Macro Economy)',
+            'demography': '宏观经济 (Macro Economy)',
+            'fertility': '宏观经济 (Macro Economy)',
+            'ageing': '宏观经济 (Macro Economy)',
+            'marriage': '宏观经济 (Macro Economy)',
+            'unemployment': '宏观经济 (Macro Economy)',
+            'labour': '宏观经济 (Macro Economy)',
+            'fiscal': '宏观经济 (Macro Economy)',
+            'fiscalmonthly': '宏观经济 (Macro Economy)',
+            'taxstructure': '宏观经济 (Macro Economy)',
+            'governmentdebt': '宏观经济 (Macro Economy)',
             
             'liquidity': '流动性与定价 (Liquidity & Pricing)',
             'liquidity_portrait': '流动性与定价 (Liquidity & Pricing)',
@@ -219,6 +245,17 @@ class FinanceSource(BaseSource):
                         'gdp': 'GDP 国内生产总值',
                         'trade': '进出口贸易',
                         'electricity': '全社会用电量',
+                        'population': '人口总量与城镇化',
+                        'demography': '人口自然变动',
+                        'fertility': '育龄妇女与生育率（UN估算）',
+                        'ageing': '人口老龄化',
+                        'marriage': '婚姻登记',
+                        'unemployment': '城镇调查失业率',
+                        'labour': '劳动供给',
+                        'fiscal': '国家财政收支',
+                        'fiscalmonthly': '月度累计财政收支',
+                        'taxstructure': '主要税种结构',
+                        'governmentdebt': '广义政府杠杆率',
                         'keqiang': '克强指数',
                         'keqiang_index': '克强指数',
                         'erp': 'ERP 股债利差',

@@ -1,6 +1,98 @@
 """Canonical Finance series that are safe to expose and retain."""
 
 ARCHIVE_CATALOG = {
+    "population": {
+        "label": "人口与城镇化", "source": "国家统计局年鉴/公报（DBnomics 镜像）", "frequency": "annual",
+        "metrics": {
+            "population": {"label": "年末总人口", "unit": "万人"},
+            "urban_population": {"label": "城镇人口", "unit": "万人"},
+            "urbanization_rate": {"label": "城镇化率", "unit": "%"},
+        },
+    },
+    "demography": {
+        "label": "人口自然变动", "source": "国家统计局年鉴/公报（DBnomics 镜像）", "frequency": "annual",
+        "metrics": {
+            "birth_rate": {"label": "人口出生率", "unit": "‰"},
+            "death_rate": {"label": "人口死亡率", "unit": "‰"},
+            "natural_growth_rate": {"label": "人口自然增长率", "unit": "‰"},
+        },
+    },
+    "fertility": {
+        "label": "育龄妇女与生育率", "source": "UN World Population Prospects 2024（OWID 标准化转发）", "frequency": "annual",
+        "quality": "estimated",
+        "metrics": {
+            "women_15_49": {"label": "15-49岁育龄妇女", "unit": "万人"},
+            "women_20_34": {"label": "20-34岁妇女", "unit": "万人"},
+            "total_fertility_rate": {"label": "总和生育率", "unit": "人/妇女"},
+        },
+    },
+    "ageing": {
+        "label": "人口老龄化", "source": "国家统计局年鉴/公报（DBnomics 镜像）", "frequency": "annual",
+        "metrics": {
+            "age_65_share": {"label": "65岁及以上人口占比", "unit": "%"},
+            "gross_dependency_ratio": {"label": "总抚养比", "unit": "%"},
+            "old_dependency_ratio": {"label": "老年抚养比", "unit": "%"},
+        },
+    },
+    "marriage": {
+        "label": "婚育登记", "source": "国家统计局/民政部（DBnomics 镜像）", "frequency": "annual",
+        "metrics": {
+            "marriages": {"label": "内地结婚登记", "unit": "万对"},
+            "first_marriages": {"label": "初婚登记人数", "unit": "万人"},
+            "divorces": {"label": "离婚登记", "unit": "万对"},
+        },
+    },
+    "unemployment": {
+        "label": "城镇调查失业率", "source": "国家统计局（DBnomics 镜像）", "frequency": "monthly",
+        "metrics": {
+            "urban_rate": {"label": "全国城镇调查失业率", "unit": "%"},
+            "major_city_rate": {"label": "31个大城市调查失业率", "unit": "%"},
+            "youth_rate": {"label": "16-24岁失业率（不含在校生）", "unit": "%"},
+            "age_25_29_rate": {"label": "25-29岁失业率（不含在校生）", "unit": "%"},
+            "age_30_59_rate": {"label": "30-59岁失业率（不含在校生）", "unit": "%"},
+        },
+    },
+    "labour": {
+        "label": "劳动供给", "source": "国家统计局（DBnomics 镜像）", "frequency": "annual",
+        "metrics": {
+            "active_population": {"label": "经济活动人口", "unit": "万人"},
+            "registered_unemployed": {"label": "城镇登记失业人数", "unit": "万人"},
+        },
+    },
+    "fiscal": {
+        "label": "国家财政收支", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "annual",
+        "metrics": {
+            "revenue": {"label": "全国财政收入", "unit": "亿元"},
+            "expenditure": {"label": "全国财政支出", "unit": "亿元"},
+            "revenue_growth": {"label": "财政收入增速", "unit": "%"},
+            "expenditure_growth": {"label": "财政支出增速", "unit": "%"},
+        },
+    },
+    "fiscalmonthly": {
+        "label": "月度累计财政收支", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "monthly",
+        "metrics": {
+            "revenue": {"label": "累计财政收入", "unit": "亿元"},
+            "expenditure": {"label": "累计财政支出", "unit": "亿元"},
+            "revenue_growth": {"label": "累计收入增速", "unit": "%"},
+            "expenditure_growth": {"label": "累计支出增速", "unit": "%"},
+        },
+    },
+    "taxstructure": {
+        "label": "税收结构", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "annual",
+        "metrics": {
+            "tax_revenue": {"label": "税收收入", "unit": "亿元"},
+            "vat_share": {"label": "国内增值税占比", "unit": "%"},
+            "consumption_tax_share": {"label": "国内消费税占比", "unit": "%"},
+            "personal_tax_share": {"label": "个人所得税占比", "unit": "%"},
+            "corporate_tax_share": {"label": "企业所得税占比", "unit": "%"},
+        },
+    },
+    "governmentdebt": {
+        "label": "广义政府杠杆率", "source": "国际清算银行 BIS 官方 SDMX API", "frequency": "quarterly",
+        "metrics": {
+            "government_debt_ratio": {"label": "广义政府债务/GDP", "unit": "%"},
+        },
+    },
     "cpi": {
         "label": "居民消费价格", "source": "AkShare/NBS", "frequency": "monthly",
         "metrics": {
