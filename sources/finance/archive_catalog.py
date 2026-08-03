@@ -2,7 +2,7 @@
 
 ARCHIVE_CATALOG = {
     "population": {
-        "label": "人口与城镇化", "source": "国家统计局年鉴/公报（DBnomics 镜像）", "frequency": "annual",
+        "label": "人口与城镇化", "source": "国家统计局历年人口表/年鉴/公报（DBnomics 镜像兜底）", "frequency": "annual",
         "metrics": {
             "population": {"label": "年末总人口", "unit": "万人"},
             "urban_population": {"label": "城镇人口", "unit": "万人"},
@@ -10,7 +10,7 @@ ARCHIVE_CATALOG = {
         },
     },
     "demography": {
-        "label": "人口自然变动", "source": "国家统计局年鉴/公报（DBnomics 镜像）", "frequency": "annual",
+        "label": "人口自然变动", "source": "国家统计局数据门户/历年人口表/公报（DBnomics 镜像兜底）", "frequency": "annual",
         "metrics": {
             "birth_population": {"label": "出生人口（按官方出生率推算）", "unit": "万人", "quality": "derived"},
             "death_population": {"label": "死亡人口（按官方死亡率推算）", "unit": "万人", "quality": "derived"},
@@ -26,10 +26,11 @@ ARCHIVE_CATALOG = {
             "women_15_49": {"label": "15-49岁育龄妇女", "unit": "万人"},
             "women_20_34": {"label": "20-34岁妇女", "unit": "万人"},
             "total_fertility_rate": {"label": "总和生育率", "unit": "人/妇女"},
+            "birth_population_un_estimate": {"label": "出生人口（UN WPP估计）", "unit": "万人", "quality": "estimated"},
         },
     },
     "ageing": {
-        "label": "人口老龄化", "source": "国家统计局年鉴/公报（DBnomics 镜像）", "frequency": "annual",
+        "label": "人口老龄化", "source": "国家统计局数据门户/年鉴/公报（DBnomics 镜像兜底）", "frequency": "annual",
         "metrics": {
             "age_65_share": {"label": "65岁及以上人口占比", "unit": "%"},
             "gross_dependency_ratio": {"label": "总抚养比", "unit": "%"},
@@ -38,6 +39,7 @@ ARCHIVE_CATALOG = {
     },
     "marriage": {
         "label": "婚姻登记", "source": "民政部季度统计/国家统计局年度统计", "frequency": "quarterly",
+        "mixed_frequency": True,
         "metrics": {
             "marriages_cumulative": {"label": "年内累计结婚登记", "unit": "万对"},
             "marriages_quarter": {"label": "单季结婚登记", "unit": "万对", "quality": "derived"},
@@ -51,7 +53,7 @@ ARCHIVE_CATALOG = {
         },
     },
     "unemployment": {
-        "label": "城镇调查失业率", "source": "国家统计局（DBnomics 镜像）", "frequency": "monthly",
+        "label": "城镇调查失业率", "source": "国家统计局数据门户（DBnomics 历史镜像兜底）", "frequency": "monthly",
         "metrics": {
             "urban_rate": {"label": "全国城镇调查失业率", "unit": "%"},
             "major_city_rate": {"label": "31个大城市调查失业率", "unit": "%"},
@@ -61,14 +63,14 @@ ARCHIVE_CATALOG = {
         },
     },
     "labour": {
-        "label": "劳动供给", "source": "国家统计局（DBnomics 镜像）", "frequency": "annual",
+        "label": "劳动供给", "source": "国家统计局数据门户/年鉴（DBnomics 镜像兜底）", "frequency": "annual",
         "metrics": {
             "active_population": {"label": "经济活动人口", "unit": "万人"},
             "registered_unemployed": {"label": "城镇登记失业人数", "unit": "万人"},
         },
     },
     "fiscal": {
-        "label": "国家财政收支", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "annual",
+        "label": "国家财政收支", "source": "财政部原始发布/国家统计局（DBnomics 历史镜像）", "frequency": "annual",
         "metrics": {
             "revenue": {"label": "全国财政收入", "unit": "亿元"},
             "expenditure": {"label": "全国财政支出", "unit": "亿元"},
@@ -77,7 +79,7 @@ ARCHIVE_CATALOG = {
         },
     },
     "fiscalmonthly": {
-        "label": "月度财政收支", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "monthly",
+        "label": "月度财政收支", "source": "财政部原始发布/国家统计局（DBnomics 历史镜像）", "frequency": "monthly",
         "metrics": {
             "revenue_cumulative": {"label": "累计财政收入", "unit": "亿元"},
             "expenditure_cumulative": {"label": "累计财政支出", "unit": "亿元"},
@@ -105,7 +107,7 @@ ARCHIVE_CATALOG = {
         },
     },
     "taxstructure": {
-        "label": "税收结构", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "annual",
+        "label": "税收结构", "source": "国家统计局数据门户/财政部原始发布（DBnomics 历史镜像兜底）", "frequency": "annual",
         "metrics": {
             "tax_revenue": {"label": "税收收入", "unit": "亿元"},
             "vat_share": {"label": "国内增值税占比", "unit": "%"},

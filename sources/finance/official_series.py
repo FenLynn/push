@@ -8,6 +8,8 @@ allowed into the long-lived D1 archive.
 from __future__ import annotations
 
 from io import BytesIO, StringIO
+from functools import lru_cache
+import logging
 import re
 from typing import Iterable
 from urllib.parse import urljoin
@@ -21,7 +23,15 @@ DBNOMICS_API = "https://api.db.nomics.world/v22/series"
 BIS_SDMX_API = "https://stats.bis.org/api/v2/data/dataflow/BIS"
 OWID_GRAPHER = "https://ourworldindata.org/grapher"
 NBS_YEARBOOK_2012 = "https://www.stats.gov.cn/sj/ndsj/2012/html"
+NBS_POPULATION_HISTORY_URL = (
+    "https://www.stats.gov.cn/zt_18555/ztsj/hjtjzl/1999/202303/t20230302_1923325.html"
+)
+NBS_PORTAL_API = "https://data.stats.gov.cn/dg/website/publicrelease/web/external"
+NBS_MONTH_ROOT_ID = "fc982599aa684be7969d7b90b1bd0e84"
+NBS_YEAR_ROOT_ID = "884c062607104a91967b22742537f44f"
+MOF_STATISTICS_URL = "https://gks.mof.gov.cn/tongjishuju/"
 REQUEST_HEADERS = {"User-Agent": "PushFinance/2.0 (+official macro archive)"}
+LOGGER = logging.getLogger(__name__)
 MCA_STATISTICS_PAGES = (
     "https://www.mca.gov.cn/n156/n2679/index.html",
     "https://www.mca.gov.cn/n156/n2679/index_6934_1.html",
@@ -141,6 +151,214 @@ def fetch_owid_grapher(slug: str, country_code: str = "CHN") -> pd.DataFrame:
     return result.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
 
 
+def _normalized_indicator_label(value: str) -> str:
+    return re.sub(r"[\s（）()%％]", "", str(value or "")).replace("—", "-").replace("–", "-")
+
+
+def fetch_nbs_portal_series(
+    catalog_id: str,
+    fields: dict[str, Iterable[str]],
+    *,
+    start: str,
+    end: str | None = None,
+    frequency: str = "monthly",
+    root_id: str | None = None,
+) -> pd.DataFrame:
+    """Fetch exact series from the current official NBS data portal.
+
+    The former ``easyquery`` endpoint and DBnomics mirror can lag after an NBS
+    portal migration.  This client first resolves the portal's opaque series
+    IDs by their published labels and then requests an explicit date range.
+    Labels are validated strictly so a renamed series cannot silently replace
+    another indicator.
+    """
+    roots = {"monthly": NBS_MONTH_ROOT_ID, "annual": NBS_YEAR_ROOT_ID}
+    suffixes = {"monthly": "MM", "annual": "YY"}
+    if frequency not in roots:
+        raise ValueError(f"unsupported NBS portal frequency: {frequency}")
+    root_id = root_id or roots[frequency]
+    suffix = suffixes[frequency]
+    headers = {
+        **REQUEST_HEADERS,
+        "Referer": (
+            "https://data.stats.gov.cn/dg/website/page.html#/pc/national/monthData"
+            if frequency == "monthly"
+            else "https://data.stats.gov.cn/dg/website/page.html#/pc/national/yearData"
+        ),
+    }
+    listing = requests.get(
+        f"{NBS_PORTAL_API}/new/queryIndicatorsByCid",
+        params={"cid": catalog_id},
+        headers=headers,
+        timeout=30,
+    )
+    listing.raise_for_status()
+    items = ((listing.json().get("data") or {}).get("list") or [])
+    by_label = {
+        _normalized_indicator_label(item.get("i_showname") or item.get("_name")): item
+        for item in items
+    }
+    selected: dict[str, dict] = {}
+    for output, candidates in fields.items():
+        match = next(
+            (by_label.get(_normalized_indicator_label(candidate)) for candidate in candidates
+             if by_label.get(_normalized_indicator_label(candidate))),
+            None,
+        )
+        if match is None:
+            raise ValueError(f"NBS portal catalog {catalog_id} missing expected field {output}")
+        selected[output] = match
+
+    digits = 6 if frequency == "monthly" else 4
+    default_end = pd.Timestamp.today().strftime("%Y%m" if frequency == "monthly" else "%Y")
+    first = re.sub(r"\D", "", str(start))[:digits]
+    last = re.sub(r"\D", "", str(end or default_end))[:digits]
+    payload = {
+        "cid": catalog_id,
+        "rootId": root_id,
+        "indicatorIds": [item["_id"] for item in selected.values()],
+        "daCatalogId": "",
+        "das": [{"text": "全国", "value": "000000000000"}],
+        "showType": 1,
+        "dts": [f"{first}{suffix}-{last}{suffix}"],
+    }
+    response = requests.post(
+        f"{NBS_PORTAL_API}/stream/esData",
+        json=payload,
+        headers={**headers, "Content-Type": "application/json"},
+        timeout=90,
+    )
+    response.raise_for_status()
+    observations = (response.json().get("data") or [])
+    id_to_output = {item["_id"]: output for output, item in selected.items()}
+    records = []
+    for observation in observations:
+        code = str(observation.get("code") or "")
+        match = (
+            re.fullmatch(r"(\d{4})(\d{2})MM", code)
+            if frequency == "monthly"
+            else re.fullmatch(r"(\d{4})YY", code)
+        )
+        if not match:
+            continue
+        date = (
+            pd.Timestamp(f"{match.group(1)}-{match.group(2)}-01") + pd.offsets.MonthEnd(0)
+            if frequency == "monthly"
+            else pd.Timestamp(f"{match.group(1)}-12-31")
+        )
+        record = {"date": date}
+        for value in observation.get("values") or []:
+            output = id_to_output.get(value.get("_id"))
+            if output:
+                record[output] = pd.to_numeric(pd.Series([value.get("value")]), errors="coerce").iloc[0]
+        records.append(record)
+    frame = pd.DataFrame(records)
+    if frame.empty:
+        raise ValueError(f"NBS portal catalog {catalog_id} returned no dated observations")
+    metric_columns = list(fields)
+    for column in metric_columns:
+        if column not in frame:
+            frame[column] = pd.NA
+    frame = frame.dropna(how="all", subset=metric_columns)
+    if frame.empty:
+        raise ValueError(f"NBS portal catalog {catalog_id} returned only empty observations")
+    return frame.sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
+
+def _signed_growth(direction: str, value: str) -> float:
+    number = float(value)
+    return -number if direction in {"下降", "减少"} else number
+
+
+def _mof_period_end(title: str) -> pd.Timestamp:
+    normalized = re.sub(r"\s+", "", str(title or "")).replace("—", "-").replace("－", "-")
+    year_match = re.search(r"(20\d{2})年", normalized)
+    if not year_match:
+        return pd.NaT
+    year = int(year_match.group(1))
+    month_match = re.search(r"1-(\d{1,2})月", normalized)
+    if month_match:
+        month = int(month_match.group(1))
+    elif "一季度" in normalized:
+        month = 3
+    elif "上半年" in normalized:
+        month = 6
+    elif "前三季度" in normalized:
+        month = 9
+    elif re.search(rf"{year}年财政收支情况", normalized):
+        month = 12
+    else:
+        return pd.NaT
+    return pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
+
+
+def parse_mof_fiscal_release(title: str, payload: bytes | str, source_url: str = "") -> dict:
+    """Parse one Ministry of Finance cumulative fiscal release conservatively."""
+    date = _mof_period_end(title)
+    if pd.isna(date):
+        return {}
+    text = payload.decode("utf-8", errors="ignore") if isinstance(payload, bytes) else str(payload)
+    text = BeautifulSoup(text, "lxml").get_text(" ", strip=True)
+    # Several newer MOF pages insert arbitrary spaces both inside numbers
+    # (``25 880``) and around decimal points (``4 .7``).  Whitespace carries
+    # no semantic information in Chinese prose, so remove it before matching.
+    text = re.sub(r"\s+", "", text)
+    text = text.replace("—", "-").replace("－", "-")
+    record: dict[str, object] = {"date": date, "source_url": source_url}
+    patterns = {
+        "revenue": r"全国一般公共预算收入\s*(\d+(?:\.\d+)?)亿元[^。]{0,35}?(?:同比|比上年)(增长|下降|增加|减少)(\d+(?:\.\d+)?)%",
+        "expenditure": r"全国一般公共预算支出\s*(\d+(?:\.\d+)?)亿元[^。]{0,35}?(?:同比|比上年)(增长|下降|增加|减少)(\d+(?:\.\d+)?)%",
+        "tax_revenue": r"全国税收收入\s*(\d+(?:\.\d+)?)亿元[^。]{0,35}?(?:同比|比上年)(增长|下降|增加|减少)(\d+(?:\.\d+)?)%",
+        "vat": r"国内增值税\s*(\d+(?:\.\d+)?)亿元",
+        "consumption_tax": r"国内消费税\s*(\d+(?:\.\d+)?)亿元",
+        "corporate_tax": r"企业所得税\s*(\d+(?:\.\d+)?)亿元",
+        "personal_tax": r"个人所得税\s*(\d+(?:\.\d+)?)亿元",
+    }
+    for metric, pattern in patterns.items():
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        record[metric] = float(match.group(1))
+        if metric in {"revenue", "expenditure", "tax_revenue"}:
+            record[f"{metric}_growth"] = _signed_growth(match.group(2), match.group(3))
+    if "revenue" not in record or "expenditure" not in record:
+        return {}
+    return record
+
+
+@lru_cache(maxsize=1)
+def fetch_mof_fiscal_releases() -> pd.DataFrame:
+    """Fetch recent nationwide fiscal releases directly from the MOF.
+
+    The official listing is used only as a current-value overlay on the long
+    NBS history.  Combined January-February and quarterly releases retain their
+    true period endpoints; no month is invented.
+    """
+    listing = requests.get(MOF_STATISTICS_URL, headers=REQUEST_HEADERS, timeout=45)
+    listing.raise_for_status()
+    soup = BeautifulSoup(listing.content.decode("utf-8", errors="ignore"), "lxml")
+    candidates: dict[str, str] = {}
+    for anchor in soup.find_all("a", href=True):
+        title = re.sub(r"\s+", "", anchor.get("title") or "".join(anchor.stripped_strings))
+        if "财政收支情况" not in title or "中央政府" in title or pd.isna(_mof_period_end(title)):
+            continue
+        candidates[urljoin(MOF_STATISTICS_URL, anchor["href"])] = title
+    records = []
+    for url, title in candidates.items():
+        try:
+            response = requests.get(url, headers=REQUEST_HEADERS, timeout=45)
+            response.raise_for_status()
+            record = parse_mof_fiscal_release(title, response.content, url)
+            if record:
+                records.append(record)
+        except requests.RequestException as exc:
+            LOGGER.warning("skipping unavailable MOF release %s: %s", url, exc)
+    frame = pd.DataFrame(records)
+    if frame.empty:
+        raise ValueError("MOF statistics listing returned no usable fiscal releases")
+    return frame.sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
+
 def fetch_nbs_yearbook_rows(table: str) -> list[list[float]]:
     """Read a stable NBS yearbook HTML table and return numeric rows only."""
     url = f"{NBS_YEARBOOK_2012}/{table}.HTM"
@@ -162,16 +380,46 @@ def fetch_nbs_yearbook_rows(table: str) -> list[list[float]]:
     return rows
 
 
+def parse_nbs_population_history(payload: bytes | str) -> pd.DataFrame:
+    """Parse the official 1949-1999 two-column population history table."""
+    text = payload.decode("utf-8", errors="ignore") if isinstance(payload, bytes) else str(payload)
+    soup = BeautifulSoup(text, "lxml")
+    records: dict[int, float] = {}
+    for row in soup.find_all("tr"):
+        cells = ["".join(cell.stripped_strings).replace(",", "") for cell in row.find_all(["td", "th"])]
+        for year_index, population_index in ((0, 1), (3, 4)):
+            if len(cells) <= population_index or not re.fullmatch(r"19\d{2}", cells[year_index]):
+                continue
+            year = int(cells[year_index])
+            try:
+                population = float(cells[population_index])
+            except ValueError:
+                continue
+            if 1949 <= year <= 1999 and 50_000 <= population <= 130_000:
+                records[year] = population
+    if len(records) < 50:
+        raise ValueError("NBS population history table returned incomplete coverage")
+    return pd.DataFrame({
+        "date": [pd.Timestamp(f"{year}-12-31") for year in sorted(records)],
+        "population": [records[year] for year in sorted(records)],
+    })
+
+
+@lru_cache(maxsize=1)
+def fetch_nbs_population_history() -> pd.DataFrame:
+    response = requests.get(NBS_POPULATION_HISTORY_URL, headers=REQUEST_HEADERS, timeout=45)
+    response.raise_for_status()
+    return parse_nbs_population_history(response.content)
+
+
 def merge_official_frames(*frames: pd.DataFrame) -> pd.DataFrame:
     usable = [frame for frame in frames if frame is not None and not frame.empty]
     if not usable:
         return pd.DataFrame()
-    return (
-        pd.concat(usable, ignore_index=True, sort=False)
-        .sort_values("date")
-        .drop_duplicates("date", keep="last")
-        .reset_index(drop=True)
-    )
+    # Later frames have priority, but a partial overlay must not erase a
+    # validated field supplied by an earlier frame on the same date.
+    combined = pd.concat(usable, ignore_index=True, sort=False).sort_values("date")
+    return combined.groupby("date", as_index=False, sort=True).last().reset_index(drop=True)
 
 
 def cumulative_to_period_values(

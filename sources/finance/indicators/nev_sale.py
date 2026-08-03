@@ -7,7 +7,7 @@ from .base import BaseIndicator
 class NEVSaleIndicator(BaseIndicator):
     """CPCA new-energy passenger-car retail sales and retail penetration."""
 
-    SOURCE_URL = "http://data.cpcadata.com/api/chartlist"
+    SOURCE_URL = "https://data.cpcadata.com/api/chartlist"
 
     @staticmethod
     def _month_date(value) -> pd.Timestamp:

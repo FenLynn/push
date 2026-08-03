@@ -99,6 +99,20 @@ def test_electricity_derives_monthly_value_only_from_consecutive_cumulative_poin
     assert pd.isna(normalized.loc[2, "electricity_monthly"])
 
 
+def test_electricity_marks_february_as_combined_when_january_is_not_published():
+    raw = pd.DataFrame({
+        "统计时间": ["2026.2", "2026.3"],
+        "全社会用电量": [165_000_000, 250_000_000],
+        "全社会用电量同比": [4.5, 5.0],
+    })
+
+    normalized = ElectricityIndicator._normalize_frame(raw)
+
+    assert normalized["period_span"].tolist() == [2, 1]
+    assert pd.isna(normalized.loc[0, "electricity_monthly"])
+    assert normalized.loc[1, "electricity_monthly"] == 8500
+
+
 def test_margin_combines_only_same_day_shanghai_and_shenzhen_values():
     sh = pd.DataFrame({
         "日期": ["2026-07-14", "2026-07-15"],

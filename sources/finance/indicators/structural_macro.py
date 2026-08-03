@@ -6,10 +6,12 @@ communiques; current NBS and BIS series are transported by DBnomics.
 
 from __future__ import annotations
 
+import logging
 import re
 
 import akshare as ak
 import pandas as pd
+import requests
 
 from .base import BaseIndicator
 from ..official_series import (
@@ -17,6 +19,9 @@ from ..official_series import (
     fetch_bis_sdmx_series,
     fetch_dbnomics_dataset,
     fetch_mca_quarterly_marriage,
+    fetch_mof_fiscal_releases,
+    fetch_nbs_portal_series,
+    fetch_nbs_population_history,
     fetch_nbs_yearbook_rows,
     fetch_owid_grapher,
     merge_official_frames,
@@ -32,6 +37,17 @@ COMMUNIQUE_2012_2015 = pd.DataFrame({
     "natural_growth_rate": [4.95, 4.92, 5.21, 4.96],
     "age_65_share": [9.4, 9.7, 10.1, 10.5],
 })
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _optional_official_overlay(fetcher, label: str) -> pd.DataFrame:
+    """Keep the historical mirror usable during a temporary official-site outage."""
+    try:
+        return fetcher()
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        LOGGER.warning("%s overlay unavailable; retaining validated history: %s", label, exc)
+        return pd.DataFrame()
 
 
 def historical_population() -> pd.DataFrame:
@@ -49,7 +65,8 @@ def complete_population() -> pd.DataFrame:
     current["urbanization_rate"] = current["urban_population"] / current["population"] * 100
     bridge = COMMUNIQUE_2012_2015[["date", "population", "urban_population"]].copy()
     bridge["urbanization_rate"] = bridge["urban_population"] / bridge["population"] * 100
-    return merge_official_frames(historical_population(), bridge, current)
+    complete_total = _optional_official_overlay(fetch_nbs_population_history, "NBS population history")
+    return merge_official_frames(historical_population(), complete_total, bridge, current)
 
 
 class StructuralMacroIndicator(BaseIndicator):
@@ -131,8 +148,21 @@ class DemographyIndicator(StructuralMacroIndicator):
         current = fetch_dbnomics_dataset("NBS", "A_A0302", ["A030201", "A030202", "A030203"])
         current = current.rename(columns={"A030201": "birth_rate", "A030202": "death_rate",
                                           "A030203": "natural_growth_rate"})
+        direct = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "ffed4267bba24830beea5991d4c9bcfc",
+                {
+                    "birth_rate": ("人口出生率 (‰)",),
+                    "death_rate": ("人口死亡率 (‰)",),
+                    "natural_growth_rate": ("人口自然增长率 (‰)",),
+                },
+                start="1949",
+                frequency="annual",
+            ),
+            "NBS demography",
+        )
         bridge = COMMUNIQUE_2012_2015[["date", "birth_rate", "death_rate", "natural_growth_rate"]]
-        frame = merge_official_frames(self._historical(), bridge, current)
+        frame = merge_official_frames(self._historical(), bridge, current, direct)
         population = complete_population()[["date", "population"]]
         frame = frame.merge(population, on="date", how="left").sort_values("date")
         prior_population = frame["population"].shift(1)
@@ -169,8 +199,16 @@ class FertilityIndicator(StructuralMacroIndicator):
         if "Fertility rate" not in fertility:
             raise ValueError("UN WPP fertility response missing Fertility rate")
         fertility = fertility[["date", "Fertility rate"]].rename(columns={"Fertility rate": "total_fertility_rate"})
+        births = fetch_owid_grapher("annual-number-of-births-by-world-region")
+        if "Births" not in births:
+            raise ValueError("UN WPP birth response missing Births")
+        births = births[["date", "Births"]].rename(columns={"Births": "birth_population_un_estimate"})
+        births["birth_population_un_estimate"] = births["birth_population_un_estimate"] / 10000
         frame = age[["date", "women_15_49", "women_20_34"]].merge(fertility, on="date", how="outer")
-        frame = frame.sort_values("date").dropna(how="all", subset=["women_15_49", "women_20_34", "total_fertility_rate"])
+        frame = frame.merge(births, on="date", how="outer")
+        frame = frame.sort_values("date").dropna(how="all", subset=[
+            "women_15_49", "women_20_34", "total_fertility_rate", "birth_population_un_estimate",
+        ])
         if len(frame) < 60 or frame["women_15_49"].dropna().min() <= 0:
             raise ValueError("fertility foundation series failed coverage/plausibility validation")
         if frame["total_fertility_rate"].dropna().max() > 10:
@@ -197,8 +235,28 @@ class AgeingIndicator(StructuralMacroIndicator):
         current["age_65_share"] = current["A030304"] / current["A030301"] * 100
         current = current.rename(columns={"A030305": "gross_dependency_ratio", "A030307": "old_dependency_ratio"})
         bridge = COMMUNIQUE_2012_2015[["date", "age_65_share"]]
-        frame = merge_official_frames(self._historical(), bridge,
-                                       current[["date", "age_65_share", "gross_dependency_ratio", "old_dependency_ratio"]])
+        direct = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "c7743eefda9d44b5ad2ab0b4f29ba969",
+                {
+                    "population": ("年末总人口 (万人)",),
+                    "age_65_population": ("65岁及以上人口 (万人)",),
+                    "gross_dependency_ratio": ("总抚养比 (%)",),
+                    "old_dependency_ratio": ("老年抚养比 (%)",),
+                },
+                start="1949",
+                frequency="annual",
+            ),
+            "NBS ageing",
+        )
+        if not direct.empty:
+            direct["age_65_share"] = direct["age_65_population"] / direct["population"] * 100
+        frame = merge_official_frames(
+            self._historical(), bridge,
+            current[["date", "age_65_share", "gross_dependency_ratio", "old_dependency_ratio"]],
+            direct[["date", "age_65_share", "gross_dependency_ratio", "old_dependency_ratio"]]
+            if not direct.empty else direct,
+        )
         if frame.empty or frame["age_65_share"].dropna().max() > 40:
             raise ValueError("ageing series failed plausibility validation")
         return frame
@@ -215,6 +273,20 @@ class MarriageIndicator(StructuralMacroIndicator):
         annual = fetch_dbnomics_dataset("NBS", "A_A0P0C", ["A0P0C02", "A0P0C03", "A0P0C06"])
         annual = annual.rename(columns={"A0P0C02": "marriages_annual", "A0P0C03": "first_marriages_annual",
                                         "A0P0C06": "divorces_annual"})
+        direct_annual = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "903b12570f7b4d73b578945248019f8f",
+                {
+                    "marriages_annual": ("结婚登记 (万对)",),
+                    "first_marriages_annual": ("结婚登记初婚人数 (万人)",),
+                    "divorces_annual": ("离婚登记 (万对)",),
+                },
+                start="1950",
+                frequency="annual",
+            ),
+            "NBS annual marriage",
+        )
+        annual = merge_official_frames(annual, direct_annual)
         quarterly = fetch_mca_quarterly_marriage()
         frame = annual.merge(quarterly.drop(columns=["source_url"], errors="ignore"), on="date", how="outer")
         frame = frame.sort_values("date").dropna(how="all", subset=[
@@ -237,10 +309,25 @@ class UnemploymentIndicator(StructuralMacroIndicator):
               "age_25_29_rate": "25-29岁(不含在校生)", "age_30_59_rate": "30-59岁(不含在校生)"}
 
     def fetch_data(self) -> pd.DataFrame:
-        frame = fetch_dbnomics_dataset("NBS", "M_A0E01", ["A0E0101", "A0E0102", "A0E0105", "A0E0109", "A0E0110"])
-        frame = frame.rename(columns={"A0E0101": "urban_rate", "A0E0102": "major_city_rate",
-                                      "A0E0105": "youth_rate", "A0E0109": "age_25_29_rate",
-                                      "A0E0110": "age_30_59_rate"})
+        mirror = fetch_dbnomics_dataset("NBS", "M_A0E01", ["A0E0101", "A0E0102", "A0E0105", "A0E0109", "A0E0110"])
+        mirror = mirror.rename(columns={"A0E0101": "urban_rate", "A0E0102": "major_city_rate",
+                                        "A0E0105": "youth_rate", "A0E0109": "age_25_29_rate",
+                                        "A0E0110": "age_30_59_rate"})
+        direct = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "ee3b7046b390415b9b7745e3d16f6052",
+                {
+                    "urban_rate": ("全国城镇调查失业率 (%)",),
+                    "major_city_rate": ("31个大城市城镇调查失业率 (%)",),
+                    "youth_rate": ("全国城镇16—24岁劳动力失业率(%)",),
+                    "age_25_29_rate": ("全国城镇25—29岁劳动力失业率 (%)",),
+                    "age_30_59_rate": ("全国城镇30—59岁劳动力失业率 (%)",),
+                },
+                start="201801",
+            ),
+            "NBS unemployment",
+        )
+        frame = merge_official_frames(mirror, direct)
         if frame.empty or frame.select_dtypes("number").max().max() > 40:
             raise ValueError("unemployment series failed plausibility validation")
         return frame
@@ -254,6 +341,16 @@ class LabourIndicator(StructuralMacroIndicator):
     def fetch_data(self) -> pd.DataFrame:
         active = fetch_dbnomics_dataset("NBS", "A_A0401", ["A040101"]).rename(columns={"A040101": "active_population"})
         registered = fetch_dbnomics_dataset("NBS", "A_A040N", ["A040N01"]).rename(columns={"A040N01": "registered_unemployed"})
+        direct_registered = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "19839dbd8e82481b9524f031c6d816c5",
+                {"registered_unemployed": ("城镇登记失业人数 (万人)",)},
+                start="1950",
+                frequency="annual",
+            ),
+            "NBS registered unemployment",
+        )
+        registered = merge_official_frames(registered, direct_registered)
         frame = active.merge(registered, on="date", how="outer").sort_values("date")
         if frame.empty or frame["active_population"].dropna().min() < 50000:
             raise ValueError("labour series failed plausibility validation")
@@ -271,6 +368,27 @@ class FiscalIndicator(StructuralMacroIndicator):
         frame = fetch_dbnomics_dataset("NBS", "A_A0801", ["A080101", "A080102", "A080103", "A080104"])
         frame = frame.rename(columns={"A080101": "revenue", "A080102": "expenditure",
                                       "A080103": "revenue_growth", "A080104": "expenditure_growth"})
+        direct = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "9ab4eeaba2264792b296b6658b6472dc",
+                {
+                    "revenue": ("一般公共预算收入 (亿元)",),
+                    "expenditure": ("一般公共预算支出 (亿元)",),
+                    "revenue_growth": ("一般公共预算收入增长速度 (%)",),
+                    "expenditure_growth": ("一般公共预算支出增长速度 (%)",),
+                },
+                start="1950",
+                frequency="annual",
+            ),
+            "NBS annual fiscal",
+        )
+        frame = merge_official_frames(frame, direct)
+        current = _optional_official_overlay(fetch_mof_fiscal_releases, "MOF fiscal")
+        if not current.empty:
+            current = current.loc[current["date"].dt.month.eq(12), [
+                "date", "revenue", "expenditure", "revenue_growth", "expenditure_growth",
+            ]]
+            frame = merge_official_frames(frame, current)
         if frame.empty or frame[["revenue", "expenditure"]].dropna().min().min() <= 0:
             raise ValueError("fiscal series failed plausibility validation")
         return frame
@@ -285,9 +403,49 @@ class FiscalMonthlyIndicator(FiscalIndicator):
         expenditure = fetch_dbnomics_dataset("NBS", "M_A0C02", ["A0C0202", "A0C0203"]).rename(
             columns={"A0C0202": "expenditure", "A0C0203": "expenditure_growth"})
         frame = revenue.merge(expenditure, on="date", how="outer").sort_values("date")
-        if frame.empty or frame[["revenue", "expenditure"]].dropna(how="all").min().min() <= 0:
-            raise ValueError("monthly fiscal series failed plausibility validation")
+        direct_revenue = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "0083b57bb6b44d4d964b87a89192344e",
+                {
+                    "revenue": ("国家财政收入累计值 (亿元)",),
+                    "revenue_growth": ("国家财政收入累计增长 (%)",),
+                },
+                start="200001",
+            ),
+            "NBS monthly fiscal revenue",
+        )
+        direct_expenditure = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "37564a0046c14c059382e3ad26a0d94f",
+                {
+                    "expenditure": ("国家财政支出 (不含债务还本) 累计值 (亿元)",),
+                    "expenditure_growth": ("国家财政支出 (不含债务还本) 累计增长 (%)",),
+                },
+                start="200001",
+            ),
+            "NBS monthly fiscal expenditure",
+        )
+        if not direct_revenue.empty or not direct_expenditure.empty:
+            if direct_revenue.empty:
+                direct = direct_expenditure
+            elif direct_expenditure.empty:
+                direct = direct_revenue
+            else:
+                direct = direct_revenue.merge(direct_expenditure, on="date", how="outer")
+            frame = merge_official_frames(frame, direct)
+        current = _optional_official_overlay(fetch_mof_fiscal_releases, "MOF fiscal").rename(columns={
+            "revenue": "revenue_cumulative", "expenditure": "expenditure_cumulative",
+        })
         frame = frame.rename(columns={"revenue": "revenue_cumulative", "expenditure": "expenditure_cumulative"})
+        if not current.empty:
+            frame = merge_official_frames(frame, current[[
+                "date", "revenue_cumulative", "expenditure_cumulative", "revenue_growth", "expenditure_growth",
+            ]])
+        frame = frame.loc[
+            frame[["revenue_cumulative", "expenditure_cumulative"]].notna().any(axis=1)
+        ].copy()
+        if frame.empty or frame[["revenue_cumulative", "expenditure_cumulative"]].dropna(how="all").min().min() <= 0:
+            raise ValueError("monthly fiscal series failed plausibility validation")
         frame = cumulative_to_period_values(frame, ["revenue_cumulative", "expenditure_cumulative"])
         frame = frame.rename(columns={"revenue_period": "revenue_monthly", "expenditure_period": "expenditure_monthly"})
         for metric in ("revenue_monthly", "expenditure_monthly"):
@@ -349,6 +507,10 @@ class ActivityIndicator(StructuralMacroIndicator):
         for source in frames[1:]:
             frame = frame.merge(source, on="date", how="outer")
         frame = frame.sort_values("date").drop_duplicates("date", keep="last")
+        january_years = set(frame.loc[frame["date"].dt.month.eq(1), "date"].dt.year)
+        frame["period_span"] = 1
+        combined = frame["date"].dt.month.eq(2) & ~frame["date"].dt.year.isin(january_years)
+        frame.loc[combined, "period_span"] = 2
         if frame.empty or frame["retail_sales"].dropna().min() <= 0:
             raise ValueError("monthly activity series failed plausibility validation")
         return frame.reset_index(drop=True)
@@ -364,6 +526,28 @@ class TaxStructureIndicator(StructuralMacroIndicator):
         frame = fetch_dbnomics_dataset("NBS", "A_A0806", ["A080601", "A080602", "A080604", "A080606", "A080607"])
         frame = frame.rename(columns={"A080601": "tax_revenue", "A080602": "vat", "A080604": "consumption_tax",
                                       "A080606": "personal_tax", "A080607": "corporate_tax"})
+        direct = _optional_official_overlay(
+            lambda: fetch_nbs_portal_series(
+                "f478a1d7c27a4015b6f9af06ce6f617c",
+                {
+                    "tax_revenue": ("国家税收收入 (亿元)",),
+                    "vat": ("国家国内增值税 (亿元)",),
+                    "consumption_tax": ("国家国内消费税 (亿元)",),
+                    "corporate_tax": ("国家企业所得税 (亿元)",),
+                    "personal_tax": ("国家个人所得税 (亿元)",),
+                },
+                start="1950",
+                frequency="annual",
+            ),
+            "NBS annual tax structure",
+        )
+        frame = merge_official_frames(frame, direct)
+        current = _optional_official_overlay(fetch_mof_fiscal_releases, "MOF tax structure")
+        if not current.empty:
+            current = current.loc[current["date"].dt.month.eq(12), [
+                "date", "tax_revenue", "vat", "consumption_tax", "personal_tax", "corporate_tax",
+            ]].dropna(subset=["tax_revenue"])
+            frame = merge_official_frames(frame, current)
         for source, target in (("vat", "vat_share"), ("consumption_tax", "consumption_tax_share"),
                                ("personal_tax", "personal_tax_share"), ("corporate_tax", "corporate_tax_share")):
             frame[target] = frame[source] / frame["tax_revenue"] * 100

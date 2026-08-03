@@ -29,8 +29,11 @@ class ElectricityIndicator(BaseIndicator):
         frame.loc[frame["month"] == 1, "electricity_monthly"] = frame.loc[frame["month"] == 1, "cumulative"]
         frame.loc[(frame["month"] > 1) & (previous_month != frame["month"] - 1), "electricity_monthly"] = pd.NA
         frame.loc[frame["electricity_monthly"] < 0, "electricity_monthly"] = pd.NA
+        january_years = set(frame.loc[frame["month"].eq(1), "year"])
+        frame["period_span"] = 1
+        frame.loc[frame["month"].eq(2) & ~frame["year"].isin(january_years), "period_span"] = 2
         return frame[["date", "year", "month", "cumulative", "electricity_monthly",
-                      "electricity_cumulative_yoy"]].reset_index(drop=True)
+                      "electricity_cumulative_yoy", "period_span"]].reset_index(drop=True)
 
     def fetch_data(self) -> pd.DataFrame:
         last_error = None
