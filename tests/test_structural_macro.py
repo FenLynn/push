@@ -1,7 +1,12 @@
 import pandas as pd
 import pytest
 
-from sources.finance.official_series import parse_bis_sdmx_csv, period_end
+from sources.finance.official_series import (
+    cumulative_to_period_values,
+    parse_bis_sdmx_csv,
+    parse_mca_quarterly_table,
+    period_end,
+)
 from sources.finance.indicators import structural_macro as macro
 
 
@@ -16,6 +21,29 @@ def test_parse_bis_sdmx_csv_uses_named_fields_and_sorts():
     frame = parse_bis_sdmx_csv(payload)
     assert frame["date"].tolist() == [pd.Timestamp("2025-03-31"), pd.Timestamp("2025-06-30")]
     assert frame["value"].tolist() == [92.7, 95.0]
+
+
+def test_mca_excel_html_is_parsed_by_label_not_fixed_cell_position():
+    payload = """
+    <table>
+      <tr><td>结 婚 登 记*</td><td>万对</td><td>676.3</td><td></td></tr>
+      <tr><td>离婚登记*</td><td>万对</td><td>274.3</td><td></td></tr>
+    </table>
+    """
+    assert parse_mca_quarterly_table(payload) == {
+        "marriages_cumulative": 676.3,
+        "divorces_cumulative": 274.3,
+    }
+
+
+def test_cumulative_values_are_differenced_without_splitting_missing_periods():
+    frame = pd.DataFrame({
+        "date": pd.to_datetime(["2025-02-28", "2025-03-31", "2025-06-30"]),
+        "revenue_cumulative": [100, 165, 330],
+    })
+    result = cumulative_to_period_values(frame, ["revenue_cumulative"])
+    assert result["revenue_period"].tolist() == [100, 65, 165]
+    assert result["period_span"].tolist() == [2, 1, 3]
 
 
 def test_fertility_sums_exact_age_bands_without_interpolation(monkeypatch):
@@ -66,11 +94,35 @@ def test_demography_two_year_columns_are_both_preserved(monkeypatch):
         "A030201": [12.43], "A030202": [7.09], "A030203": [5.34],
     })
     monkeypatch.setattr(macro, "fetch_dbnomics_dataset", lambda *_args, **_kwargs: current)
+    monkeypatch.setattr(macro, "complete_population", lambda: pd.DataFrame({
+        "date": pd.to_datetime(["2015-12-31", "2016-12-31"]),
+        "population": [137462, 138271],
+    }))
 
     frame = macro.DemographyIndicator(None, None).fetch_data()
 
     assert frame.loc[frame["date"] == pd.Timestamp("1978-12-31"), "birth_rate"].item() == 18.25
     assert frame.loc[frame["date"] == pd.Timestamp("1996-12-31"), "natural_growth_rate"].item() == 10.42
+    latest = frame.loc[frame["date"] == pd.Timestamp("2016-12-31")].iloc[0]
+    assert latest["birth_population"] == pytest.approx(((137462 + 138271) / 2) * 12.43 / 1000)
+
+
+def test_marriage_preserves_annual_history_and_adds_quarterly_flows(monkeypatch):
+    annual = pd.DataFrame({
+        "date": pd.to_datetime(["2024-12-31"]),
+        "A0P0C02": [610.6], "A0P0C03": [917.2], "A0P0C06": [262.1],
+    })
+    quarterly = pd.DataFrame({
+        "date": pd.to_datetime(["2025-03-31"]),
+        "marriages_cumulative": [181.0], "marriages_quarter": [181.0],
+        "marriages_quarter_yoy": [-8.0], "divorces_cumulative": [64.0],
+        "divorces_quarter": [64.0], "divorces_quarter_yoy": [2.0],
+    })
+    monkeypatch.setattr(macro, "fetch_dbnomics_dataset", lambda *_args, **_kwargs: annual)
+    monkeypatch.setattr(macro, "fetch_mca_quarterly_marriage", lambda: quarterly)
+    frame = macro.MarriageIndicator(None, None).fetch_data()
+    assert frame.loc[frame["date"] == pd.Timestamp("2024-12-31"), "marriages_annual"].item() == 610.6
+    assert frame.loc[frame["date"] == pd.Timestamp("2025-03-31"), "marriages_quarter"].item() == 181.0
 
 
 def test_tax_structure_uses_same_year_tax_total_as_denominator(monkeypatch):
@@ -99,3 +151,44 @@ def test_unemployment_does_not_fill_missing_age_series(monkeypatch):
 
     assert pd.isna(frame.iloc[0]["youth_rate"])
     assert frame.iloc[1]["youth_rate"] == 16.1
+
+
+def test_monthly_fiscal_uses_single_period_flows_and_comparable_yoy(monkeypatch):
+    revenue = pd.DataFrame({
+        "date": pd.to_datetime(["2024-02-29", "2024-03-31", "2025-02-28", "2025-03-31"]),
+        "A0C0102": [100, 160, 110, 176], "A0C0103": [1, 2, 10, 10],
+    })
+    expenditure = pd.DataFrame({
+        "date": revenue["date"], "A0C0202": [120, 190, 132, 209], "A0C0203": [1, 2, 10, 10],
+    })
+    monkeypatch.setattr(
+        macro,
+        "fetch_dbnomics_dataset",
+        lambda _provider, dataset, _codes: revenue if dataset == "M_A0C01" else expenditure,
+    )
+    frame = macro.FiscalMonthlyIndicator(None, None).fetch_data()
+    march_2025 = frame.loc[frame["date"] == pd.Timestamp("2025-03-31")].iloc[0]
+    assert march_2025["revenue_monthly"] == 66
+    assert march_2025["expenditure_monthly"] == 77
+    assert march_2025["revenue_monthly_yoy"] == pytest.approx(10)
+    assert march_2025["expenditure_monthly_yoy"] == pytest.approx(10)
+
+
+def test_activity_indicator_aligns_three_monthly_sources(monkeypatch):
+    monkeypatch.setattr(macro.ak, "macro_china_consumer_goods_retail", lambda: pd.DataFrame({
+        "月份": ["2026年05月份", "2026年06月份"], "当月": [41090, 42690.7],
+        "同比增长": [-0.6, 1.0], "累计": [206031.4, 248722.1], "累计-同比增长": [1.4, 1.3],
+    }))
+    monkeypatch.setattr(macro.ak, "macro_china_gyzjz", lambda: pd.DataFrame({
+        "月份": ["2026年05月份", "2026年06月份"], "同比增长": [4.5, 5.3],
+        "累计增长": [5.4, 5.4], "发布时间": ["", ""],
+    }))
+    monkeypatch.setattr(macro.ak, "macro_china_gdzctz", lambda: pd.DataFrame({
+        "月份": ["2026年05月份", "2026年06月份"], "当月": [37219, 47858],
+        "同比增长": [-17.15, -15.6], "环比增长": [-3.54, 28.58], "自年初累计": [178512, 226370],
+    }))
+    frame = macro.ActivityIndicator(None, None).fetch_data()
+    assert frame["date"].tolist() == [pd.Timestamp("2026-05-31"), pd.Timestamp("2026-06-30")]
+    assert frame.iloc[-1]["retail_sales_yoy"] == 1.0
+    assert frame.iloc[-1]["industrial_yoy"] == 5.3
+    assert frame.iloc[-1]["fixed_asset_investment"] == 47858

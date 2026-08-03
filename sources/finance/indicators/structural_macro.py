@@ -6,12 +6,17 @@ communiques; current NBS and BIS series are transported by DBnomics.
 
 from __future__ import annotations
 
+import re
+
+import akshare as ak
 import pandas as pd
 
 from .base import BaseIndicator
 from ..official_series import (
+    cumulative_to_period_values,
     fetch_bis_sdmx_series,
     fetch_dbnomics_dataset,
+    fetch_mca_quarterly_marriage,
     fetch_nbs_yearbook_rows,
     fetch_owid_grapher,
     merge_official_frames,
@@ -27,6 +32,24 @@ COMMUNIQUE_2012_2015 = pd.DataFrame({
     "natural_growth_rate": [4.95, 4.92, 5.21, 4.96],
     "age_65_share": [9.4, 9.7, 10.1, 10.5],
 })
+
+
+def historical_population() -> pd.DataFrame:
+    rows = fetch_nbs_yearbook_rows("D0301C")
+    return pd.DataFrame([
+        {"date": pd.Timestamp(f"{int(row[0])}-12-31"), "population": row[1],
+         "urban_population": row[6], "urbanization_rate": row[7]}
+        for row in rows if len(row) >= 10 and 1949 <= row[0] <= 2011
+    ])
+
+
+def complete_population() -> pd.DataFrame:
+    current = fetch_dbnomics_dataset("NBS", "A_A0301", ["A030101", "A030104"])
+    current = current.rename(columns={"A030101": "population", "A030104": "urban_population"})
+    current["urbanization_rate"] = current["urban_population"] / current["population"] * 100
+    bridge = COMMUNIQUE_2012_2015[["date", "population", "urban_population"]].copy()
+    bridge["urbanization_rate"] = bridge["urban_population"] / bridge["population"] * 100
+    return merge_official_frames(historical_population(), bridge, current)
 
 
 class StructuralMacroIndicator(BaseIndicator):
@@ -77,20 +100,10 @@ class PopulationIndicator(StructuralMacroIndicator):
 
     @staticmethod
     def _historical() -> pd.DataFrame:
-        rows = fetch_nbs_yearbook_rows("D0301C")
-        return pd.DataFrame([
-            {"date": pd.Timestamp(f"{int(row[0])}-12-31"), "population": row[1],
-             "urban_population": row[6], "urbanization_rate": row[7]}
-            for row in rows if len(row) >= 10 and 1949 <= row[0] <= 2011
-        ])
+        return historical_population()
 
     def fetch_data(self) -> pd.DataFrame:
-        current = fetch_dbnomics_dataset("NBS", "A_A0301", ["A030101", "A030104"])
-        current = current.rename(columns={"A030101": "population", "A030104": "urban_population"})
-        current["urbanization_rate"] = current["urban_population"] / current["population"] * 100
-        bridge = COMMUNIQUE_2012_2015[["date", "population", "urban_population"]].copy()
-        bridge["urbanization_rate"] = bridge["urban_population"] / bridge["population"] * 100
-        frame = merge_official_frames(self._historical(), bridge, current)
+        frame = complete_population()
         if len(frame) < 50 or not frame["population"].between(50000, 160000).all():
             raise ValueError("population history failed coverage/plausibility validation")
         return frame
@@ -120,6 +133,13 @@ class DemographyIndicator(StructuralMacroIndicator):
                                           "A030203": "natural_growth_rate"})
         bridge = COMMUNIQUE_2012_2015[["date", "birth_rate", "death_rate", "natural_growth_rate"]]
         frame = merge_official_frames(self._historical(), bridge, current)
+        population = complete_population()[["date", "population"]]
+        frame = frame.merge(population, on="date", how="left").sort_values("date")
+        prior_population = frame["population"].shift(1)
+        consecutive = frame["date"].dt.year.diff().eq(1)
+        average_population = ((frame["population"] + prior_population) / 2).where(consecutive)
+        frame["birth_population"] = average_population * frame["birth_rate"] / 1000
+        frame["death_population"] = average_population * frame["death_rate"] / 1000
         if len(frame) < 40 or frame[["birth_rate", "death_rate"]].max().max() > 50:
             raise ValueError("demography history failed coverage/plausibility validation")
         return frame
@@ -186,14 +206,26 @@ class AgeingIndicator(StructuralMacroIndicator):
 
 class MarriageIndicator(StructuralMacroIndicator):
     title = "结婚、初婚与离婚登记"
-    primary = ("marriages", "first_marriages", "divorces")
-    labels = {"marriages": "结婚登记", "first_marriages": "初婚人数", "divorces": "离婚登记"}
+    primary = ("marriages_quarter", "divorces_quarter")
+    secondary = ("marriages_quarter_yoy",)
+    labels = {"marriages_quarter": "单季结婚登记", "divorces_quarter": "单季离婚登记",
+              "marriages_quarter_yoy": "结婚登记同比"}
 
     def fetch_data(self) -> pd.DataFrame:
-        frame = fetch_dbnomics_dataset("NBS", "A_A0P0C", ["A0P0C02", "A0P0C03", "A0P0C06"])
-        frame = frame.rename(columns={"A0P0C02": "marriages", "A0P0C03": "first_marriages", "A0P0C06": "divorces"})
-        frame = frame.dropna(how="all", subset=["marriages", "first_marriages", "divorces"])
-        if frame.empty or (frame[["marriages", "first_marriages", "divorces"]].dropna() < 0).any().any():
+        annual = fetch_dbnomics_dataset("NBS", "A_A0P0C", ["A0P0C02", "A0P0C03", "A0P0C06"])
+        annual = annual.rename(columns={"A0P0C02": "marriages_annual", "A0P0C03": "first_marriages_annual",
+                                        "A0P0C06": "divorces_annual"})
+        quarterly = fetch_mca_quarterly_marriage()
+        frame = annual.merge(quarterly.drop(columns=["source_url"], errors="ignore"), on="date", how="outer")
+        frame = frame.sort_values("date").dropna(how="all", subset=[
+            "marriages_annual", "first_marriages_annual", "divorces_annual",
+            "marriages_cumulative", "marriages_quarter", "divorces_cumulative", "divorces_quarter",
+        ])
+        level_columns = [
+            "marriages_annual", "first_marriages_annual", "divorces_annual",
+            "marriages_cumulative", "marriages_quarter", "divorces_cumulative", "divorces_quarter",
+        ]
+        if frame.empty or (frame[level_columns].dropna(how="all") < 0).any().any():
             raise ValueError("marriage series failed plausibility validation")
         return frame
 
@@ -245,7 +277,7 @@ class FiscalIndicator(StructuralMacroIndicator):
 
 
 class FiscalMonthlyIndicator(FiscalIndicator):
-    title = "月度累计财政收支"
+    title = "月度财政收支与同比"
 
     def fetch_data(self) -> pd.DataFrame:
         revenue = fetch_dbnomics_dataset("NBS", "M_A0C01", ["A0C0102", "A0C0103"]).rename(
@@ -255,7 +287,71 @@ class FiscalMonthlyIndicator(FiscalIndicator):
         frame = revenue.merge(expenditure, on="date", how="outer").sort_values("date")
         if frame.empty or frame[["revenue", "expenditure"]].dropna(how="all").min().min() <= 0:
             raise ValueError("monthly fiscal series failed plausibility validation")
+        frame = frame.rename(columns={"revenue": "revenue_cumulative", "expenditure": "expenditure_cumulative"})
+        frame = cumulative_to_period_values(frame, ["revenue_cumulative", "expenditure_cumulative"])
+        frame = frame.rename(columns={"revenue_period": "revenue_monthly", "expenditure_period": "expenditure_monthly"})
+        for metric in ("revenue_monthly", "expenditure_monthly"):
+            prior = frame[["date", "period_span", metric]].copy()
+            prior["date"] = prior["date"] + pd.DateOffset(years=1)
+            prior = prior.rename(columns={metric: f"_{metric}_prior", "period_span": f"_{metric}_span"})
+            frame = frame.merge(prior, on="date", how="left")
+            comparable = frame["period_span"].eq(frame.pop(f"_{metric}_span"))
+            prior_value = frame.pop(f"_{metric}_prior").where(comparable)
+            frame[f"{metric}_yoy"] = (frame[metric] / prior_value - 1) * 100
         return frame
+
+
+class ActivityIndicator(StructuralMacroIndicator):
+    """Monthly demand, production and investment using published NBS values."""
+
+    title = "消费、工业与固定资产投资"
+    primary = ("retail_sales", "fixed_asset_investment")
+    secondary = ("retail_sales_yoy", "industrial_yoy", "fixed_asset_yoy")
+    labels = {
+        "retail_sales": "社会消费品零售额",
+        "fixed_asset_investment": "固定资产投资当月值",
+        "retail_sales_yoy": "社零同比",
+        "industrial_yoy": "工业增加值同比",
+        "fixed_asset_yoy": "固定资产投资同比",
+    }
+
+    @staticmethod
+    def _month_end(value) -> pd.Timestamp:
+        match = re.search(r"(20\d{2})年(\d{1,2})月", str(value or ""))
+        if not match:
+            return pd.NaT
+        return pd.Timestamp(f"{match.group(1)}-{int(match.group(2)):02d}-01") + pd.offsets.MonthEnd(0)
+
+    def fetch_data(self) -> pd.DataFrame:
+        retail = ak.macro_china_consumer_goods_retail().rename(columns={
+            "月份": "period", "当月": "retail_sales", "同比增长": "retail_sales_yoy",
+            "累计": "retail_sales_cumulative", "累计-同比增长": "retail_sales_cumulative_yoy",
+        })
+        industrial = ak.macro_china_gyzjz().rename(columns={
+            "月份": "period", "同比增长": "industrial_yoy", "累计增长": "industrial_cumulative_yoy",
+        })
+        investment = ak.macro_china_gdzctz().rename(columns={
+            "月份": "period", "当月": "fixed_asset_investment", "同比增长": "fixed_asset_yoy",
+            "自年初累计": "fixed_asset_cumulative",
+        })
+        frames = []
+        for source, columns in (
+            (retail, ["retail_sales", "retail_sales_yoy", "retail_sales_cumulative", "retail_sales_cumulative_yoy"]),
+            (industrial, ["industrial_yoy", "industrial_cumulative_yoy"]),
+            (investment, ["fixed_asset_investment", "fixed_asset_yoy", "fixed_asset_cumulative"]),
+        ):
+            source = source.copy()
+            source["date"] = source["period"].map(self._month_end)
+            for column in columns:
+                source[column] = pd.to_numeric(source[column], errors="coerce")
+            frames.append(source[["date", *columns]].dropna(subset=["date"]))
+        frame = frames[0]
+        for source in frames[1:]:
+            frame = frame.merge(source, on="date", how="outer")
+        frame = frame.sort_values("date").drop_duplicates("date", keep="last")
+        if frame.empty or frame["retail_sales"].dropna().min() <= 0:
+            raise ValueError("monthly activity series failed plausibility validation")
+        return frame.reset_index(drop=True)
 
 
 class TaxStructureIndicator(StructuralMacroIndicator):

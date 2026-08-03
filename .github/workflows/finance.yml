@@ -37,7 +37,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk
+          sudo apt-get install -y fonts-noto-cjk tesseract-ocr tesseract-ocr-chi-sim
           
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -50,6 +50,6 @@ jobs:
         env:
           # Source changes only rebuild the structural archive. Scheduled/manual
           # dispatch keeps its existing input semantics (blank means all).
-          FINANCE_INDICATORS: ${{ github.event_name == 'push' && 'population,demography,fertility,ageing,marriage,unemployment,labour,fiscal,fiscalmonthly,taxstructure,governmentdebt' || inputs.indicators || '' }}
+          FINANCE_INDICATORS: ${{ github.event_name == 'push' && 'population,demography,fertility,ageing,marriage,unemployment,labour,fiscal,fiscalmonthly,activity,taxstructure,governmentdebt' || inputs.indicators || '' }}
         run: |
           python main.py gen finance --force

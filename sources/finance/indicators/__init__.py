@@ -43,5 +43,5 @@ from .xian_real_estate import XianRealEstateIndicator
 from .structural_macro import (
     PopulationIndicator, DemographyIndicator, FertilityIndicator, AgeingIndicator, MarriageIndicator,
     UnemploymentIndicator, LabourIndicator, FiscalIndicator,
-    FiscalMonthlyIndicator, TaxStructureIndicator, GovernmentDebtIndicator,
+    FiscalMonthlyIndicator, ActivityIndicator, TaxStructureIndicator, GovernmentDebtIndicator,
 )

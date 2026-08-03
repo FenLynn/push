@@ -20,7 +20,7 @@ from .indicators import (
     ChengduRealEstateIndicator, XianRealEstateIndicator,
     PopulationIndicator, DemographyIndicator, FertilityIndicator, AgeingIndicator, MarriageIndicator,
     UnemploymentIndicator, LabourIndicator, FiscalIndicator,
-    FiscalMonthlyIndicator, TaxStructureIndicator, GovernmentDebtIndicator
+    FiscalMonthlyIndicator, ActivityIndicator, TaxStructureIndicator, GovernmentDebtIndicator
 )
 from datetime import datetime
 import logging
@@ -122,6 +122,7 @@ class FinanceSource(BaseSource):
             LabourIndicator(self.manager, self.plotter),
             FiscalIndicator(self.manager, self.plotter),
             FiscalMonthlyIndicator(self.manager, self.plotter),
+            ActivityIndicator(self.manager, self.plotter),
             TaxStructureIndicator(self.manager, self.plotter),
             GovernmentDebtIndicator(self.manager, self.plotter),
         ]
@@ -175,6 +176,7 @@ class FinanceSource(BaseSource):
             'labour': '宏观经济 (Macro Economy)',
             'fiscal': '宏观经济 (Macro Economy)',
             'fiscalmonthly': '宏观经济 (Macro Economy)',
+            'activity': '宏观经济 (Macro Economy)',
             'taxstructure': '宏观经济 (Macro Economy)',
             'governmentdebt': '宏观经济 (Macro Economy)',
             
@@ -254,6 +256,7 @@ class FinanceSource(BaseSource):
                         'labour': '劳动供给',
                         'fiscal': '国家财政收支',
                         'fiscalmonthly': '月度累计财政收支',
+                        'activity': '消费、工业与固定资产投资',
                         'taxstructure': '主要税种结构',
                         'governmentdebt': '广义政府杠杆率',
                         'keqiang': '克强指数',

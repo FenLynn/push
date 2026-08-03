@@ -221,6 +221,7 @@ class DataArchive:
             series_frame = series_frame[series_frame["value"].map(lambda value: math.isfinite(float(value)))]
             series_id = ".".join([_slug(domain), _slug(group_name), _slug(location), _slug(column)])
             series_label = str(spec.get("label") or f"{label} {column}").strip()
+            metric_quality = str(spec.get("quality") or quality).strip()
             metadata = {
                 "id": series_id,
                 "domain": domain,
@@ -231,12 +232,12 @@ class DataArchive:
                 "frequency": frequency,
                 "unit": str(spec.get("unit") or ""),
                 "source": source,
-                "quality": quality,
+                "quality": metric_quality,
             }
             if not self._upsert_series(metadata):
                 continue
 
-            observation_frames = [(frequency, series_frame, quality)]
+            observation_frames = [(frequency, series_frame, metric_quality)]
             if frequency == "daily":
                 retention_days = self.DAILY_RETENTION_DAYS.get(domain, 730)
                 cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=retention_days)

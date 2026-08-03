@@ -12,6 +12,8 @@ ARCHIVE_CATALOG = {
     "demography": {
         "label": "人口自然变动", "source": "国家统计局年鉴/公报（DBnomics 镜像）", "frequency": "annual",
         "metrics": {
+            "birth_population": {"label": "出生人口（按官方出生率推算）", "unit": "万人", "quality": "derived"},
+            "death_population": {"label": "死亡人口（按官方死亡率推算）", "unit": "万人", "quality": "derived"},
             "birth_rate": {"label": "人口出生率", "unit": "‰"},
             "death_rate": {"label": "人口死亡率", "unit": "‰"},
             "natural_growth_rate": {"label": "人口自然增长率", "unit": "‰"},
@@ -35,11 +37,17 @@ ARCHIVE_CATALOG = {
         },
     },
     "marriage": {
-        "label": "婚育登记", "source": "国家统计局/民政部（DBnomics 镜像）", "frequency": "annual",
+        "label": "婚姻登记", "source": "民政部季度统计/国家统计局年度统计", "frequency": "quarterly",
         "metrics": {
-            "marriages": {"label": "内地结婚登记", "unit": "万对"},
-            "first_marriages": {"label": "初婚登记人数", "unit": "万人"},
-            "divorces": {"label": "离婚登记", "unit": "万对"},
+            "marriages_cumulative": {"label": "年内累计结婚登记", "unit": "万对"},
+            "marriages_quarter": {"label": "单季结婚登记", "unit": "万对", "quality": "derived"},
+            "marriages_quarter_yoy": {"label": "单季结婚登记同比", "unit": "%", "quality": "derived"},
+            "divorces_cumulative": {"label": "年内累计离婚登记", "unit": "万对"},
+            "divorces_quarter": {"label": "单季离婚登记", "unit": "万对", "quality": "derived"},
+            "divorces_quarter_yoy": {"label": "单季离婚登记同比", "unit": "%", "quality": "derived"},
+            "marriages_annual": {"label": "年度结婚登记", "unit": "万对"},
+            "first_marriages_annual": {"label": "年度初婚人数", "unit": "万人"},
+            "divorces_annual": {"label": "年度离婚登记", "unit": "万对"},
         },
     },
     "unemployment": {
@@ -69,12 +77,31 @@ ARCHIVE_CATALOG = {
         },
     },
     "fiscalmonthly": {
-        "label": "月度累计财政收支", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "monthly",
+        "label": "月度财政收支", "source": "国家统计局/财政部（DBnomics 镜像）", "frequency": "monthly",
         "metrics": {
-            "revenue": {"label": "累计财政收入", "unit": "亿元"},
-            "expenditure": {"label": "累计财政支出", "unit": "亿元"},
+            "revenue_cumulative": {"label": "累计财政收入", "unit": "亿元"},
+            "expenditure_cumulative": {"label": "累计财政支出", "unit": "亿元"},
+            "revenue_monthly": {"label": "当期财政收入", "unit": "亿元", "quality": "derived"},
+            "expenditure_monthly": {"label": "当期财政支出", "unit": "亿元", "quality": "derived"},
+            "revenue_monthly_yoy": {"label": "当期财政收入同比", "unit": "%", "quality": "derived"},
+            "expenditure_monthly_yoy": {"label": "当期财政支出同比", "unit": "%", "quality": "derived"},
             "revenue_growth": {"label": "累计收入增速", "unit": "%"},
             "expenditure_growth": {"label": "累计支出增速", "unit": "%"},
+        },
+    },
+    "activity": {
+        "label": "消费、工业与投资", "source": "国家统计局发布值（AkShare/Eastmoney 传输）", "frequency": "monthly",
+        "quality": "aggregated",
+        "metrics": {
+            "retail_sales": {"label": "社会消费品零售额当月值", "unit": "亿元"},
+            "retail_sales_yoy": {"label": "社会消费品零售额同比", "unit": "%"},
+            "industrial_yoy": {"label": "规模以上工业增加值同比", "unit": "%"},
+            "fixed_asset_investment": {"label": "固定资产投资当月值", "unit": "亿元"},
+            "fixed_asset_yoy": {"label": "固定资产投资当月同比", "unit": "%"},
+            "retail_sales_cumulative": {"label": "社会消费品零售额累计", "unit": "亿元"},
+            "retail_sales_cumulative_yoy": {"label": "社会消费品零售额累计同比", "unit": "%"},
+            "industrial_cumulative_yoy": {"label": "工业增加值累计同比", "unit": "%"},
+            "fixed_asset_cumulative": {"label": "固定资产投资累计", "unit": "亿元"},
         },
     },
     "taxstructure": {
