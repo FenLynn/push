@@ -44,6 +44,10 @@ def test_monthly_series_is_normalized_and_upserted():
     observation_call = next(call for call in client.calls if "INSERT INTO data_observations" in call[0])
     assert observation_call[1][0] == "estate.city_price_index.chengdu.value"
     assert observation_call[1][1:4] == ["2026-05-01", "monthly", 99.8]
+    assert "WHERE data_observations.value IS NOT excluded.value" in observation_call[0]
+
+    series_call = next(call for call in client.calls if "INSERT INTO data_series" in call[0])
+    assert "WHERE data_series.label IS NOT excluded.label" in series_call[0]
 
 
 def test_daily_series_keeps_daily_and_builds_monthly_resolution():
@@ -143,6 +147,7 @@ def test_store_estate_events_upserts_official_details():
         "presale_permit", "2026-07-31", "天谷府二期",
     ]
     assert '"buildingCount":2' in event_call[1][6]
+    assert "WHERE estate_events.city IS NOT excluded.city" in event_call[0]
 
 
 def test_replace_observations_prunes_stale_source_dates_after_successful_write():
@@ -165,6 +170,8 @@ def test_replace_observations_prunes_stale_source_dates_after_successful_write()
     cleanup = [call for call in client.calls if "DELETE FROM data_observations" in call[0]]
     assert len(cleanup) == 1
     assert cleanup[0][1][0] == "finance.internationalrate.all.rate"
+    replacement_write = next(call for call in client.calls if "INSERT INTO data_observations" in call[0])
+    assert "WHERE data_observations.value IS NOT excluded.value" not in replacement_write[0]
 
 
 def test_finance_catalog_exposes_native_web_chart_companions():

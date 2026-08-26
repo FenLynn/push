@@ -76,8 +76,31 @@ class DataManager:
             self.logger.warning(f"No data for {name}")
             return False, None
 
+        # The chart cache is also the archive freshness marker.  Check it
+        # before touching either SQLite or D1: scheduled finance jobs often
+        # fetch the same latest date repeatedly, and re-archiving the full
+        # history only creates redundant reads/writes.
+        try:
+            latest_date = str(df.iloc[-1]['date'])
+            if '.' in latest_date:
+                latest_date = latest_date.split('.')[0]
+        except Exception:
+            latest_date = "unknown"
+
+        cache_hit = False
+        cached_url = ''
+        if name in self.tags:
+            cached = self.tags[name]
+            cached_date = cached.get('date')
+            cached_url = str(cached.get('url') or '')
+            expected_path = f"/finance/{name}/latest.png"
+            cache_hit = cached_date == latest_date and expected_path in cached_url
+            if cache_hit and not force:
+                self.logger.debug(f"{name} skipped (Cached: {latest_date})")
+                return False, cached_url
+
         archive_spec = ARCHIVE_CATALOG.get(name)
-        if self.archive and archive_spec:
+        if self.archive and archive_spec and not cache_hit:
             try:
                 self.archive.store_dataframe(
                     domain='finance',
@@ -114,24 +137,6 @@ class DataManager:
         except Exception as e:
             self.logger.error(f"DB Save error: {e}")
 
-        # 2. Check Cache
-        try:
-            latest_date = str(df.iloc[-1]['date'])
-            # Clean seconds if needed
-            if '.' in latest_date: latest_date = latest_date.split('.')[0]
-        except:
-            latest_date = "unknown"
-
-        if not force and name in self.tags:
-            cached = self.tags[name]
-            cached_date = cached.get('date')
-            cached_url = str(cached.get('url') or '')
-            expected_path = f"/finance/{name}/latest.png"
-            # Compare logic: check if strings match (both cleaned)
-            if cached_date == latest_date and expected_path in cached_url:
-                self.logger.debug(f"{name} skipped (Cached: {latest_date})")
-                return False, cached_url
-        
         return True, latest_date
 
     def save_plot_info(self, name: str, date_str: str, pic_path: str):

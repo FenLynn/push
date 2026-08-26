@@ -35,6 +35,12 @@ SNAPSHOT_MAX_ITEMS = max(200, int(os.getenv('PAPER_SNAPSHOT_MAX_ITEMS', '1200'))
 SNAPSHOT_RETENTION_DAYS = max(1, int(os.getenv('PAPER_SNAPSHOT_RETENTION_DAYS', '7')))
 ARTICLE_RETENTION_DAYS = max(1, int(os.getenv('PAPER_ARTICLE_RETENTION_DAYS', str(SNAPSHOT_RETENTION_DAYS))))
 INGEST_STALE_HOURS = max(1, int(os.getenv('PAPER_INGEST_STALE_HOURS', '3') or '3'))
+# RSS feeds are polled hourly, but touching every dedupe row on every poll is
+# unnecessary.  Keep a daily heartbeat for each identity so stale-feed
+# detection still has a useful signal without generating one write per entry
+# per poll.
+PAPER_STATE_TOUCH_HOURS = max(1, int(os.getenv('PAPER_STATE_TOUCH_HOURS', '24') or '24'))
+PAPER_ENABLE_STATE_SYNC = str(os.getenv('PAPER_ENABLE_STATE_SYNC', '') or '').strip().lower() in {'1', 'true', 'yes'}
 LEGACY_FINALIZE_DELAY_MINUTES = max(5, int(os.getenv('PAPER_LEGACY_FINALIZE_DELAY_MINUTES', '30') or '30'))
 CROSSREF_BASE = 'https://api.crossref.org/works/'
 CROSSREF_SEARCH_BASE = 'https://api.crossref.org/works'
@@ -382,6 +388,13 @@ def upsert_article_state(d1_client, identity, first_seen_at='', last_seen_at='',
     last_seen_text = str(last_seen_at or first_seen_at or '').strip()
     published_text = str(published_at or '').strip()
     updated_at = last_seen_text or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    touch_due = f"""
+        COALESCE(NULLIF(excluded.last_seen_at, ''), '') <> ''
+        AND (
+            COALESCE(NULLIF({table_name}.last_seen_at, ''), '') = ''
+            OR datetime(excluded.last_seen_at) >= datetime({table_name}.last_seen_at, '+{PAPER_STATE_TOUCH_HOURS} hours')
+        )
+    """
     sql = f"""
     INSERT INTO {table_name}
     (dedupe_key, dedupe_kind, source_name, title, link, doi, first_seen_at, last_seen_at, first_published_at, last_published_at, seen_count, updated_at)
@@ -406,8 +419,29 @@ def upsert_article_state(d1_client, identity, first_seen_at='', last_seen_at='',
             ELSE {table_name}.first_published_at
         END,
         last_published_at = COALESCE(NULLIF(excluded.last_published_at, ''), {table_name}.last_published_at),
-        seen_count = {table_name}.seen_count + 1,
-        updated_at = excluded.updated_at
+        seen_count = CASE WHEN ({touch_due}) OR
+            COALESCE(NULLIF(excluded.source_name, ''), {table_name}.source_name) IS NOT {table_name}.source_name OR
+            COALESCE(NULLIF(excluded.title, ''), {table_name}.title) IS NOT {table_name}.title OR
+            COALESCE(NULLIF(excluded.link, ''), {table_name}.link) IS NOT {table_name}.link OR
+            COALESCE(NULLIF({table_name}.doi, ''), NULLIF(excluded.doi, ''), {table_name}.doi) IS NOT {table_name}.doi OR
+            COALESCE(NULLIF(excluded.first_published_at, ''), {table_name}.first_published_at) IS NOT {table_name}.first_published_at OR
+            COALESCE(NULLIF(excluded.last_published_at, ''), {table_name}.last_published_at) IS NOT {table_name}.last_published_at
+          THEN {table_name}.seen_count + 1 ELSE {table_name}.seen_count END,
+        updated_at = CASE WHEN ({touch_due}) OR
+            COALESCE(NULLIF(excluded.source_name, ''), {table_name}.source_name) IS NOT {table_name}.source_name OR
+            COALESCE(NULLIF(excluded.title, ''), {table_name}.title) IS NOT {table_name}.title OR
+            COALESCE(NULLIF(excluded.link, ''), {table_name}.link) IS NOT {table_name}.link OR
+            COALESCE(NULLIF({table_name}.doi, ''), NULLIF(excluded.doi, ''), {table_name}.doi) IS NOT {table_name}.doi OR
+            COALESCE(NULLIF(excluded.first_published_at, ''), {table_name}.first_published_at) IS NOT {table_name}.first_published_at OR
+            COALESCE(NULLIF(excluded.last_published_at, ''), {table_name}.last_published_at) IS NOT {table_name}.last_published_at
+          THEN excluded.updated_at ELSE {table_name}.updated_at END
+    WHERE ({touch_due}) OR
+        COALESCE(NULLIF(excluded.source_name, ''), {table_name}.source_name) IS NOT {table_name}.source_name OR
+        COALESCE(NULLIF(excluded.title, ''), {table_name}.title) IS NOT {table_name}.title OR
+        COALESCE(NULLIF(excluded.link, ''), {table_name}.link) IS NOT {table_name}.link OR
+        COALESCE(NULLIF({table_name}.doi, ''), NULLIF(excluded.doi, ''), {table_name}.doi) IS NOT {table_name}.doi OR
+        COALESCE(NULLIF(excluded.first_published_at, ''), {table_name}.first_published_at) IS NOT {table_name}.first_published_at OR
+        COALESCE(NULLIF(excluded.last_published_at, ''), {table_name}.last_published_at) IS NOT {table_name}.last_published_at
     """
     params = [
         identity['dedupe_key'], identity['dedupe_kind'], identity['source_name'], identity['title'], identity['link'],
@@ -1601,7 +1635,14 @@ def process_feed_and_insert(feed, d1_client, batch_id=''):
             )
             
             # Article row keeps the earliest first_seen_at but refreshes last_seen_at on repeated RSS delivery.
-            sql = """
+            article_touch_due = f"""
+                COALESCE(NULLIF(excluded.last_seen_at, ''), '') <> ''
+                AND (
+                    COALESCE(NULLIF(articles.last_seen_at, ''), '') = ''
+                    OR datetime(excluded.last_seen_at) >= datetime(articles.last_seen_at, '+{PAPER_STATE_TOUCH_HOURS} hours')
+                )
+            """
+            sql = f"""
             INSERT INTO articles (
                 id, title, link, published_at, source_name, source_type, content, created_at,
                 doi, authors, volume, issue, pages, metadata_source, crossref_updated_at,
@@ -1638,7 +1679,20 @@ def process_feed_and_insert(feed, d1_client, batch_id=''):
                     WHEN datetime(excluded.first_seen_at) < datetime(articles.first_seen_at) THEN excluded.first_seen_at
                     ELSE articles.first_seen_at
                 END,
-                last_seen_at = COALESCE(NULLIF(excluded.last_seen_at, ''), articles.last_seen_at)
+                last_seen_at = CASE WHEN ({article_touch_due}) THEN excluded.last_seen_at ELSE articles.last_seen_at END
+            WHERE ({article_touch_due}) OR
+                (COALESCE(NULLIF(excluded.title, ''), articles.title) IS NOT articles.title) OR
+                (COALESCE(NULLIF(excluded.link, ''), articles.link) IS NOT articles.link) OR
+                (COALESCE(NULLIF(excluded.source_name, ''), articles.source_name) IS NOT articles.source_name) OR
+                (COALESCE(NULLIF(excluded.source_type, ''), articles.source_type) IS NOT articles.source_type) OR
+                (LENGTH(COALESCE(excluded.content, '')) > LENGTH(COALESCE(articles.content, ''))) OR
+                (COALESCE(NULLIF(articles.doi, ''), NULLIF(excluded.doi, ''), articles.doi) IS NOT articles.doi) OR
+                (COALESCE(NULLIF(articles.authors, ''), NULLIF(excluded.authors, ''), articles.authors) IS NOT articles.authors) OR
+                (COALESCE(NULLIF(articles.volume, ''), NULLIF(excluded.volume, ''), articles.volume) IS NOT articles.volume) OR
+                (COALESCE(NULLIF(articles.issue, ''), NULLIF(excluded.issue, ''), articles.issue) IS NOT articles.issue) OR
+                (COALESCE(NULLIF(articles.pages, ''), NULLIF(excluded.pages, ''), articles.pages) IS NOT articles.pages) OR
+                (COALESCE(NULLIF(articles.metadata_source, ''), NULLIF(excluded.metadata_source, ''), articles.metadata_source) IS NOT articles.metadata_source) OR
+                (COALESCE(NULLIF(excluded.published_at, ''), articles.published_at) IS NOT articles.published_at)
             """
             
             params = [
@@ -1756,7 +1810,15 @@ def main():
     ensure_articles_schema(d1)
     ensure_article_state_table(d1)
     article_seen_backfill_summary = backfill_article_seen_columns(d1)
-    article_state_sync_summary = sync_article_state_from_articles(d1)
+    if PAPER_ENABLE_STATE_SYNC:
+        article_state_sync_summary = sync_article_state_from_articles(d1)
+    else:
+        article_state_sync_summary = {
+            'scanned': 0,
+            'synced': 0,
+            'unique': 0,
+            'skipped': 'disabled_by_default',
+        }
     stale_inflight_summary = cleanup_stale_inflight_rows(d1)
     legacy_finalize_summary = backfill_legacy_finalized_rows(d1)
     batch_id = build_ingest_batch_id()

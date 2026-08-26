@@ -2,6 +2,7 @@
 """Paper 去重逻辑测试。"""
 
 import os
+import sqlite3
 import sys
 from types import SimpleNamespace
 from datetime import datetime, timedelta
@@ -117,6 +118,100 @@ def test_process_feed_skips_old_entries_before_insert():
     assert article_call['params'][15] == 'batch-1'
     assert article_call['params'][16] is None
     assert article_call['params'][-1] is not None
+
+
+def test_article_state_repeated_feed_only_updates_after_touch_interval():
+    connection = sqlite3.connect(':memory:')
+    connection.execute(
+        '''CREATE TABLE paper_article_state (
+            dedupe_key TEXT PRIMARY KEY, dedupe_kind TEXT, source_name TEXT,
+            title TEXT, link TEXT, doi TEXT, first_seen_at TEXT, last_seen_at TEXT,
+            first_published_at TEXT, last_published_at TEXT, seen_count INTEGER,
+            updated_at TEXT
+        )'''
+    )
+
+    class SQLiteClient:
+        def query(self, sql, params=None):
+            connection.execute(sql, params or [])
+            connection.commit()
+            return {'success': True}
+
+    identity = {
+        'dedupe_key': 'same-paper', 'dedupe_kind': 'title', 'source_name': 'Test Feed',
+        'title': 'Same paper', 'link': 'https://example.test/paper', 'doi': '',
+    }
+    client = SQLiteClient()
+    fetch_to_d1_module.upsert_article_state(
+        client, identity, '2026-08-26 00:00:00', '2026-08-26 00:00:00', '2026-08-25 00:00:00'
+    )
+    fetch_to_d1_module.upsert_article_state(
+        client, identity, '2026-08-26 00:00:00', '2026-08-26 01:00:00', '2026-08-25 00:00:00'
+    )
+    assert connection.execute('SELECT seen_count, last_seen_at FROM paper_article_state').fetchone() == (
+        1, '2026-08-26 00:00:00'
+    )
+
+    fetch_to_d1_module.upsert_article_state(
+        client, identity, '2026-08-26 00:00:00', '2026-08-27 00:00:00', '2026-08-25 00:00:00'
+    )
+    assert connection.execute('SELECT seen_count, last_seen_at FROM paper_article_state').fetchone() == (
+        2, '2026-08-27 00:00:00'
+    )
+
+
+def test_article_upsert_ignores_an_unchanged_hourly_rss_entry():
+    connection = sqlite3.connect(':memory:')
+    connection.execute(
+        '''CREATE TABLE articles (
+            id TEXT PRIMARY KEY, title TEXT, link TEXT, published_at TEXT,
+            source_name TEXT, source_type TEXT, content TEXT, created_at TEXT,
+            doi TEXT, authors TEXT, volume TEXT, issue TEXT, pages TEXT,
+            metadata_source TEXT, crossref_updated_at TEXT, ingest_batch_id TEXT,
+            ingest_finalized_at TEXT, first_seen_at TEXT, last_seen_at TEXT
+        )'''
+    )
+    connection.execute(
+        '''CREATE TABLE paper_article_state (
+            dedupe_key TEXT PRIMARY KEY, dedupe_kind TEXT, source_name TEXT,
+            title TEXT, link TEXT, doi TEXT, first_seen_at TEXT, last_seen_at TEXT,
+            first_published_at TEXT, last_published_at TEXT, seen_count INTEGER,
+            updated_at TEXT
+        )'''
+    )
+
+    class SQLiteClient:
+        def query(self, sql, params=None):
+            connection.execute(sql, params or [])
+            connection.commit()
+            return {'success': True, 'data': [{'results': []}]}
+
+    class Entry(SimpleNamespace):
+        def get(self, key, default=''):
+            return getattr(self, key, default)
+
+    entry = Entry(
+        link='https://example.test/repeated-paper',
+        title='Repeated paper',
+        published_parsed=datetime.now().timetuple(),
+        summary='<p>Stable abstract</p>', author='Stable Author', doi='10.1000/repeated-paper',
+    )
+    original_fetch_feed = fetch_to_d1_module.fetch_feed
+    fetch_to_d1_module.fetch_feed = lambda _url: SimpleNamespace(entries=[entry])
+    try:
+        client = SQLiteClient()
+        fetch_to_d1_module.process_feed_and_insert(
+            {'title': 'Test Feed', 'url': 'https://example.test/feed.xml', 'type': 'journal'}, client, 'batch-1'
+        )
+        first_seen = connection.execute('SELECT last_seen_at FROM articles').fetchone()[0]
+        fetch_to_d1_module.process_feed_and_insert(
+            {'title': 'Test Feed', 'url': 'https://example.test/feed.xml', 'type': 'journal'}, client, 'batch-2'
+        )
+    finally:
+        fetch_to_d1_module.fetch_feed = original_fetch_feed
+
+    assert connection.execute('SELECT COUNT(*) FROM articles').fetchone()[0] == 1
+    assert connection.execute('SELECT last_seen_at FROM articles').fetchone()[0] == first_seen
 
 
 def test_keyword_rendering_only_keeps_abstract_tail_tags():

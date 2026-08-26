@@ -142,6 +142,11 @@ class DataArchive:
               source=excluded.source,
               quality=excluded.quality,
               updated_at=excluded.updated_at
+            WHERE data_series.label IS NOT excluded.label
+               OR data_series.frequency IS NOT excluded.frequency
+               OR data_series.unit IS NOT excluded.unit
+               OR data_series.source IS NOT excluded.source
+               OR data_series.quality IS NOT excluded.quality
             """,
             [
                 metadata["id"], metadata["domain"], metadata["group_name"], metadata["label"],
@@ -152,7 +157,7 @@ class DataArchive:
         )
         return bool(result.get("success"))
 
-    def _upsert_observations(self, rows: Iterable[Mapping[str, Any]]) -> int:
+    def _upsert_observations(self, rows: Iterable[Mapping[str, Any]], *, refresh_unchanged: bool = False) -> int:
         rows = list(rows)
         saved = 0
         for offset in range(0, len(rows), 14):
@@ -164,6 +169,11 @@ class DataArchive:
                     row["series_id"], row["observed_on"], row["resolution"], row["value"],
                     row.get("source_date"), row.get("quality", "observed"), row["collected_at"],
                 ])
+            no_op_guard = "" if refresh_unchanged else """
+                WHERE data_observations.value IS NOT excluded.value
+                   OR data_observations.source_date IS NOT excluded.source_date
+                   OR data_observations.quality IS NOT excluded.quality
+            """
             result = self.client.query(
                 f"""
                 INSERT INTO data_observations
@@ -174,6 +184,7 @@ class DataArchive:
                   source_date=excluded.source_date,
                   quality=excluded.quality,
                   collected_at=excluded.collected_at
+                {no_op_guard}
                 """,
                 params,
             )
@@ -265,7 +276,13 @@ class DataArchive:
                         "quality": observation_quality,
                         "collected_at": collected_at,
                     })
-            series_saved = self._upsert_observations(rows)
+            series_saved = self._upsert_observations(
+                rows,
+                # Replacement collectors need every retained row to carry the
+                # current run marker, otherwise their safe post-write prune
+                # would mistake unchanged rows for stale ones.
+                refresh_unchanged=replace_observations,
+            )
             saved += series_saved
             if replace_observations and series_saved == len(rows):
                 # Source migrations (for example stale event calendars to
@@ -368,6 +385,13 @@ class DataArchive:
                   source_url=excluded.source_url,
                   quality=excluded.quality,
                   collected_at=excluded.collected_at
+                WHERE estate_events.city IS NOT excluded.city
+                   OR estate_events.event_type IS NOT excluded.event_type
+                   OR estate_events.occurred_on IS NOT excluded.occurred_on
+                   OR estate_events.title IS NOT excluded.title
+                   OR estate_events.detail_json IS NOT excluded.detail_json
+                   OR estate_events.source_url IS NOT excluded.source_url
+                   OR estate_events.quality IS NOT excluded.quality
                 """,
                 params,
             )
