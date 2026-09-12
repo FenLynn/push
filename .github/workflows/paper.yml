@@ -11,6 +11,10 @@ on:
         options:
           - production
           - test
+      schedule_slot:
+        description: '由调度器传入的唯一计划槽位；手动运行留空'
+        required: false
+        default: ''
 
 jobs:
   run:
@@ -23,22 +27,30 @@ jobs:
         uses: ./.github/actions/load-dotenv
         with:
           env_text: ${{ secrets.PUSH_ENV_FILE }}
+
+      - name: Claim scheduled slot
+        id: claim-scheduled-slot
+        run: python scripts/claim_scheduled_job.py --job paper --slot '${{ inputs.schedule_slot }}'
         
       - name: Set up Python
+        if: steps.claim-scheduled-slot.outputs.claimed == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
       
       - name: Install System Dependencies
+        if: steps.claim-scheduled-slot.outputs.claimed == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y fonts-noto-cjk
           
       - name: Install dependencies
+        if: steps.claim-scheduled-slot.outputs.claimed == 'true'
         run: pip install -r requirements.txt
         
       - name: Run Paper
+        if: steps.claim-scheduled-slot.outputs.claimed == 'true'
         # 定时运行(无 inputs) 或 production 模式 → paper 群组
         # 手动选 test 模式 → 只发给自己 (--topic me)
         run: |

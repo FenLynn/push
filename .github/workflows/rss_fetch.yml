@@ -2,7 +2,11 @@ name: RSS Fetch to Cloudflare D1
 
 on:
   workflow_dispatch:
-    # Allow manual trigger
+    inputs:
+      schedule_slot:
+        description: '由调度器传入的唯一计划槽位；手动运行留空'
+        required: false
+        default: ''
 
 jobs:
   fetch-and-store:
@@ -17,24 +21,32 @@ jobs:
       with:
         env_text: ${{ secrets.PUSH_ENV_FILE }}
 
+    - name: Claim scheduled slot
+      id: claim-scheduled-slot
+      run: python scripts/claim_scheduled_job.py --job rss_fetch --slot '${{ inputs.schedule_slot }}'
+
     - name: Set up Python
+      if: steps.claim-scheduled-slot.outputs.claimed == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
     - name: Install dependencies
+      if: steps.claim-scheduled-slot.outputs.claimed == 'true'
       run: |
         python -m pip install --upgrade pip
         pip install requests feedparser python-dotenv
 
     - name: Generate Feeds JSON
+      if: steps.claim-scheduled-slot.outputs.claimed == 'true'
       # In case default.ini was updated but feeds.json wasn't
       run: python scripts/generate_feeds_json.py
 
     - name: Run Fetch Script
+      if: steps.claim-scheduled-slot.outputs.claimed == 'true'
       run: python scripts/fetch_to_d1.py
 
     - name: Print Ingest Audit Summary
-      if: always()
+      if: always() && steps.claim-scheduled-slot.outputs.claimed == 'true'
       run: |
         python -c "import json, pathlib; p = pathlib.Path('output/paper/audit/latest_ingest_audit.json'); print('latest_ingest_audit_exists=', p.exists()); data = json.loads(p.read_text(encoding='utf-8')) if p.exists() else {}; print(json.dumps({'generatedAt': data.get('generatedAt'), 'insertedTotal': data.get('insertedTotal'), 'skippedOldTotal': data.get('skippedOldTotal'), 'fetchFailedTotal': data.get('fetchFailedTotal'), 'health': data.get('health')}, ensure_ascii=False, indent=2))"
