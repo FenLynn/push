@@ -125,6 +125,29 @@ class SharedDataClientTests(unittest.TestCase):
         self.assertIn('worker_error=invalid_access_token', str(error.exception))
         self.assertNotIn(SECRET, str(error.exception))
 
+    def test_worker_auth_reason_is_allowlisted_and_only_accepted_for_token_errors(self):
+        for reason in ['issuer_mismatch', 'audience_mismatch', 'client_id_mismatch', 'signature_mismatch']:
+            body = json.dumps({'success': False, 'error': 'invalid_access_token', 'authReason': reason,
+                               'message': SECRET, 'jwt': SECRET, 'clientId': SECRET})
+            failure = HTTPError(URL, 403, SECRET, {'Content-Type': 'application/json'}, io.BytesIO(body.encode()))
+            instance, _, _ = client([failure])
+            with self.assertRaises(SharedDataError) as error:
+                instance.health()
+            self.assertEqual(error.exception.auth_reason, reason)
+            self.assertIn(f'auth_reason={reason}', str(error.exception))
+            self.assertNotIn(SECRET, str(error.exception))
+        for reason, code in [(SECRET, 'invalid_access_token'), (['client_id_mismatch'], 'invalid_access_token'),
+                             ('client_id_mismatch', 'configuration_error')]:
+            body = json.dumps({'success': False, 'error': code, 'authReason': reason})
+            failure = HTTPError(URL, 403, '', {'Content-Type': 'application/json'}, io.BytesIO(body.encode()))
+            instance, _, _ = client([failure])
+            with self.assertRaises(SharedDataError) as error:
+                instance.health()
+            self.assertIsNone(error.exception.auth_reason)
+            self.assertNotIn(SECRET, str(error.exception))
+        self.assertIsNone(SharedDataError('x', layer='access', worker_code='invalid_access_token',
+                                         auth_reason='client_id_mismatch').auth_reason)
+
     def test_access_json_rejection_is_recognized_using_case_insensitive_http_headers(self):
         headers = Message()
         headers['content-type'] = 'application/json; charset=utf-8'
@@ -298,6 +321,25 @@ class SharedDataClientTests(unittest.TestCase):
             self.assertEqual(smoke_main(), 1)
         self.assertEqual(output.getvalue(), '')
         self.assertIn('Failed stage: configuration', errors.getvalue())
+
+    def test_smoke_token_failure_gives_targeted_hint_without_uploading(self):
+        for reason in ['client_id_mismatch', 'audience_mismatch', 'issuer_mismatch', None]:
+            body = json.dumps({'success': False, 'error': 'invalid_access_token', 'authReason': reason, 'message': SECRET})
+            instance, opener, _ = client([
+                HTTPError(URL, 403, '', {}, io.BytesIO()),
+                HTTPError(URL, 403, '', {'Content-Type': 'application/json'}, io.BytesIO(body.encode())),
+            ])
+            output, errors = io.StringIO(), io.StringIO()
+            with patch('scripts.shared_data_smoke.SharedDataClient', return_value=instance), redirect_stdout(output), redirect_stderr(errors):
+                self.assertEqual(smoke_main(), 1)
+            text = output.getvalue() + errors.getvalue()
+            self.assertNotIn(SECRET, text)
+            self.assertNotIn('[3/4]', text)
+            self.assertTrue(all(request.get_method() == 'GET' for request, _ in opener.requests))
+            if reason:
+                self.assertIn(f'auth_reason={reason}', text)
+            else:
+                self.assertIn('Manually upload worker.mjs v1.0.1', text)
 
 
 if __name__ == '__main__':

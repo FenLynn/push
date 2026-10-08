@@ -1,7 +1,7 @@
 // Standalone module Worker maintained with the upload client in the Push repo.
 // Paste this entire file into Cloudflare's code editor.
 // No build tools, dependencies, deployment CLI, D1, or Cloudflare API token.
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const MAX_BODY_BYTES = 1024 * 1024;
 const JWKS_TTL_MS = 60 * 60 * 1000;
 const JWKS_REFRESH_INTERVAL_MS = 60 * 1000;
@@ -14,10 +14,11 @@ const DEFAULT_REGISTRY = {
 };
 
 class HttpError extends Error {
-  constructor(status, code, message) {
+  constructor(status, code, message, authReason) {
     super(message);
     this.status = status;
     this.code = code;
+    this.authReason = authReason;
   }
 }
 
@@ -34,6 +35,11 @@ function json(value, status = 200) {
 
 function fail(status, code, message) {
   throw new HttpError(status, code, message);
+}
+
+// Call only with fixed reason codes, never values from a JWT or configuration.
+function rejectAccess(reason) {
+  throw new HttpError(403, 'invalid_access_token', 'Access token validation failed.', reason);
 }
 
 function isObject(value) {
@@ -218,14 +224,14 @@ export function createIngestWorker({ fetcher = (...args) => fetch(...args), now 
       fail(503, 'access_keys_unavailable', 'Access verification keys are temporarily unavailable.');
     }
     const key = cache.keys.get(kid);
-    if (!key) fail(403, 'invalid_access_token', 'Unknown Access signing key.');
+    if (!key) rejectAccess('unknown_signing_key');
     return key;
   }
 
   async function authenticate(request, configuration) {
     const token = request.headers.get('Cf-Access-Jwt-Assertion');
     if (!token) fail(401, 'access_required', 'Cloudflare Access service authentication is required.');
-    if (token.length > 8192) fail(403, 'invalid_access_token', 'Invalid Access token.');
+    if (token.length > 8192) rejectAccess('token_too_large');
     let header, claims, parts, signature;
     try {
       parts = token.split('.');
@@ -234,22 +240,24 @@ export function createIngestWorker({ fetcher = (...args) => fetch(...args), now 
       claims = parsePart(parts[1]);
       signature = decodeBase64Url(parts[2]);
     } catch {
-      fail(403, 'invalid_access_token', 'Invalid Access token.');
+      rejectAccess('malformed_token');
     }
     const seconds = Math.floor(now() / 1000);
     if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid || header.kid.length > 128
-      || (header.typ !== undefined && header.typ !== 'JWT') || header.crit !== undefined
-      || claims.iss !== configuration.issuer || !Array.isArray(claims.aud) || !claims.aud.includes(configuration.audience)
-      || claims.type !== 'app' || !Number.isInteger(claims.exp) || claims.exp <= seconds
-      || !Number.isInteger(claims.iat) || claims.iat > seconds + 30 || claims.iat >= claims.exp
-      || (claims.nbf !== undefined && (!Number.isInteger(claims.nbf) || claims.nbf > seconds))
-      || claims.sub !== '' || typeof claims.common_name !== 'string' || !/^[A-Za-z0-9_-]+\.access$/.test(claims.common_name)
-      || (configuration.clientId && claims.common_name !== configuration.clientId)) {
-      fail(403, 'invalid_access_token', 'Access token is invalid or is not a service token for this application.');
-    }
+      || (header.typ !== undefined && header.typ !== 'JWT') || header.crit !== undefined) rejectAccess('unsupported_header');
+    if (claims.iss !== configuration.issuer) rejectAccess('issuer_mismatch');
+    if (!Array.isArray(claims.aud) || !claims.aud.includes(configuration.audience)) rejectAccess('audience_mismatch');
+    if (claims.type !== 'app') rejectAccess('token_type_mismatch');
+    if (!Number.isInteger(claims.exp) || !Number.isInteger(claims.iat) || claims.iat >= claims.exp
+      || (claims.nbf !== undefined && !Number.isInteger(claims.nbf))) rejectAccess('invalid_token_time');
+    if (claims.exp <= seconds) rejectAccess('expired_token');
+    if (claims.iat > seconds + 30 || (claims.nbf !== undefined && claims.nbf > seconds)) rejectAccess('token_not_yet_valid');
+    if (claims.sub !== '' || typeof claims.common_name !== 'string'
+      || !/^[A-Za-z0-9_-]+\.access$/.test(claims.common_name)) rejectAccess('service_identity_mismatch');
+    if (configuration.clientId && claims.common_name !== configuration.clientId) rejectAccess('client_id_mismatch');
     const key = await getVerificationKey(configuration.issuer, header.kid);
     if (!await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, signature, encoder.encode(`${parts[0]}.${parts[1]}`))) {
-      fail(403, 'invalid_access_token', 'Access signature verification failed.');
+      rejectAccess('signature_mismatch');
     }
   }
 
@@ -294,7 +302,10 @@ export function createIngestWorker({ fetcher = (...args) => fetch(...args), now 
         catch { fail(503, 'kv_unavailable', 'KV write is temporarily unavailable; retry after a delay.'); }
         return json({ success: true, module: envelope.module, key: entry.key, receivedAt: snapshot.receivedAt });
       } catch (error) {
-        if (error instanceof HttpError) return json({ success: false, error: error.code, message: error.message }, error.status);
+        if (error instanceof HttpError) return json({
+          success: false, error: error.code, message: error.message,
+          ...(error.authReason ? { authReason: error.authReason } : {}),
+        }, error.status);
         return json({ success: false, error: 'internal_error', message: 'The request could not be completed.' }, 500);
       }
     },

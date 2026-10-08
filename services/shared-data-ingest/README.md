@@ -101,7 +101,25 @@ Worker 的 Live 日志与 Access 认证日志是不同来源。在 Access 层被
 服务凭证属于非用户身份认证；普通 Access 用户登录日志未必显示这类记录，不能只凭其为空判定未发出请求。
 具体 `ingest.660415.xyz` 应用通常优先于 `*.660415.xyz` 通配应用，不要直接删掉其他网页的登录保护。
 
-源码更新后，请在 Actions 点击 **Run workflow**，选择最新 **main** 发起新测试，不要只重跑旧提交的测试记录。此诊断更新不需要重新上传 Worker。
+客户端源码更新后，请在 Actions 点击 **Run workflow**，选择最新 **main** 发起新测试，不要只重跑旧提交的测试记录。
+
+### Worker v1.0.1：准确定位 JWT 拒绝原因
+
+**这次需要在 Cloudflare Edit Code 手动替换整个 `worker.mjs` 并发布**，仅更新 GitHub 客户端不会改变已部署的 Worker。先下载旧代码作为回退；binding、域名、Access 策略保持不变，不使用任何部署 CLI。
+
+旧版把多个 JWT 校验失败归入同一个 `invalid_access_token`，不能仅凭它断定 Cookie/Token 过期、Client Secret 错误或签名有问题。新版继续拒绝全部不合法请求，仅在错误 JSON 中添加固定的 `authReason` 枚举，客户端以 `auth_reason` 显示，不输出 JWT、claims、配置值或凭证。
+
+| `auth_reason` | 下一步只核对这一项 |
+| --- | --- |
+| `issuer_mismatch` | Worker `TEAM_DOMAIN` 与实际 Access 团队 HTTPS 域名 |
+| `audience_mismatch` | Worker `POLICY_AUD` 与当前 ingest **应用** AUD（不是策略 ID） |
+| `client_id_mismatch` | Worker `ACCESS_CLIENT_ID` 与 GitHub `CF_ACCESS_CLIENT_ID` 一致；是完整 `.access` ID，不是 `github-data-ingest` 名称或 Secret |
+| `service_identity_mismatch` / `token_type_mismatch` | 是否收到官方服务身份 JWT；不能以放弃校验作为修复 |
+| `expired_token` / `token_not_yet_valid` / `invalid_token_time` | 有效期、复用的 assertion 或运行时钟 |
+| `unknown_signing_key` / `signature_mismatch` | 团队公钥/密钥轮换与签名；不能跳过验签 |
+| `malformed_token` / `unsupported_header` / `token_too_large` | assertion 的结构、算法或大小 |
+
+健康检查成功将显示版本 `1.0.1`；所有 JWT 诊断路径仍不读取/写入 KV 或 D1。
 
 ## 7. 接入真实模块（冒烟通过后另行切换）
 

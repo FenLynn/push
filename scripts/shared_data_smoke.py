@@ -48,6 +48,21 @@ def main():
             print('Access edge denied the request before the Worker. Check the selected Service Token, its paired ID/Secret, and policy Include/Require/Exclude rules.', file=sys.stderr)
         elif error.layer == 'worker':
             print('The request reached the Worker. Use worker_error to check its configuration or JWT validation; do not bypass Access.', file=sys.stderr)
+            if error.worker_code == 'invalid_access_token':
+                hints = {
+                    'issuer_mismatch': 'Compare Worker TEAM_DOMAIN with the Access team domain (HTTPS origin).',
+                    'audience_mismatch': 'Compare Worker POLICY_AUD with the current ingest Access application AUD, not a policy ID.',
+                    'client_id_mismatch': 'Worker ACCESS_CLIENT_ID must equal GitHub CF_ACCESS_CLIENT_ID; use the full .access ID, not the token name, AUD, or Client Secret.',
+                    'service_identity_mismatch': 'The JWT is not in the expected service-identity form. Keep Service Auth and do not remove JWT validation.',
+                    'unknown_signing_key': 'The JWT signing key is not in the configured team JWKS. Check TEAM_DOMAIN and key rotation.',
+                    'signature_mismatch': 'Signature verification failed. Check the configured team and integrity of the assertion; never skip signature verification.',
+                    'expired_token': 'The assertion is expired. Check for a reused assertion and runtime clock; do not log the JWT.',
+                    'token_not_yet_valid': 'The assertion is not yet valid. Check runtime clock and issuance timing; do not log the JWT.',
+                }
+                if error.auth_reason in hints:
+                    print(hints[error.auth_reason], file=sys.stderr)
+                elif not error.auth_reason:
+                    print('The deployed Worker is missing detailed auth diagnostics. Manually upload worker.mjs v1.0.1; no deployment CLI is needed.', file=sys.stderr)
         elif error.layer == 'cloudflare_html':
             print('Cloudflare returned HTML; the exact blocker is not confirmed. Check Access and Security Events using cf_ray.', file=sys.stderr)
         elif error.layer == 'cloudflare_bic':

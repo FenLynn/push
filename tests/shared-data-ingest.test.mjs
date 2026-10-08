@@ -115,6 +115,72 @@ test('wrong issuer, AUD, service identity, times, and algorithms are rejected', 
   }
 });
 
+test('JWT failures expose only fixed reasons, never JWT claims, and never touch KV', async () => {
+  const variants = [
+    [{ iss: 'https://sensitive-team.example' }, {}, 'issuer_mismatch'],
+    [{ aud: ['b'.repeat(64)] }, {}, 'audience_mismatch'],
+    [{ aud: AUD }, {}, 'audience_mismatch'],
+    [{ type: 'org' }, {}, 'token_type_mismatch'],
+    [{ exp: 'sensitive-value' }, {}, 'invalid_token_time'],
+    [{ iat: NOW / 1000 + 300 }, {}, 'invalid_token_time'],
+    [{ exp: NOW / 1000 }, {}, 'expired_token'],
+    [{ iat: NOW / 1000 + 31 }, {}, 'token_not_yet_valid'],
+    [{ nbf: NOW / 1000 + 1 }, {}, 'token_not_yet_valid'],
+    [{ sub: 'sensitive-user', email: 'sensitive-email@example.com' }, {}, 'service_identity_mismatch'],
+    [{ sub: undefined }, {}, 'service_identity_mismatch'],
+    [{ common_name: 'sensitive-client.access' }, {}, 'client_id_mismatch'],
+    [{ common_name: 'sensitive-token-name' }, {}, 'service_identity_mismatch'],
+    [{}, { alg: 'none' }, 'unsupported_header'],
+    [{}, { crit: ['sensitive-header'] }, 'unsupported_header'],
+    [{}, { typ: 'other' }, 'unsupported_header'],
+    [{}, { kid: 'missing' }, 'unknown_signing_key'],
+  ];
+  for (const [claims, headers, reason] of variants) {
+    const f = fixture();
+    const jwt = await token(claims, headers);
+    const response = await f.worker.fetch(request(jwt, null, '/api/health', 'GET'), f.env);
+    assert.equal(response.status, 403);
+    const raw = await response.text();
+    assert.deepEqual(JSON.parse(raw), {
+      success: false, error: 'invalid_access_token', message: 'Access token validation failed.', authReason: reason,
+    });
+    assert.equal(raw.includes('sensitive-'), false);
+    assert.equal(raw.includes(jwt), false);
+    assert.equal(f.calls.reads, 0);
+    assert.equal(f.calls.writes.length, 0);
+  }
+});
+
+test('diagnostics identify malformed assertions, forged signatures, and a mismatched Client ID setting', async () => {
+  const parts = (await token()).split('.');
+  parts[2] = base64url(new Uint8Array(256));
+  for (const [jwt, reason] of [
+    ['not-a-jwt', 'malformed_token'], ['a.b.c', 'malformed_token'],
+    ['x'.repeat(8193), 'token_too_large'], [parts.join('.'), 'signature_mismatch'],
+  ]) {
+    const f = fixture();
+    const response = await f.worker.fetch(request(jwt, null, '/api/health', 'GET'), f.env);
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).authReason, reason);
+    assert.equal(f.calls.reads, 0);
+    assert.equal(f.calls.writes.length, 0);
+  }
+  const f = fixture();
+  f.env.ACCESS_CLIENT_ID = 'github-data-ingest';
+  const response = await f.worker.fetch(request(await token(), null, '/api/health', 'GET'), f.env);
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).authReason, 'client_id_mismatch');
+  assert.equal(f.calls.jwks, 0);
+});
+
+test('updated health version is authenticated and does not touch KV', async () => {
+  const f = fixture();
+  const response = await f.worker.fetch(request(await token(), null, '/api/health', 'GET'), f.env);
+  assert.deepEqual(await response.json(), { success: true, service: 'shared-data-ingest', version: '1.0.1' });
+  assert.equal(f.calls.reads, 0);
+  assert.equal(f.calls.writes.length, 0);
+});
+
 test('a forged signature and malformed JWT cannot write', async () => {
   const jwt = await token();
   const parts = jwt.split('.');
