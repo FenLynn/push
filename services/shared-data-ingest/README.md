@@ -95,6 +95,7 @@ Access 应用和 Worker 都要保存/发布；只创建 Access 应用不会创�
 - `layer=access, response=html` 或 `response=json`：响应具有本域名的 Access 标识。Access 可根据请求的 Accept 返回 HTML 或 JSON；优先检查机器凭证是否配对、Service Auth 策略的具体 Include/Require/Exclude 条件。
 - `layer=worker, worker_error=...`：收到已知的 Worker JSON 错误码，检查 Worker 的 AUD、TEAM_DOMAIN、ACCESS_CLIENT_ID 或对应错误。不关闭 Access 来绕过二次校验。
 - `layer=cloudflare_html` 或 `layer=unknown`：还不能判断具体拦截者，结合安全事件/Access 记录及安全格式的 `cf_ray` 定位。
+- `layer=cloudflare_bic, edge_error_code=1010`：Browser Integrity Check 拒绝了客户端标识。客户端所有请求（含匿名检查）统一发送真实的 `SCI-SharedKV/1.0` User-Agent，不再使用默认 Python-urllib 标识，也不伪装浏览器。不要直接关闭全站安全设置。
 
 Worker 的 Live 日志与 Access 认证日志是不同来源。在 Access 层被拦截的请求通常不会调用 Worker。Live 应先开启再运行测试，空 Live 本身不构成请求位置的完整证明。
 服务凭证属于非用户身份认证；普通 Access 用户登录日志未必显示这类记录，不能只凭其为空判定未发出请求。
@@ -156,3 +157,4 @@ python -m unittest tests.test_shared_data_client tests.test_dashboard_snapshot -
 - [KV 一致性](https://developers.cloudflare.com/kv/concepts/how-kv-works/)
 - [Access 应用匹配与策略继承](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
 - [Access 认证日志](https://developers.cloudflare.com/cloudflare-one/insights/logs/dashboard-logs/access-authentication-logs/)
+- [Cloudflare 1010 与 Browser Integrity Check](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/)

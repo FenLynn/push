@@ -6,7 +6,7 @@ from email.message import Message
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-from core.shared_data_client import SharedDataClient, SharedDataError, NoRedirectHandler
+from core.shared_data_client import SharedDataClient, SharedDataError, NoRedirectHandler, USER_AGENT
 from scripts.shared_data_smoke import main as smoke_main
 
 
@@ -54,6 +54,7 @@ class SharedDataClientTests(unittest.TestCase):
         request, timeout = opener.requests[0]
         self.assertEqual(request.get_method(), 'POST')
         self.assertEqual(request.headers['Cf-access-client-secret'], SECRET)
+        self.assertEqual(request.get_header('User-agent'), USER_AGENT)
         body = json.loads(request.data)
         self.assertEqual(body['payload'], {'text': '中文'})
         self.assertEqual(body['source']['repository'], 'FenLynn/push')
@@ -159,6 +160,33 @@ class SharedDataClientTests(unittest.TestCase):
             instance.health()
         self.assertEqual(error.exception.layer, 'cloudflare_html')
 
+    def test_browser_integrity_json_reports_only_known_error_1010(self):
+        body = json.dumps({'status': 403, 'error_code': 1010, 'detail': SECRET})
+        failure = HTTPError(URL, 403, SECRET, {
+            'Content-Type': 'application/json', 'Server': 'cloudflare',
+        }, io.BytesIO(body.encode()))
+        instance, opener, _ = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.layer, 'cloudflare_bic')
+        self.assertEqual(error.exception.edge_error_code, 1010)
+        self.assertIn('edge_error_code=1010', str(error.exception))
+        self.assertNotIn(SECRET, str(error.exception))
+        self.assertEqual(opener.requests[0][0].get_header('User-agent'), USER_AGENT)
+
+    def test_unknown_or_non_cloudflare_error_code_is_not_misclassified_as_bic(self):
+        for code, server in [(1010, 'other'), (1020, 'cloudflare'), ('1010', 'cloudflare')]:
+            body = json.dumps({'status': 403, 'error_code': code, 'detail': SECRET})
+            failure = HTTPError(URL, 403, '', {
+                'Content-Type': 'application/json', 'Server': server,
+            }, io.BytesIO(body.encode()))
+            instance, _, _ = client([failure])
+            with self.assertRaises(SharedDataError) as error:
+                instance.health()
+            self.assertEqual(error.exception.layer, 'unknown')
+            self.assertIsNone(error.exception.edge_error_code)
+            self.assertNotIn(SECRET, str(error.exception))
+
     def test_untrusted_json_and_ray_headers_are_not_echoed_or_misclassified(self):
         for body in [json.dumps({'success': False, 'error': SECRET}),
                      json.dumps({'success': False, 'error': ['invalid_access_token']}),
@@ -232,9 +260,11 @@ class SharedDataClientTests(unittest.TestCase):
             FakeResponse('{"success":true,"module":"push:smoke","snapshot":{"payload":{"x":1}}}'),
         ])
         self.assertEqual(instance.check_unauthenticated_denied(), 403)
-        self.assertEqual(opener.requests[0][0].headers, {'Accept': 'application/json'})
+        self.assertEqual(opener.requests[0][0].headers, {'Accept': 'application/json', 'User-agent': USER_AGENT})
         self.assertEqual(instance.health()['version'], '1.0.0')
         self.assertEqual(instance.read('push:smoke')['payload'], {'x': 1})
+        self.assertTrue(all(request.get_header('User-agent') == USER_AGENT for request, _ in opener.requests))
+        self.assertNotIn('Cf-access-client-secret', opener.requests[0][0].headers)
         self.assertIn('module=push%3Asmoke', opener.requests[-1][0].full_url)
         self.assertEqual(delays, [])
 

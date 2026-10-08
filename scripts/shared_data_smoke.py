@@ -50,6 +50,8 @@ def main():
             print('The request reached the Worker. Use worker_error to check its configuration or JWT validation; do not bypass Access.', file=sys.stderr)
         elif error.layer == 'cloudflare_html':
             print('Cloudflare returned HTML; the exact blocker is not confirmed. Check Access and Security Events using cf_ray.', file=sys.stderr)
+        elif error.layer == 'cloudflare_bic':
+            print('Cloudflare Browser Integrity Check returned error 1010. The API uses its real SCI-SharedKV identity; check only the ingest endpoint if this still happens, rather than disabling site-wide protections.', file=sys.stderr)
         return 1
 
 

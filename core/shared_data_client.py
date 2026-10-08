@@ -25,22 +25,25 @@ WORKER_ERROR_CODES = frozenset({
     'unsupported_media_type', 'payload_too_large', 'internal_error',
 })
 MAX_DIAGNOSTIC_BYTES = 4096
+USER_AGENT = 'SCI-SharedKV/1.0'
 
 
 class SharedDataError(Exception):
     def __init__(self, code, status=None, *, layer=None, response_kind=None,
-                 worker_code=None, ray_id=None):
+                 worker_code=None, ray_id=None, edge_error_code=None):
         self.code = code
         self.status = status
         # Only enum values and a tightly checked public request ID may be logged.
         # Never interpolate response bodies, credentials, URLs, or raw errors.
-        self.layer = layer if layer in {'access', 'worker', 'cloudflare_html', 'unknown'} else None
+        self.layer = layer if layer in {'access', 'worker', 'cloudflare_html', 'cloudflare_bic', 'unknown'} else None
         self.response_kind = response_kind if response_kind in {'json', 'html', 'other', 'unknown'} else None
         self.worker_code = worker_code if isinstance(worker_code, str) and worker_code in WORKER_ERROR_CODES else None
         self.ray_id = ray_id if isinstance(ray_id, str) and re.fullmatch(r'[a-f0-9]{16,32}-[A-Z]{3}', ray_id) else None
+        self.edge_error_code = edge_error_code if type(edge_error_code) is int and edge_error_code == 1010 else None
         details = [f'{name}={value}' for name, value in [
             ('layer', self.layer), ('response', self.response_kind),
             ('worker_error', self.worker_code), ('cf_ray', self.ray_id),
+            ('edge_error_code', self.edge_error_code),
         ] if value]
         message = f"Shared data request failed: {code}" + (f" (HTTP {status})" if status else "")
         super().__init__(message + (f" [{', '.join(details)}]" if details else ''))
@@ -88,6 +91,9 @@ class SharedDataClient:
             'CF-Access-Client-Secret': self.client_secret,
             'Content-Type': 'application/json; charset=utf-8',
             'Accept': 'application/json',
+            # Truthful API-client identity, not a browser impersonation. The
+            # default Python-urllib signature can trigger Browser Integrity Check.
+            'User-Agent': USER_AGENT,
         }
 
     @staticmethod
@@ -109,6 +115,10 @@ class SharedDataClient:
                 code = value.get('error') if isinstance(value, dict) and value.get('success') is False else None
                 if isinstance(code, str) and code in WORKER_ERROR_CODES:
                     details.update(layer='worker', worker_code=code)
+                elif (isinstance(value, dict) and type(value.get('error_code')) is int
+                      and value['error_code'] == 1010 and value.get('status') == 403
+                      and headers.get('Server', '').lower() == 'cloudflare'):
+                    details.update(layer='cloudflare_bic', edge_error_code=1010)
             except Exception:
                 # Diagnostics must never replace the original HTTP failure.
                 pass
@@ -205,7 +215,8 @@ class SharedDataClient:
 
     def check_unauthenticated_denied(self):
         """A single no-credential probe. It must not return a successful page."""
-        request = Request(f'{self.origin}/api/health', method='GET', headers={'Accept': 'application/json'})
+        request = Request(f'{self.origin}/api/health', method='GET',
+                          headers={'Accept': 'application/json', 'User-Agent': USER_AGENT})
         try:
             with self.opener.open(request, timeout=self.timeout):
                 raise SharedDataError('unauthenticated_endpoint_not_denied')
