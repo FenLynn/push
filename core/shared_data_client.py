@@ -16,14 +16,34 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 MAX_UPLOAD_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+WORKER_ERROR_CODES = frozenset({
+    'access_required', 'invalid_access_token', 'access_keys_unavailable',
+    'hostname_not_allowed', 'configuration_error', 'method_not_allowed',
+    'not_found', 'unknown_module', 'snapshot_not_found',
+    'invalid_stored_snapshot', 'kv_unavailable', 'invalid_snapshot',
+    'invalid_timestamp', 'empty_payload', 'invalid_source', 'invalid_json',
+    'unsupported_media_type', 'payload_too_large', 'internal_error',
+})
+MAX_DIAGNOSTIC_BYTES = 4096
 
 
 class SharedDataError(Exception):
-    def __init__(self, code, status=None):
+    def __init__(self, code, status=None, *, layer=None, response_kind=None,
+                 worker_code=None, ray_id=None):
         self.code = code
         self.status = status
+        # Only enum values and a tightly checked public request ID may be logged.
         # Never interpolate response bodies, credentials, URLs, or raw errors.
-        super().__init__(f"Shared data request failed: {code}" + (f" (HTTP {status})" if status else ""))
+        self.layer = layer if layer in {'access', 'worker', 'cloudflare_html', 'unknown'} else None
+        self.response_kind = response_kind if response_kind in {'json', 'html', 'other', 'unknown'} else None
+        self.worker_code = worker_code if isinstance(worker_code, str) and worker_code in WORKER_ERROR_CODES else None
+        self.ray_id = ray_id if isinstance(ray_id, str) and re.fullmatch(r'[a-f0-9]{16,32}-[A-Z]{3}', ray_id) else None
+        details = [f'{name}={value}' for name, value in [
+            ('layer', self.layer), ('response', self.response_kind),
+            ('worker_error', self.worker_code), ('cf_ray', self.ray_id),
+        ] if value]
+        message = f"Shared data request failed: {code}" + (f" (HTTP {status})" if status else "")
+        super().__init__(message + (f" [{', '.join(details)}]" if details else ''))
 
 
 class NoRedirectHandler(HTTPRedirectHandler):
@@ -70,6 +90,30 @@ class SharedDataClient:
             'Accept': 'application/json',
         }
 
+    @staticmethod
+    def _http_error_details(error):
+        headers = error.headers or {}
+        mime = headers.get('Content-Type', '').split(';')[0].strip().lower()
+        kind = 'json' if mime == 'application/json' else 'html' if mime == 'text/html' else 'other' if mime else 'unknown'
+        details = {'layer': 'unknown', 'response_kind': kind, 'ray_id': headers.get('CF-Ray')}
+        if kind == 'json':
+            try:
+                raw = error.read(MAX_DIAGNOSTIC_BYTES + 1)
+                value = json.loads(raw.decode('utf-8')) if len(raw) <= MAX_DIAGNOSTIC_BYTES else None
+                code = value.get('error') if isinstance(value, dict) and value.get('success') is False else None
+                if isinstance(code, str) and code in WORKER_ERROR_CODES:
+                    details.update(layer='worker', worker_code=code)
+            except Exception:
+                # Diagnostics must never replace the original HTTP failure.
+                pass
+        elif kind == 'html':
+            if (re.fullmatch(r'[a-f0-9]{64}', headers.get('Cf-Access-Aud', ''))
+                    and headers.get('Cf-Access-Domain', '').lower() == 'ingest.660415.xyz'):
+                details['layer'] = 'access'
+            elif headers.get('Server', '').lower() == 'cloudflare':
+                details['layer'] = 'cloudflare_html'
+        return details
+
     def _request(self, method, url, body=None):
         for attempt in range(self.attempts):
             try:
@@ -92,10 +136,14 @@ class SharedDataClient:
             except HTTPError as error:
                 status = error.code
                 retry_after = error.headers.get('Retry-After', '') if error.headers else ''
-                error.close()
                 if status not in RETRYABLE_STATUS or attempt + 1 == self.attempts:
+                    try:
+                        details = self._http_error_details(error)
+                    finally:
+                        error.close()
                     raise SharedDataError('access_or_redirect_rejected' if status in (301, 302, 303, 307, 308, 401, 403)
-                                          else 'http_error', status) from None
+                                          else 'http_error', status, **details) from None
+                error.close()
                 delay = min(float(retry_after), 30) if re.fullmatch(r'\d+(?:\.\d+)?', retry_after) else 2 ** (attempt + 1)
                 self.sleeper(max(2, delay))
             except (URLError, TimeoutError, OSError):

@@ -88,6 +88,20 @@ Access 应用和 Worker 都要保存/发布；只创建 Access 应用不会创�
 
 客户端拒绝 HTTP、其他域名、URL 内凭证和重定向。401/403/登录跳转直接失败；429/临时故障和网络错误做有界退避，不打印服务凭证或错误响应正文。
 
+### 403 排查：先辨别拒绝发生在哪一层
+
+新版日志会报告 `Failed stage`，以及有限、经过校验的诊断字段；不输出响应正文、JWT、Client ID 或 Client Secret。
+
+- `layer=access, response=html`：响应具有本域名的 Access 标识，优先检查机器凭证是否配对、Service Auth 策略的具体 Include/Require/Exclude 条件。
+- `layer=worker, worker_error=...`：收到已知的 Worker JSON 错误码，检查 Worker 的 AUD、TEAM_DOMAIN、ACCESS_CLIENT_ID 或对应错误。不关闭 Access 来绕过二次校验。
+- `layer=cloudflare_html` 或 `layer=unknown`：还不能判断具体拦截者，结合安全事件/Access 记录及安全格式的 `cf_ray` 定位。
+
+Worker 的 Live 日志与 Access 认证日志是不同来源。在 Access 层被拦截的请求通常不会调用 Worker。Live 应先开启再运行测试，空 Live 本身不构成请求位置的完整证明。
+服务凭证属于非用户身份认证；普通 Access 用户登录日志未必显示这类记录，不能只凭其为空判定未发出请求。
+具体 `ingest.660415.xyz` 应用通常优先于 `*.660415.xyz` 通配应用，不要直接删掉其他网页的登录保护。
+
+源码更新后，请在 Actions 点击 **Run workflow**，选择最新 **main** 发起新测试，不要只重跑旧提交的测试记录。此诊断更新不需要重新上传 Worker。
+
 ## 7. 接入真实模块（冒烟通过后另行切换）
 
 先在 Worker 的 `MODULE_REGISTRY_JSON` 登记模块与固定 key，例如：
@@ -140,3 +154,5 @@ python -m unittest tests.test_shared_data_client tests.test_dashboard_snapshot -
 - [验证 Access JWT](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 - [服务身份 JWT 的字段](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/)
 - [KV 一致性](https://developers.cloudflare.com/kv/concepts/how-kv-works/)
+- [Access 应用匹配与策略继承](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
+- [Access 认证日志](https://developers.cloudflare.com/cloudflare-one/insights/logs/dashboard-logs/access-authentication-logs/)

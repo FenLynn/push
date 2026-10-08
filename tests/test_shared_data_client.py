@@ -1,10 +1,12 @@
 import io
 import json
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 from core.shared_data_client import SharedDataClient, SharedDataError, NoRedirectHandler
+from scripts.shared_data_smoke import main as smoke_main
 
 
 URL = 'https://ingest.660415.xyz/api/ingest'
@@ -95,6 +97,76 @@ class SharedDataClientTests(unittest.TestCase):
             self.assertEqual(delays, [])
         self.assertIsNone(NoRedirectHandler().redirect_request(None, None, 302, '', {}, 'https://evil.example'))
 
+    def test_access_html_is_distinguished_without_printing_its_body(self):
+        failure = HTTPError(URL, 403, SECRET, {
+            'Content-Type': 'text/html', 'Cf-Access-Aud': 'a' * 64,
+            'Cf-Access-Domain': 'ingest.660415.xyz', 'CF-Ray': 'a474775c9e4334bd-SJC',
+        }, io.BytesIO(SECRET.encode()))
+        instance, opener, delays = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.layer, 'access')
+        self.assertEqual(error.exception.response_kind, 'html')
+        self.assertEqual(error.exception.ray_id, 'a474775c9e4334bd-SJC')
+        self.assertNotIn(SECRET, str(error.exception))
+        self.assertEqual(len(opener.requests), 1)
+        self.assertEqual(delays, [])
+
+    def test_worker_error_code_is_allowlisted_and_message_is_not_printed(self):
+        body = json.dumps({'success': False, 'error': 'invalid_access_token', 'message': SECRET})
+        failure = HTTPError(URL, 403, SECRET, {'Content-Type': 'application/json; charset=utf-8'}, io.BytesIO(body.encode()))
+        instance, _, _ = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.layer, 'worker')
+        self.assertEqual(error.exception.worker_code, 'invalid_access_token')
+        self.assertIn('worker_error=invalid_access_token', str(error.exception))
+        self.assertNotIn(SECRET, str(error.exception))
+
+    def test_cloudflare_html_without_access_headers_does_not_claim_access_denied(self):
+        failure = HTTPError(URL, 403, '', {'Content-Type': 'text/html', 'Server': 'cloudflare'}, io.BytesIO())
+        instance, _, _ = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.layer, 'cloudflare_html')
+
+    def test_untrusted_json_and_ray_headers_are_not_echoed_or_misclassified(self):
+        for body in [json.dumps({'success': False, 'error': SECRET}),
+                     json.dumps({'success': False, 'error': ['invalid_access_token']}),
+                     json.dumps({'success': False, 'error': 'invalid_access_token', 'padding': SECRET * 500}), '{']:
+            failure = HTTPError(URL, 403, SECRET, {
+                'Content-Type': 'application/json', 'CF-Ray': SECRET,
+            }, io.BytesIO(body.encode()))
+            instance, _, _ = client([failure])
+            with self.assertRaises(SharedDataError) as error:
+                instance.health()
+            self.assertEqual(error.exception.layer, 'unknown')
+            self.assertIsNone(error.exception.worker_code)
+            self.assertIsNone(error.exception.ray_id)
+            self.assertNotIn(SECRET, str(error.exception))
+
+    def test_failed_diagnostic_body_read_preserves_http_error(self):
+        class UnreadableBody(io.BytesIO):
+            def read(self, *args):
+                raise OSError(SECRET)
+        failure = HTTPError(URL, 403, SECRET, {'Content-Type': 'application/json'}, UnreadableBody())
+        instance, _, _ = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.status, 403)
+        self.assertEqual(error.exception.code, 'access_or_redirect_rejected')
+        self.assertNotIn(SECRET, str(error.exception))
+
+    def test_response_from_other_access_domain_is_not_classified_as_our_access_gate(self):
+        failure = HTTPError(URL, 403, '', {
+            'Content-Type': 'text/html', 'Cf-Access-Aud': 'a' * 64,
+            'Cf-Access-Domain': 'other.example.com',
+        }, io.BytesIO())
+        instance, _, _ = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.layer, 'unknown')
+
     def test_transient_failure_retries_the_same_snapshot_with_a_delay(self):
         instance, opener, delays = client([HTTPError(URL, 503, '', {'Retry-After': '3'}, io.BytesIO()), receipt()])
         instance.upload('push:smoke', {'x': 1}, source={'repository': 'FenLynn/push'})
@@ -142,6 +214,31 @@ class SharedDataClientTests(unittest.TestCase):
         with self.assertRaises(SharedDataError) as error:
             instance.check_unauthenticated_denied()
         self.assertEqual(error.exception.code, 'unauthenticated_endpoint_not_denied')
+
+    def test_smoke_auth_failure_reports_stage_and_never_uploads(self):
+        instance, opener, _ = client([
+            HTTPError(URL, 403, '', {}, io.BytesIO()),
+            HTTPError(URL, 403, SECRET, {
+                'Content-Type': 'text/html', 'Cf-Access-Aud': 'a' * 64,
+                'Cf-Access-Domain': 'ingest.660415.xyz',
+            }, io.BytesIO(SECRET.encode())),
+        ])
+        output, errors = io.StringIO(), io.StringIO()
+        with patch('scripts.shared_data_smoke.SharedDataClient', return_value=instance), redirect_stdout(output), redirect_stderr(errors):
+            self.assertEqual(smoke_main(), 1)
+        self.assertIn('[2/4]', output.getvalue())
+        self.assertNotIn('[3/4]', output.getvalue())
+        self.assertIn('Failed stage: authenticated_health', errors.getvalue())
+        self.assertIn('layer=access', errors.getvalue())
+        self.assertNotIn(SECRET, output.getvalue() + errors.getvalue())
+        self.assertTrue(all(request.get_method() == 'GET' for request, _ in opener.requests))
+
+    def test_smoke_configuration_failure_is_reported_without_raw_values(self):
+        output, errors = io.StringIO(), io.StringIO()
+        with patch('scripts.shared_data_smoke.SharedDataClient', side_effect=SharedDataError('missing_access_credentials')), redirect_stdout(output), redirect_stderr(errors):
+            self.assertEqual(smoke_main(), 1)
+        self.assertEqual(output.getvalue(), '')
+        self.assertIn('Failed stage: configuration', errors.getvalue())
 
 
 if __name__ == '__main__':
