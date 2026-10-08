@@ -92,7 +92,7 @@ Access 应用和 Worker 都要保存/发布；只创建 Access 应用不会创�
 
 新版日志会报告 `Failed stage`，以及有限、经过校验的诊断字段；不输出响应正文、JWT、Client ID 或 Client Secret。
 
-- `layer=access, response=html`：响应具有本域名的 Access 标识，优先检查机器凭证是否配对、Service Auth 策略的具体 Include/Require/Exclude 条件。
+- `layer=access, response=html` 或 `response=json`：响应具有本域名的 Access 标识。Access 可根据请求的 Accept 返回 HTML 或 JSON；优先检查机器凭证是否配对、Service Auth 策略的具体 Include/Require/Exclude 条件。
 - `layer=worker, worker_error=...`：收到已知的 Worker JSON 错误码，检查 Worker 的 AUD、TEAM_DOMAIN、ACCESS_CLIENT_ID 或对应错误。不关闭 Access 来绕过二次校验。
 - `layer=cloudflare_html` 或 `layer=unknown`：还不能判断具体拦截者，结合安全事件/Access 记录及安全格式的 `cf_ray` 定位。
 

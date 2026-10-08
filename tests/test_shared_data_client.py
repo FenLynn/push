@@ -2,6 +2,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from email.message import Message
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
@@ -122,6 +123,34 @@ class SharedDataClientTests(unittest.TestCase):
         self.assertEqual(error.exception.worker_code, 'invalid_access_token')
         self.assertIn('worker_error=invalid_access_token', str(error.exception))
         self.assertNotIn(SECRET, str(error.exception))
+
+    def test_access_json_rejection_is_recognized_using_case_insensitive_http_headers(self):
+        headers = Message()
+        headers['content-type'] = 'application/json; charset=utf-8'
+        headers['cf-access-aud'] = 'a' * 64
+        headers['cf-access-domain'] = 'ingest.660415.xyz'
+        body = json.dumps({'status_code': 403, 'message': SECRET,
+                           'aud': 'a' * 64, 'ip_address': SECRET})
+        failure = HTTPError(URL, 403, '', headers, io.BytesIO(body.encode()))
+        instance, _, _ = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.layer, 'access')
+        self.assertEqual(error.exception.response_kind, 'json')
+        self.assertIsNone(error.exception.worker_code)
+        self.assertNotIn(SECRET, str(error.exception))
+
+    def test_known_worker_json_error_takes_priority_over_access_response_headers(self):
+        body = json.dumps({'success': False, 'error': 'invalid_access_token'})
+        failure = HTTPError(URL, 403, '', {
+            'Content-Type': 'application/json', 'Cf-Access-Aud': 'a' * 64,
+            'Cf-Access-Domain': 'ingest.660415.xyz',
+        }, io.BytesIO(body.encode()))
+        instance, _, _ = client([failure])
+        with self.assertRaises(SharedDataError) as error:
+            instance.health()
+        self.assertEqual(error.exception.layer, 'worker')
+        self.assertEqual(error.exception.worker_code, 'invalid_access_token')
 
     def test_cloudflare_html_without_access_headers_does_not_claim_access_denied(self):
         failure = HTTPError(URL, 403, '', {'Content-Type': 'text/html', 'Server': 'cloudflare'}, io.BytesIO())

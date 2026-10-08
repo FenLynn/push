@@ -96,6 +96,12 @@ class SharedDataClient:
         mime = headers.get('Content-Type', '').split(';')[0].strip().lower()
         kind = 'json' if mime == 'application/json' else 'html' if mime == 'text/html' else 'other' if mime else 'unknown'
         details = {'layer': 'unknown', 'response_kind': kind, 'ray_id': headers.get('CF-Ray')}
+        access_headers = (re.fullmatch(r'[a-f0-9]{64}', headers.get('Cf-Access-Aud', ''))
+                          and headers.get('Cf-Access-Domain', '').lower() == 'ingest.660415.xyz')
+        # Access serves both HTML and JSON rejection pages, depending on Accept.
+        # The markers identify the gate without echoing its body or credentials.
+        if access_headers and kind in {'json', 'html'}:
+            details['layer'] = 'access'
         if kind == 'json':
             try:
                 raw = error.read(MAX_DIAGNOSTIC_BYTES + 1)
@@ -107,10 +113,7 @@ class SharedDataClient:
                 # Diagnostics must never replace the original HTTP failure.
                 pass
         elif kind == 'html':
-            if (re.fullmatch(r'[a-f0-9]{64}', headers.get('Cf-Access-Aud', ''))
-                    and headers.get('Cf-Access-Domain', '').lower() == 'ingest.660415.xyz'):
-                details['layer'] = 'access'
-            elif headers.get('Server', '').lower() == 'cloudflare':
+            if not access_headers and headers.get('Server', '').lower() == 'cloudflare':
                 details['layer'] = 'cloudflare_html'
         return details
 
