@@ -380,6 +380,25 @@ test('custom registries are explicit, and duplicate keys fail closed', async () 
   assert.equal(f.calls.writes.length, 1);
 });
 
+test('two registered smoke repositories write separate keys and cannot accidentally reuse each other source', async () => {
+  const f = fixture();
+  f.env.MODULE_REGISTRY_JSON = JSON.stringify({
+    'push:smoke': { key: 'v1:push:smoke:latest', repository: 'FenLynn/push', expirationTtl: 86400 },
+    'academic:smoke': { key: 'v1:academic:smoke:latest', repository: 'FenLynn/academic', expirationTtl: 86400 },
+  });
+  const jwt = await token();
+  assert.equal((await f.worker.fetch(request(jwt, envelope()), f.env)).status, 200);
+  const academic = envelope({ module: 'academic:smoke', source: { repository: 'FenLynn/academic' } });
+  assert.equal((await f.worker.fetch(request(jwt, academic), f.env)).status, 200);
+  assert.deepEqual(f.calls.writes.map(entry => entry.key), ['v1:push:smoke:latest', 'v1:academic:smoke:latest']);
+  assert.equal(f.values.size, 2);
+  const incorrect = envelope({ module: 'academic:smoke' });
+  const invalid = await f.worker.fetch(request(jwt, incorrect), f.env);
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error, 'invalid_source');
+  assert.equal(f.calls.writes.length, 2);
+});
+
 test('storage errors are sanitized and do not echo secrets', async () => {
   const f = fixture({ writeFails: true });
   const response = await f.worker.fetch(request(await token()), f.env);

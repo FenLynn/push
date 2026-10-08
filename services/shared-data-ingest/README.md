@@ -2,6 +2,8 @@
 
 ## 当前交付范围
 
+跨仓库端到端教程、Academic 示例和任意任务复用见 [共享 KV 接入文档](../../docs/SHARED_DATA_KV.md)。本页专门维护 Worker 配置与认证排错。
+
 - 独立单文件 `worker.mjs`，没有第三方依赖、构建步骤或数据库。
 - GitHub Actions 通过 Cloudflare Access Service Token 上传。
 - Worker 再验证 Access JWT 签名、固定 issuer、AUD、有效期和机器身份；不会仅信任请求头。
@@ -46,7 +48,7 @@
 
 `ACCESS_CLIENT_ID` 用于进一步固定允许的机器凭证，建议设置；若不设置，仍会验证服务类型、AUD 和签名。
 **Client Secret 只放 GitHub Secrets，不需要放进 Worker 或代码。**
-`MODULE_REGISTRY_JSON` 暂时不设置，保持仅开放测试模块。
+单独运行 Push 测试时 `MODULE_REGISTRY_JSON` 可不设置。接入 Academic 时按 [登记步骤](../../docs/SHARED_DATA_KV.md#3-academic-首次测试登记模块) 增加 `academic:smoke`；如果已设置该变量，必须保留所有已有条目，不覆盖原表。
 
 ## 4. 域名和 Access
 
@@ -60,7 +62,7 @@
 浏览器直接打开被拒绝/要求认证是预期行为。GitHub 使用机器请求头，不依赖浏览器 Cookie。
 Access 应用和 Worker 都要保存/发布；只创建 Access 应用不会创建上传接口。
 
-## 5. GitHub：先只给 Push 仓库配置
+## 5. GitHub：每个调用仓库分别配置
 
 仓库 Settings → Secrets and variables → Actions：
 
@@ -71,7 +73,7 @@ Access 应用和 Worker 都要保存/发布；只创建 Access 应用不会创�
 | Variable | `STATUS_PUSH_URL` | `https://ingest.660415.xyz/api/ingest` |
 
 不要将凭证贴到聊天、日志、工作流 YAML 或源代码。不要删除旧 Secrets。
-其他仓库以后复用同一套配置；同一凭证不能提供仓库间的安全隔离。
+Academic 示例复用同一套配置，但必须在 Academic 自己的仓库设置三项值；代码 checkout 不会继承 Push 的 Secrets。同一凭证不能提供仓库间的安全隔离。
 
 ## 6. 手动验收
 
@@ -179,6 +181,7 @@ KV 会保留最后一次成功写入；上游失败应不上传空结果。生�
 ```text
 node --test tests/shared-data-ingest.test.mjs
 python -m unittest tests.test_shared_data_client tests.test_dashboard_snapshot -v
+python -m unittest tests.test_shared_data_publish -v
 ```
 
 代码只新增文件，不改现有生产逻辑。回退时停用新手动工作流/独立 Worker 即可；旧 KV、原接口和导出仍可使用。

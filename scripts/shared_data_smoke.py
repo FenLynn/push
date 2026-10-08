@@ -1,4 +1,5 @@
 """Manual smoke test; writes one disposable key, never production snapshots."""
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -10,11 +11,15 @@ from core.shared_data_client import SharedDataClient, SharedDataError
 # Public application AUD supplied by the owner and confirmed by Access response
 # headers. Used only to diagnose equality, never to authorize a request.
 EXPECTED_INGEST_AUD = 'df19a23935af2f04980d9b5e8ab934520218ed7d514fdaf29a4079ca63f3ba84'
+SMOKE_MODULES = ('push:smoke', 'academic:smoke')
 
 
-def main():
+def main(module='push:smoke'):
     stage = 'configuration'
     try:
+        # This test entrypoint cannot be used to overwrite production modules.
+        if module not in SMOKE_MODULES:
+            raise SharedDataError('invalid_smoke_module')
         client = SharedDataClient(expected_audience=EXPECTED_INGEST_AUD)
         stage = 'unauthenticated_health'
         print('[1/4] Verify no-credential access is denied.', flush=True)
@@ -27,7 +32,7 @@ def main():
         payload = {'probeId': str(uuid4()), 'message': 'Shared KV Access smoke test'}
         stage = 'test_snapshot_upload'
         print('[3/4] Upload the disposable test snapshot.', flush=True)
-        receipt = client.upload('push:smoke', payload)
+        receipt = client.upload(module, payload)
         print(f"Uploaded test key: {receipt['key']}", flush=True)
         stage = 'test_snapshot_read_back'
         print('[4/4] Verify read-back (KV may take time to propagate).', flush=True)
@@ -35,7 +40,7 @@ def main():
         # publishing does not read/list KV after each successful upload.
         for attempt in range(13):
             try:
-                snapshot = client.read('push:smoke')
+                snapshot = client.read(module)
                 if snapshot.get('payload') == payload:
                     print('Read-back verified. No production module was changed.', flush=True)
                     return 0
@@ -52,6 +57,8 @@ def main():
             print('Access edge denied the request before the Worker. Check the selected Service Token, its paired ID/Secret, and policy Include/Require/Exclude rules.', file=sys.stderr)
         elif error.layer == 'worker':
             print('The request reached the Worker. Use worker_error to check its configuration or JWT validation; do not bypass Access.', file=sys.stderr)
+            if error.worker_code == 'unknown_module':
+                print('Register this smoke module in Worker MODULE_REGISTRY_JSON, preserving every existing entry. Do not reuse another repository test key.', file=sys.stderr)
             if error.worker_code == 'invalid_access_token':
                 hints = {
                     'issuer_mismatch': 'Compare Worker TEAM_DOMAIN with the Access team domain (HTTPS origin).',
@@ -81,4 +88,6 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--module', choices=SMOKE_MODULES, default='push:smoke')
+    raise SystemExit(main(parser.parse_args().module))

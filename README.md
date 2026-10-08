@@ -40,3 +40,13 @@ python main.py run <module> --topic <topic> --force
 各模块工作流直接安装 Python 依赖并执行 `main.py` 或对应脚本，不依赖容器环境。环境配置由仓库 Secret `PUSH_ENV_FILE` 在 Runner 上临时加载。
 
 运行产物、日志、本地数据和 `.env` 均由 `.gitignore` 排除，不应提交到仓库。
+
+## 共享 KV 上传入口（独立、按需接入）
+
+GitHub 任务可通过 Cloudflare Access 认证的 HTTPS 入口向公共 KV 发布模块快照，不分发 Cloudflare 账户 API Token。Push 临时测试已通过；现有生产数据链路尚未切换。
+
+- [完整接入教程、Academic 示例与其他任务复用](docs/SHARED_DATA_KV.md)
+- [独立 Worker 的控制台配置、JWT 排错与回退](services/shared-data-ingest/README.md)
+- 手动测试：Actions → **Shared KV: Access smoke test**。
+
+共享上传工具只用 Python 标准库；不调用部署 CLI、不读写 D1、不改动现有 PushPlus 发送逻辑。

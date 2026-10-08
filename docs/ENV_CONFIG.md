@@ -29,6 +29,19 @@ Finance 与 Estate 的结构化数据写入同一个 D1：日频金融数据保�
 
 请在 GitHub Secrets 中填写真实值，不要把填写后的文件提交到仓库。
 
+## 可选：Access 认证的共享 KV
+
+这是独立试点，不替代上述 `PUSH_ENV_FILE`、D1/R2 或 PushPlus 配置。每一个调用仓库分别在 Actions 中配置：
+
+| 类型 | 名称 | 说明 |
+| --- | --- | --- |
+| Secret | `CF_ACCESS_CLIENT_ID` | `github-data-ingest` 服务凭证 Client ID |
+| Secret | `CF_ACCESS_CLIENT_SECRET` | 同一服务凭证 Secret，不写入 Worker 或代码 |
+| Variable | `STATUS_PUSH_URL` | `https://ingest.660415.xyz/api/ingest` |
+
+工作流只在上传步骤注入这些值，不从 `PUSH_ENV_FILE` 加载，也不会从另一个仓库自动继承 Secrets。
+Academic 还需先登记自己的测试模块；完整配置、协议、复用模板与回退见 [共享 KV 教程](SHARED_DATA_KV.md)。
+
 ## 本地运行
 
 在项目根目录创建 `.env`：

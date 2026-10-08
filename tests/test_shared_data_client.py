@@ -363,6 +363,33 @@ class SharedDataClientTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), '')
         self.assertIn('Failed stage: configuration', errors.getvalue())
 
+    def test_smoke_rejects_production_modules_before_any_request(self):
+        output, errors = io.StringIO(), io.StringIO()
+        with patch('scripts.shared_data_smoke.SharedDataClient') as factory, redirect_stdout(output), redirect_stderr(errors):
+            self.assertEqual(smoke_main('academic:metrics'), 1)
+        factory.assert_not_called()
+        self.assertIn('invalid_smoke_module', errors.getvalue())
+
+    def test_academic_smoke_uses_its_own_module_and_callers_source(self):
+        instance, opener, _ = client([
+            HTTPError(URL, 403, '', {}, io.BytesIO()),
+            FakeResponse('{"success":true,"service":"shared-data-ingest","version":"1.0.3"}'),
+            FakeResponse('{"success":true,"module":"academic:smoke","key":"v1:academic:smoke:latest"}'),
+            FakeResponse('{"success":true,"module":"academic:smoke","snapshot":{"payload":{"probeId":"probe","message":"Shared KV Access smoke test"}}}'),
+        ])
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.dict('os.environ', {'GITHUB_REPOSITORY': 'FenLynn/academic', 'GITHUB_SHA': 'b' * 40}), patch('scripts.shared_data_smoke.uuid4', return_value='probe'), patch('scripts.shared_data_smoke.SharedDataClient', return_value=instance), redirect_stdout(output), redirect_stderr(errors):
+            self.assertEqual(smoke_main('academic:smoke'), 0)
+        post = [request for request, _ in opener.requests if request.get_method() == 'POST']
+        self.assertEqual(len(post), 1)
+        envelope = json.loads(post[0].data)
+        self.assertEqual(envelope['module'], 'academic:smoke')
+        self.assertEqual(envelope['source']['repository'], 'FenLynn/academic')
+        self.assertEqual(envelope['source']['commit'], 'b' * 40)
+        self.assertIn('module=academic%3Asmoke', opener.requests[-1][0].full_url)
+        self.assertEqual(errors.getvalue(), '')
+        self.assertIn('Read-back verified.', output.getvalue())
+
     def test_smoke_token_failure_gives_targeted_hint_without_uploading(self):
         for reason in ['client_id_mismatch', 'audience_mismatch', 'issuer_mismatch', None]:
             body = json.dumps({'success': False, 'error': 'invalid_access_token', 'authReason': reason, 'message': SECRET})
