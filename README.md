@@ -47,7 +47,7 @@ GitHub 任务可通过 Cloudflare Access 认证的 HTTPS 入口向公共 KV 发�
 
 - [完整接入教程、Academic 示例与其他任务复用](docs/SHARED_DATA_KV.md)
 - [独立 Worker 的控制台配置、JWT 排错与回退](services/shared-data-ingest/README.md)
-- [URL Secret 迁移、已确认旧日志清理与 Git 历史边界](docs/SHARED_DATA_PRIVACY.md)
+- [URL Secret 迁移、已完成旧日志清理与 Git 历史边界](docs/SHARED_DATA_PRIVACY.md)
 - 手动测试：Actions → **Shared KV: Access smoke test**。
 
 共享上传工具只用 Python 标准库；不调用部署 CLI、不读写 D1、不改动现有 PushPlus 发送逻辑。

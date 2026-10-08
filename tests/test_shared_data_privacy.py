@@ -31,18 +31,12 @@ class SharedDataPrivacyTests(unittest.TestCase):
         self.assertFalse(is_ingest_hostname('anything-else.example'))
         self.assertFalse(is_ingest_hostname(None))
 
-    def test_cleanup_workflow_is_confirmed_manual_and_does_not_receive_access_secrets(self):
-        source = (ROOT / '.github/workflows/shared-data-log-cleanup.yml').read_text(encoding='utf-8')
-        self.assertIn('workflow_dispatch:', source)
-        self.assertIn('type: boolean', source)
-        self.assertIn('default: false', source)
-        self.assertIn('if: ${{ inputs.confirm }}', source)
-        self.assertIn('actions: write', source)
-        self.assertIn('GITHUB_TOKEN: ${{ github.token }}', source)
-        for forbidden in ['STATUS_PUSH_URL', 'CF_ACCESS_CLIENT', 'schedule:', 'git push', 'wrangler']:
-            self.assertNotIn(forbidden, source)
-        for action in re.findall(r'uses:\s+(\S+)', source):
-            self.assertRegex(action, r'@[a-f0-9]{40}$')
+    def test_completed_one_off_cleanup_entry_is_removed_without_escalating_upload_permissions(self):
+        self.assertFalse((ROOT / '.github/workflows/shared-data-log-cleanup.yml').exists())
+        source = (ROOT / '.github/workflows/shared-data-smoke.yml').read_text(encoding='utf-8')
+        self.assertIn('contents: read', source)
+        self.assertNotIn('actions: write', source)
+        self.assertNotIn('shared_data_logs_cleanup.py', source)
 
     def test_documented_cleanup_list_matches_the_reviewed_allowlist(self):
         source = (ROOT / 'docs/SHARED_DATA_PRIVACY.md').read_text(encoding='utf-8')

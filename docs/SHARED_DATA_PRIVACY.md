@@ -12,19 +12,12 @@
 - GitHub Secret 可遮罩后续日志中的原值，但不能保证所有编码/变形都会自动遮罩；仍不能主动打印 URL、启用 `set -x` 或 dump 环境变量。
 - Worker 线上 `1.0.3` 不需要为本次 GitHub 迁移重新部署。源码 `1.0.4` 不再内置域名，将来手动上传时必须保留 `INGEST_HOSTNAME`。不使用部署 CLI。
 
-## 2. 已核查的旧 Actions 日志
+## 2. 已完成的旧 Actions 日志清理
 
 2026-10-08，读取并核查两个仓库现有的 Shared KV 手动测试日志：Push 11 份、Academic 2 份含上传域名明文；另外两次空 URL 的失败日志没有该地址。
-新增了 **[Push 清理入口](https://github.com/FenLynn/push/actions/workflows/shared-data-log-cleanup.yml)** 和 **[Academic 清理入口](https://github.com/FenLynn/academic/actions/workflows/shared-data-log-cleanup.yml)**。
-
-人工执行方法：
-
-1. 两个仓库各打开一次 **Shared KV: Remove old exposed logs**。
-2. 选择最新 main，勾选 `confirm`，Run workflow。
-3. 确认日志显示 `Deleted reviewed logs` 或 `already unavailable`。这一步不能自动撤销。
-
-该流程使用当前仓库短期 `GITHUB_TOKEN` 的 `actions: write` 权限，**无需新增 PAT 或任何 Secret**。上传测试 workflow 仍然只有 `contents: read`。
-只对下列固定 run IDs 调用删除日志接口，不枚举/批量删除所有任务，不删除运行结果、产物、KV、D1 或业务数据。每次删除前会核对仓库、run ID、workflow 路径及已结束状态，遇身份不匹配/权限错误即停止。重复执行会跳过已不存在的日志。
+两个清理任务均已成功运行；已从各自日志核对到 Push 11 条、Academic 2 条成功/已不存在的回执。
+按照所有者要求，两个一次性 `shared-data-log-cleanup.yml` 已从 main 移除，不再提供重复执行入口。历史运行结果保留，正常上传测试仍然只使用 `contents: read`。
+当时只删除了下列固定 run IDs 的日志，没有枚举/批量删除其他任务，也没有删除运行结果、产物、KV、D1 或业务数据。
 
 ```text
 Push:
@@ -36,13 +29,13 @@ Academic:
 37791297867 37789314748
 ```
 
-提交这份 workflow 本身不会删除任何日志；只有所有者勾选确认并手动运行后才执行。若仓库/组织禁止 `actions: write`，应使用 GitHub 页面中的删除入口，不扩大其他工作流权限。
+清理使用当次任务短期 `GITHUB_TOKEN`，无需新 PAT/Secret。删除 workflow 不会恢复已删除的日志，也不改动 URL Secret 或 Access 凭证。
 
 ## 3. 日志删除的边界
 
 GitHub 不支持编辑旧日志的某一行，只能删除整份运行日志，或者删除整个 run；这里仅删除日志，保留结果记录。
 新增 Secret 不会让旧日志自动脱敏，也不要重跑使用 Variable 的旧提交。
-若不用上述手动 workflow，可打开对应 run → 右上角菜单 → **Delete all logs**；GitHub 页面显示可能略有变化，按 [官方日志删除说明](https://docs.github.com/en/actions/how-tos/monitor-workflows/use-workflow-run-logs#deleting-logs) 操作。
+以后若另有需要清理的日志，可打开对应 run → 右上角菜单 → **Delete all logs**；GitHub 页面显示可能略有变化，按 [官方日志删除说明](https://docs.github.com/en/actions/how-tos/monitor-workflows/use-workflow-run-logs#deleting-logs) 操作，不扩大上传任务权限。
 已下载/转存的日志、副本和他人截图不会随 GitHub 删除而消失。
 
 ## 4. Git 历史：已经核查，但没有强推改写
