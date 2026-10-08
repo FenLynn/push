@@ -43,7 +43,7 @@
 | --- | --- | --- |
 | `TEAM_DOMAIN` | Text | `https://fenlynn-team.cloudflareaccess.com` |
 | `POLICY_AUD` | Text | `df19a23935af2f04980d9b5e8ab934520218ed7d514fdaf29a4079ca63f3ba84` |
-| `INGEST_HOSTNAME` | Text | `ingest.660415.xyz` |
+| `INGEST_HOSTNAME` | Text | 已配置并验证的专用上传域名，仅主机名、不含协议/路径；实际值不公开 |
 | `ACCESS_CLIENT_ID` | Text | 已创建的 `github-data-ingest` 服务凭证的 Client ID |
 
 `ACCESS_CLIENT_ID` 用于进一步固定允许的机器凭证，建议设置；若不设置，仍会验证服务类型、AUD 和签名。
@@ -52,7 +52,7 @@
 
 ## 4. 域名和 Access
 
-1. 新 Worker → Settings → Domains & Routes → Add → Custom Domain，添加 `ingest.660415.xyz`。
+1. 新 Worker → Settings → Domains & Routes → Add → Custom Domain，添加自己已配置的专用上传域名。
 2. Cloudflare 自动建立 DNS 和证书；若提示域名已占用，先查原用途，不要直接覆盖旧记录。
 3. 已建 Access 应用应只保护这个专用域名，Path 留空。
 4. 策略必须是 `Service Auth` → Include `Service Token` → 指定 `github-data-ingest`。
@@ -70,10 +70,11 @@ Access 应用和 Worker 都要保存/发布；只创建 Access 应用不会创�
 | --- | --- | --- |
 | Secret | `CF_ACCESS_CLIENT_ID` | 同一服务凭证的 Client ID |
 | Secret | `CF_ACCESS_CLIENT_SECRET` | 同一服务凭证的 Client Secret |
-| Variable | `STATUS_PUSH_URL` | `https://ingest.660415.xyz/api/ingest` |
+| Secret | `STATUS_PUSH_URL` | 原来已验证的完整 HTTPS 上传地址，路径 `/api/ingest`；不公开实际值 |
 
 不要将凭证贴到聊天、日志、工作流 YAML 或源代码。不要删除旧 Secrets。
 Academic 示例复用同一套配置，但必须在 Academic 自己的仓库设置三项值；代码 checkout 不会继承 Push 的 Secrets。同一凭证不能提供仓库间的安全隔离。
+URL 已改为 Secret；先在两个仓库分别创建同名 Secret、使用原值，通过最新 main 测试后再删除旧 Variable。旧 Git/日志不是自动脱敏，见 [隐私迁移与旧记录处理](../../docs/SHARED_DATA_PRIVACY.md)。
 
 ## 6. 手动验收
 
@@ -101,7 +102,12 @@ Academic 示例复用同一套配置，但必须在 Academic 自己的仓库设�
 
 Worker 的 Live 日志与 Access 认证日志是不同来源。在 Access 层被拦截的请求通常不会调用 Worker。Live 应先开启再运行测试，空 Live 本身不构成请求位置的完整证明。
 服务凭证属于非用户身份认证；普通 Access 用户登录日志未必显示这类记录，不能只凭其为空判定未发出请求。
-具体 `ingest.660415.xyz` 应用通常优先于 `*.660415.xyz` 通配应用，不要直接删掉其他网页的登录保护。
+具体上传域名的应用通常优先于泛域名应用，不要直接删掉其他网页的登录保护。
+
+### Worker 源码 v1.0.4：不再内置上传域名
+
+仓库源码移除实际主机名和默认域名。若将来手动上传此版本，必须保留现有 `INGEST_HOSTNAME` 文本变量，缺失时返回 `configuration_error` 而不是猜测域名；JWT 和模块权限校验不变。
+本次 GitHub URL 隐私迁移不需要重新发布已通过的 Worker `1.0.3`。线上代码不会因 GitHub push 自动更改，未使用任何部署 CLI。
 
 客户端源码更新后，请在 Actions 点击 **Run workflow**，选择最新 **main** 发起新测试，不要只重跑旧提交的测试记录。
 

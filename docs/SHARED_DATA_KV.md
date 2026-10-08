@@ -5,12 +5,12 @@
 ## 1. 当前状态与边界
 
 2026-10-08，Push 的四阶段测试已在线通过 Worker `1.0.3`：匿名拒绝、机器认证/验签、临时快照上传、相同 probeId 读回。
-Academic 新增独立的手动示例，**需先登记 `academic:smoke`，尚不代表 Academic 在线测试已通过**。
+Academic 使用独立手动示例，所有者已确认修正成对服务凭证后测试通过；仍只操作测试模块。
 
 ```text
 GitHub 任务生成 JSON
   → HTTPS + Access Service Token
-  → ingest.660415.xyz（专用 Service Auth 应用）
+  → 私有配置的上传域名（专用 Service Auth 应用）
   → shared-data-ingest（再次验证 JWT、校验模块登记表）
   → SHARED_DATA_KV 中该模块自己的 key
 ```
@@ -29,13 +29,23 @@ GitHub 任务生成 JSON
 | --- | --- | --- |
 | Secret | `CF_ACCESS_CLIENT_ID` | 已创建的 `github-data-ingest` 服务凭证完整 Client ID，通常以 `.access` 结尾 |
 | Secret | `CF_ACCESS_CLIENT_SECRET` | 同一个 Service Token 的 Client Secret；只通过 GitHub Secrets 配置 |
-| Variable | `STATUS_PUSH_URL` | `https://ingest.660415.xyz/api/ingest` |
+| Secret | `STATUS_PUSH_URL` | 原来已验证的完整 HTTPS 上传地址，路径 `/api/ingest`；实际值不写入公开文档 |
 
 Push 中的 Secrets 不会自动传到 Academic；代码 checkout 也不会继承另一仓库的 Secrets。个人账号的多个仓库需分别填写同一套值；若以后使用组织 Secrets，必须明确允许相应仓库访问。
 本示例不声明 GitHub Environment，所以只填 Environment Secrets 而未关联 Environment，也会得到空值。
 
 这些配置与旧 `PUSH_ENV_FILE` 无关。保留旧 Secrets，不将密钥写到 YAML、文档、JSON payload、终端参数或日志，不开启会输出命令/变量的 `set -x`。
 Service Token 到期或轮换时同步更新所有调用仓库；不要把 Secret 发到聊天。AUD 和 KV Namespace ID 不是凭证。
+
+### 2026-10-08：URL 从 Variable 迁移到 Secret
+
+Push 和 Academic 都需要在 **Actions → Secrets → New repository secret** 新增 `STATUS_PUSH_URL`，值原样沿用自己已验证的上传地址，不要填文档占位符、引号或 Markdown 链接。已有两个 Access Secrets 不变。
+工作流现在只读取 `${{ secrets.STATUS_PUSH_URL }}`，不回退到 Variable，避免旧的明文配置再次进入日志。
+先创建 Secret，再运行最新 main；验证成功后可删除同名旧 Variable。仅把 URL 移到 Secret 而不更新 workflow 会读不到值，重跑旧提交也可能继续输出明文。
+
+客户端将原域名精确白名单保存为 SHA-256 校验钉，不接受任意域名；HTTPS、443、固定上传路径、无 URL 内凭证/查询/片段及不跟随重定向仍保持严格校验。
+此指纹用于完整性校验，不是加密、不能让已公开的公网域名重新变成秘密。测试仅用保留的虚构域名和假凭证。
+旧 Git 历史和旧 Actions 日志不会被新 Secret 自动脱敏；清理边界、人工删除日志与历史改写风险见 [URL 隐私与旧记录处理](SHARED_DATA_PRIVACY.md)。
 
 ## 3. Academic 首次测试：登记模块
 
@@ -94,7 +104,7 @@ Cloudflare → Workers & Pages → `shared-data-ingest` → Settings → Variabl
 - name: Publish validated snapshot
   # 只在上游生成和质量检查成功后执行，不使用 always()。
   env:
-    STATUS_PUSH_URL: ${{ vars.STATUS_PUSH_URL }}
+    STATUS_PUSH_URL: ${{ secrets.STATUS_PUSH_URL }}
     CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
     CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
   run: python scripts/shared_data_publish.py --module push:life --file artifacts/life.json
@@ -117,7 +127,7 @@ Cloudflare → Workers & Pages → `shared-data-ingest` → Settings → Variabl
 ```yaml
 - name: Publish validated Academic snapshot
   env:
-    STATUS_PUSH_URL: ${{ vars.STATUS_PUSH_URL }}
+    STATUS_PUSH_URL: ${{ secrets.STATUS_PUSH_URL }}
     CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
     CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
   run: python .shared-kv-toolkit/scripts/shared_data_publish.py --module academic:metrics --file artifacts/metrics.json
@@ -160,7 +170,7 @@ Node、Python、Shell 等任务都可输出 JSON，再调用同一个 Python 上
 
 ## 7. 安全、读取与长期限制
 
-- `*.660415.xyz` 的网页登录保护保留；专用 `ingest` 应用绑定指定 Service Auth 凭证，不把机器 token 放进泛域名全站 Allow、不设 Bypass/Everyone。
+- 泛域名网页登录保护保留；专用上传应用绑定指定 Service Auth 凭证，不把机器 token 放进泛域名全站 Allow、不设 Bypass/Everyone。
 - 收到错误先辨别 Access/WAF/Worker 层；不能为了测试通过而关闭 JWT 验签、issuer、AUD 或时效检查。
 - 模块登记表拒绝任意 key，`source.repository` 需匹配登记，但它不是密码学证明。**共享机器凭证不隔离仓库**：持有同一凭证的受信任仓库技术上可冒充另一已登记来源。需要隔离时再换成每仓库独立凭证/身份。
 - Worker KV binding 本身不提供代码层的只读权限；“只读”指读取端没有写入口/写逻辑，不是 Cloudflare 为该 binding 自动颁发只读身份。

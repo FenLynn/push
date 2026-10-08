@@ -44,7 +44,7 @@ function fixture(options = {}) {
     },
   });
   const env = {
-    TEAM_DOMAIN: ISSUER, POLICY_AUD: AUD, ACCESS_CLIENT_ID: CLIENT_ID,
+    TEAM_DOMAIN: ISSUER, POLICY_AUD: AUD, ACCESS_CLIENT_ID: CLIENT_ID, INGEST_HOSTNAME: 'ingest.example.test',
     SHARED_DATA_KV: {
       async get(key) { calls.reads++; return values.get(key) ?? null; },
       async put(key, raw, config) {
@@ -66,7 +66,7 @@ function envelope(overrides = {}) {
 }
 
 function request(jwt, body = envelope(), path = '/api/ingest', method = 'POST', extraHeaders = {}) {
-  return new Request(`https://ingest.660415.xyz${path}`, {
+  return new Request(`https://ingest.example.test${path}`, {
     method,
     headers: { ...(jwt ? { 'Cf-Access-Jwt-Assertion': jwt } : {}), 'Content-Type': 'application/json', ...extraHeaders },
     ...(method === 'POST' ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}),
@@ -82,7 +82,9 @@ test('missing Access JWT is rejected before any external or KV operation', async
 test('missing configuration and a default-hostname bypass fail closed', async () => {
   const f = fixture();
   assert.equal((await f.worker.fetch(request(null), { ...f.env, POLICY_AUD: '' })).status, 503);
-  for (const url of ['https://test.workers.dev/api/ingest', 'http://ingest.660415.xyz/api/ingest']) {
+  assert.equal((await f.worker.fetch(request(null), { ...f.env, INGEST_HOSTNAME: '' })).status, 503);
+  assert.equal((await f.worker.fetch(request(null), { ...f.env, INGEST_HOSTNAME: undefined })).status, 503);
+  for (const url of ['https://test.workers.dev/api/ingest', 'http://ingest.example.test/api/ingest']) {
     assert.equal((await f.worker.fetch(new Request(url), f.env)).status, 403);
   }
   assert.equal(f.calls.jwks, 0);
@@ -229,7 +231,7 @@ test('audience diagnostics are hashed and emitted only after signature verificat
 test('updated health version is authenticated and does not touch KV', async () => {
   const f = fixture();
   const response = await f.worker.fetch(request(await token(), null, '/api/health', 'GET'), f.env);
-  assert.deepEqual(await response.json(), { success: true, service: 'shared-data-ingest', version: '1.0.3' });
+  assert.deepEqual(await response.json(), { success: true, service: 'shared-data-ingest', version: '1.0.4' });
   assert.equal(f.calls.reads, 0);
   assert.equal(f.calls.writes.length, 0);
 });

@@ -53,6 +53,8 @@ def main(module='push:smoke'):
     except SharedDataError as error:
         print(f'Failed stage: {stage}', file=sys.stderr)
         print(str(error), file=sys.stderr)
+        if error.code in {'missing_upload_url', 'invalid_upload_url'}:
+            print('Set STATUS_PUSH_URL in this repository Actions Secrets, not Variables; use the original verified HTTPS upload endpoint, without quotes or Markdown. The value is intentionally not logged.', file=sys.stderr)
         if error.layer == 'access':
             print('Access edge denied the request before the Worker. Check the selected Service Token, its paired ID/Secret, and policy Include/Require/Exclude rules.', file=sys.stderr)
         elif error.layer == 'worker':

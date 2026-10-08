@@ -33,6 +33,14 @@ AUTH_REASON_CODES = frozenset({
 })
 MAX_DIAGNOSTIC_BYTES = 4096
 USER_AGENT = 'SCI-SharedKV/1.0'
+# Keep the exact target allowlist without publishing its hostname in source.
+# This digest is an integrity pin, not encryption or a replacement for Access.
+INGEST_HOSTNAME_SHA256 = '9662f3c4995658b6610c9269add0e7ba1b5cb950e6d8ee091382c263a4ccb678'
+
+
+def is_ingest_hostname(value):
+    return (isinstance(value, str) and re.fullmatch(r'[a-z0-9.-]+', value)
+            and hashlib.sha256(value.encode('ascii')).hexdigest() == INGEST_HOSTNAME_SHA256)
 
 
 class SharedDataError(Exception):
@@ -85,11 +93,15 @@ class SharedDataClient:
         if (not re.fullmatch(r'[A-Za-z0-9_-]{1,128}\.access', self.client_id)
                 or not re.fullmatch(r'[!-~]{16,256}', self.client_secret)):
             raise SharedDataError('invalid_access_credentials')
+        if not self.url:
+            raise SharedDataError('missing_upload_url')
         try:
+            if any(ord(character) <= 32 or ord(character) == 127 for character in self.url):
+                raise ValueError()
             parts = urlsplit(self.url)
-            if (parts.scheme != 'https' or parts.hostname != 'ingest.660415.xyz'
-                    or parts.port not in (None, 443) or parts.username or parts.password
-                    or parts.path != '/api/ingest' or parts.query or parts.fragment):
+            if (parts.scheme != 'https' or not is_ingest_hostname(parts.hostname)
+                    or parts.port not in (None, 443) or parts.username is not None or parts.password is not None
+                    or parts.path != '/api/ingest' or '?' in self.url or '#' in self.url):
                 raise ValueError()
             self.origin = urlunsplit((parts.scheme, parts.netloc, '', '', ''))
             self.url = urlunsplit((parts.scheme, parts.netloc, parts.path, '', ''))
@@ -123,7 +135,7 @@ class SharedDataClient:
         kind = 'json' if mime == 'application/json' else 'html' if mime == 'text/html' else 'other' if mime else 'unknown'
         details = {'layer': 'unknown', 'response_kind': kind, 'ray_id': headers.get('CF-Ray')}
         access_headers = (re.fullmatch(r'[a-f0-9]{64}', headers.get('Cf-Access-Aud', ''))
-                          and headers.get('Cf-Access-Domain', '').lower() == 'ingest.660415.xyz')
+                          and is_ingest_hostname(headers.get('Cf-Access-Domain', '').lower()))
         # Access serves both HTML and JSON rejection pages, depending on Accept.
         # The markers identify the gate without echoing its body or credentials.
         if access_headers and kind in {'json', 'html'}:

@@ -31,7 +31,7 @@ async function fixture(status = 200) {
     },
   });
   const env = {
-    TEAM_DOMAIN: ISSUER, POLICY_AUD: AUD, ACCESS_CLIENT_ID: CLIENT_ID,
+    TEAM_DOMAIN: ISSUER, POLICY_AUD: AUD, ACCESS_CLIENT_ID: CLIENT_ID, INGEST_HOSTNAME: 'ingest.example.test',
     SHARED_DATA_KV: {
       async get() { calls.reads++; return null; },
       async put() { calls.writes++; },
@@ -44,7 +44,7 @@ async function fixture(status = 200) {
     const signature = forged ? new Uint8Array(256) : new Uint8Array(await crypto.subtle.sign(
       'RSASSA-PKCS1-v1_5', pair.privateKey, encoder.encode(`${header}.${claims}`),
     ));
-    return worker.fetch(new Request('https://ingest.660415.xyz/api/health', {
+    return worker.fetch(new Request('https://ingest.example.test/api/health', {
       headers: { 'Cf-Access-Jwt-Assertion': `${header}.${claims}.${base64url(signature)}` },
     }), env);
   }

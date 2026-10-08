@@ -11,7 +11,8 @@ from core.shared_data_client import SharedDataClient, SharedDataError, NoRedirec
 from scripts.shared_data_smoke import main as smoke_main, EXPECTED_INGEST_AUD
 
 
-URL = 'https://ingest.660415.xyz/api/ingest'
+HOSTNAME = 'ingest.example.test'
+URL = f'https://{HOSTNAME}/api/ingest'
 SECRET = 'unit-test-secret-do-not-print'
 
 
@@ -47,6 +48,14 @@ def receipt(module='push:smoke'):
 
 
 class SharedDataClientTests(unittest.TestCase):
+    def setUp(self):
+        # Local fake transport uses a reserved test hostname. Never configure
+        # this fixture pin in Actions or in the production client.
+        pin = patch('core.shared_data_client.INGEST_HOSTNAME_SHA256',
+                    hashlib.sha256(HOSTNAME.encode('ascii')).hexdigest())
+        pin.start()
+        self.addCleanup(pin.stop)
+
     def test_upload_uses_access_headers_and_source_metadata(self):
         instance, opener, delays = client([receipt()])
         with patch.dict('os.environ', {'GITHUB_REPOSITORY': 'FenLynn/push', 'GITHUB_SHA': 'a' * 40,
@@ -68,11 +77,41 @@ class SharedDataClientTests(unittest.TestCase):
         with patch.dict('os.environ', {}, clear=True):
             with self.assertRaises(SharedDataError):
                 SharedDataClient()
-        for url in ['http://ingest.660415.xyz/api/ingest', 'https://evil.example/api/ingest',
-                    'https://user:pass@ingest.660415.xyz/api/ingest', URL + '?token=x', URL + '#x',
-                    'https://ingest.660415.xyz/other', 'https://ingest.660415.xyz:444/api/ingest']:
+        for url in ['http://ingest.example.test/api/ingest', 'https://evil.example/api/ingest',
+                    'https://user:pass@ingest.example.test/api/ingest', URL + '?token=x', URL + '#x',
+                    'https://ingest.example.test/other', 'https://ingest.example.test:444/api/ingest',
+                    URL + '?', URL + '#', URL.replace('example', 'exam\nple'),
+                    'https://@ingest.example.test/api/ingest', URL + '/']:
             with self.assertRaises(SharedDataError):
                 SharedDataClient(url, 'test.access', SECRET)
+
+    def test_exact_hostname_pin_cannot_be_replaced_by_a_suffix_or_similar_hostname(self):
+        for hostname in [HOSTNAME + '.evil.example', 'x.' + HOSTNAME, 'ingest-example.test']:
+            opener = FakeOpener([])
+            with self.assertRaises(SharedDataError) as error:
+                SharedDataClient(f'https://{hostname}/api/ingest', 'test.access', SECRET, opener=opener)
+            self.assertEqual(error.exception.code, 'invalid_upload_url')
+            self.assertNotIn(hostname, str(error.exception))
+            self.assertEqual(opener.requests, [])
+
+    def test_url_from_environment_preserves_secret_value_without_logging_it(self):
+        with patch.dict('os.environ', {'STATUS_PUSH_URL': URL, 'CF_ACCESS_CLIENT_ID': 'test.access',
+                                     'CF_ACCESS_CLIENT_SECRET': SECRET}, clear=True):
+            instance = SharedDataClient(opener=FakeOpener([]))
+        self.assertEqual(instance.url, URL)
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.dict('os.environ', {'STATUS_PUSH_URL': URL + '?private=hidden',
+                                     'CF_ACCESS_CLIENT_ID': 'test.access', 'CF_ACCESS_CLIENT_SECRET': SECRET}, clear=True), redirect_stdout(output), redirect_stderr(errors):
+            self.assertEqual(smoke_main(), 1)
+        text = output.getvalue() + errors.getvalue()
+        self.assertIn('invalid_upload_url', text)
+        for value in [URL, HOSTNAME, SECRET, 'private=hidden']:
+            self.assertNotIn(value, text)
+        with patch.dict('os.environ', {'CF_ACCESS_CLIENT_ID': 'test.access',
+                                     'CF_ACCESS_CLIENT_SECRET': SECRET}, clear=True), redirect_stdout(output), redirect_stderr(errors):
+            self.assertEqual(smoke_main(), 1)
+        self.assertIn('missing_upload_url', errors.getvalue())
+        self.assertIn('Actions Secrets, not Variables', errors.getvalue())
 
     def test_credentials_with_control_characters_are_rejected_without_echo(self):
         for client_id, secret in [('test.access', SECRET + '\ninvalid'), ('bad\n.access', SECRET)]:
@@ -103,7 +142,7 @@ class SharedDataClientTests(unittest.TestCase):
     def test_access_html_is_distinguished_without_printing_its_body(self):
         failure = HTTPError(URL, 403, SECRET, {
             'Content-Type': 'text/html', 'Cf-Access-Aud': 'a' * 64,
-            'Cf-Access-Domain': 'ingest.660415.xyz', 'CF-Ray': 'a474775c9e4334bd-SJC',
+            'Cf-Access-Domain': 'ingest.example.test', 'CF-Ray': 'a474775c9e4334bd-SJC',
         }, io.BytesIO(SECRET.encode()))
         instance, opener, delays = client([failure])
         with self.assertRaises(SharedDataError) as error:
@@ -153,7 +192,7 @@ class SharedDataClientTests(unittest.TestCase):
         headers = Message()
         headers['content-type'] = 'application/json; charset=utf-8'
         headers['cf-access-aud'] = 'a' * 64
-        headers['cf-access-domain'] = 'ingest.660415.xyz'
+        headers['cf-access-domain'] = 'ingest.example.test'
         body = json.dumps({'status_code': 403, 'message': SECRET,
                            'aud': 'a' * 64, 'ip_address': SECRET})
         failure = HTTPError(URL, 403, '', headers, io.BytesIO(body.encode()))
@@ -209,7 +248,7 @@ class SharedDataClientTests(unittest.TestCase):
         body = json.dumps({'success': False, 'error': 'invalid_access_token'})
         failure = HTTPError(URL, 403, '', {
             'Content-Type': 'application/json', 'Cf-Access-Aud': 'a' * 64,
-            'Cf-Access-Domain': 'ingest.660415.xyz',
+            'Cf-Access-Domain': 'ingest.example.test',
         }, io.BytesIO(body.encode()))
         instance, _, _ = client([failure])
         with self.assertRaises(SharedDataError) as error:
@@ -343,7 +382,7 @@ class SharedDataClientTests(unittest.TestCase):
             HTTPError(URL, 403, '', {}, io.BytesIO()),
             HTTPError(URL, 403, SECRET, {
                 'Content-Type': 'text/html', 'Cf-Access-Aud': 'a' * 64,
-                'Cf-Access-Domain': 'ingest.660415.xyz',
+                'Cf-Access-Domain': 'ingest.example.test',
             }, io.BytesIO(SECRET.encode())),
         ])
         output, errors = io.StringIO(), io.StringIO()

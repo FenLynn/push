@@ -37,10 +37,11 @@ Finance 与 Estate 的结构化数据写入同一个 D1：日频金融数据保�
 | --- | --- | --- |
 | Secret | `CF_ACCESS_CLIENT_ID` | `github-data-ingest` 服务凭证 Client ID |
 | Secret | `CF_ACCESS_CLIENT_SECRET` | 同一服务凭证 Secret，不写入 Worker 或代码 |
-| Variable | `STATUS_PUSH_URL` | `https://ingest.660415.xyz/api/ingest` |
+| Secret | `STATUS_PUSH_URL` | 原来已验证的完整 HTTPS 上传地址，路径 `/api/ingest`，不公开实际值 |
 
 工作流只在上传步骤注入这些值，不从 `PUSH_ENV_FILE` 加载，也不会从另一个仓库自动继承 Secrets。
 Academic 还需先登记自己的测试模块；完整配置、协议、复用模板与回退见 [共享 KV 教程](SHARED_DATA_KV.md)。
+旧版同名 Variable 需迁移到 Secret；先创建 Secret 并运行最新 main，通过后再删除旧 Variable。不在 YAML/日志里写明文地址，历史日志不会自动脱敏，详见 [旧记录处理](SHARED_DATA_PRIVACY.md)。
 
 ## 本地运行
 

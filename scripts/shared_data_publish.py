@@ -51,6 +51,8 @@ def main(argv=None):
     except SharedDataError as error:
         print(f'Failed stage: {stage}', file=sys.stderr)
         print(str(error), file=sys.stderr)
+        if error.code in {'missing_upload_url', 'invalid_upload_url'}:
+            print('Set STATUS_PUSH_URL in this repository Actions Secrets, not Variables; use the original verified HTTPS upload endpoint. The value is intentionally not logged.', file=sys.stderr)
         if error.worker_code == 'unknown_module':
             print('Register the module with its own key and caller repository before publishing; preserve all existing registry entries.', file=sys.stderr)
         return 1

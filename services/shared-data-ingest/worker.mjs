@@ -1,7 +1,7 @@
 // Standalone module Worker maintained with the upload client in the Push repo.
 // Paste this entire file into Cloudflare's code editor.
 // No build tools, dependencies, deployment CLI, D1, or Cloudflare API token.
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 const MAX_BODY_BYTES = 1024 * 1024;
 const JWKS_TTL_MS = 60 * 60 * 1000;
 const JWKS_REFRESH_INTERVAL_MS = 60 * 1000;
@@ -89,7 +89,7 @@ function getConfiguration(env) {
   }
   const audience = String(env.POLICY_AUD || '').trim();
   if (!/^[a-f0-9]{64}$/.test(audience)) fail(503, 'configuration_error', 'Configure the application POLICY_AUD.');
-  const hostname = String(env.INGEST_HOSTNAME || 'ingest.660415.xyz').trim().toLowerCase();
+  const hostname = String(env.INGEST_HOSTNAME || '').trim().toLowerCase();
   if (!/^[a-z0-9.-]+$/.test(hostname)) fail(503, 'configuration_error', 'Invalid INGEST_HOSTNAME.');
   return { issuer, audience, hostname, clientId: String(env.ACCESS_CLIENT_ID || '').trim() };
 }
