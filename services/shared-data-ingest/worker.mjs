@@ -1,7 +1,7 @@
 // Standalone module Worker maintained with the upload client in the Push repo.
 // Paste this entire file into Cloudflare's code editor.
 // No build tools, dependencies, deployment CLI, D1, or Cloudflare API token.
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const MAX_BODY_BYTES = 1024 * 1024;
 const JWKS_TTL_MS = 60 * 60 * 1000;
 const JWKS_REFRESH_INTERVAL_MS = 60 * 1000;
@@ -14,11 +14,12 @@ const DEFAULT_REGISTRY = {
 };
 
 class HttpError extends Error {
-  constructor(status, code, message, authReason) {
+  constructor(status, code, message, authReason, authInfo) {
     super(message);
     this.status = status;
     this.code = code;
     this.authReason = authReason;
+    this.authInfo = authInfo;
   }
 }
 
@@ -38,8 +39,24 @@ function fail(status, code, message) {
 }
 
 // Call only with fixed reason codes, never values from a JWT or configuration.
-function rejectAccess(reason) {
-  throw new HttpError(403, 'invalid_access_token', 'Access token validation failed.', reason);
+function rejectAccess(reason, authInfo) {
+  throw new HttpError(403, 'invalid_access_token', 'Access token validation failed.', reason, authInfo);
+}
+
+async function audienceDiagnostics(audience, configuredAudience) {
+  const sha256 = async value => Array.from(new Uint8Array(
+    await crypto.subtle.digest('SHA-256', encoder.encode(value)),
+  ), byte => byte.toString(16).padStart(2, '0')).join('');
+  const values = typeof audience === 'string' ? [audience] : Array.isArray(audience) ? audience : [];
+  // Called only after signature verification. Hash only public, well-formed
+  // Access application IDs; never echo an assertion, identity or raw claim.
+  const ids = values.filter(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)).slice(0, 8);
+  return {
+    audienceShape: typeof audience === 'string' ? 'string' : Array.isArray(audience) ? 'array'
+      : audience === undefined ? 'missing' : 'other',
+    configuredAudienceSha256: await sha256(configuredAudience),
+    tokenAudienceSha256: await Promise.all(ids.map(sha256)),
+  };
 }
 
 function isObject(value) {
@@ -246,7 +263,6 @@ export function createIngestWorker({ fetcher = (...args) => fetch(...args), now 
     if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid || header.kid.length > 128
       || (header.typ !== undefined && header.typ !== 'JWT') || header.crit !== undefined) rejectAccess('unsupported_header');
     if (claims.iss !== configuration.issuer) rejectAccess('issuer_mismatch');
-    if (!Array.isArray(claims.aud) || !claims.aud.includes(configuration.audience)) rejectAccess('audience_mismatch');
     if (claims.type !== 'app') rejectAccess('token_type_mismatch');
     if (!Number.isInteger(claims.exp) || !Number.isInteger(claims.iat) || claims.iat >= claims.exp
       || (claims.nbf !== undefined && !Number.isInteger(claims.nbf))) rejectAccess('invalid_token_time');
@@ -258,6 +274,15 @@ export function createIngestWorker({ fetcher = (...args) => fetch(...args), now 
     const key = await getVerificationKey(configuration.issuer, header.kid);
     if (!await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, signature, encoder.encode(`${parts[0]}.${parts[1]}`))) {
       rejectAccess('signature_mismatch');
+    }
+    // RFC 7519 section 4.1.3 permits either a single string or an array of
+    // strings. This is exact membership, never substring or prefix matching.
+    const audiences = typeof claims.aud === 'string' ? [claims.aud] : claims.aud;
+    if (!Array.isArray(audiences) || !audiences.length || audiences.some(value => typeof value !== 'string')) {
+      rejectAccess('invalid_audience_format', await audienceDiagnostics(claims.aud, configuration.audience));
+    }
+    if (!audiences.includes(configuration.audience)) {
+      rejectAccess('audience_mismatch', await audienceDiagnostics(claims.aud, configuration.audience));
     }
   }
 
@@ -305,6 +330,7 @@ export function createIngestWorker({ fetcher = (...args) => fetch(...args), now 
         if (error instanceof HttpError) return json({
           success: false, error: error.code, message: error.message,
           ...(error.authReason ? { authReason: error.authReason } : {}),
+          ...(error.authInfo ? { authInfo: error.authInfo } : {}),
         }, error.status);
         return json({ success: false, error: 'internal_error', message: 'The request could not be completed.' }, 500);
       }

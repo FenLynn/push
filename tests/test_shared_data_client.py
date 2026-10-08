@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -7,7 +8,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 from core.shared_data_client import SharedDataClient, SharedDataError, NoRedirectHandler, USER_AGENT
-from scripts.shared_data_smoke import main as smoke_main
+from scripts.shared_data_smoke import main as smoke_main, EXPECTED_INGEST_AUD
 
 
 URL = 'https://ingest.660415.xyz/api/ingest'
@@ -163,6 +164,46 @@ class SharedDataClientTests(unittest.TestCase):
         self.assertEqual(error.exception.response_kind, 'json')
         self.assertIsNone(error.exception.worker_code)
         self.assertNotIn(SECRET, str(error.exception))
+
+    def test_audience_diagnostics_log_only_shape_and_equality_booleans(self):
+        expected = 'a' * 64
+        expected_hash = hashlib.sha256(expected.encode()).hexdigest()
+        other_hash = hashlib.sha256(('b' * 64).encode()).hexdigest()
+        for configured, token_hashes, configured_matches, token_matches in [
+            (expected_hash, [other_hash], True, False),
+            (other_hash, [expected_hash], False, True),
+            (expected_hash, [expected_hash], True, True),
+        ]:
+            body = json.dumps({'success': False, 'error': 'invalid_access_token', 'authReason': 'audience_mismatch',
+                               'authInfo': {'audienceShape': 'array', 'configuredAudienceSha256': configured,
+                                            'tokenAudienceSha256': token_hashes, 'jwt': SECRET}})
+            failure = HTTPError(URL, 403, '', {'Content-Type': 'application/json'}, io.BytesIO(body.encode()))
+            instance, _, _ = client([failure], expected_audience=expected)
+            with self.assertRaises(SharedDataError) as error:
+                instance.health()
+            self.assertEqual(error.exception.audience_shape, 'array')
+            self.assertIs(error.exception.audience_configuration_matches, configured_matches)
+            self.assertIs(error.exception.audience_token_matches, token_matches)
+            self.assertIn(f'worker_aud_matches_expected={configured_matches}', str(error.exception))
+            self.assertIn(f'jwt_aud_matches_expected={token_matches}', str(error.exception))
+            for raw in [SECRET, expected, expected_hash, other_hash]:
+                self.assertNotIn(raw, str(error.exception))
+
+    def test_malformed_audience_diagnostics_are_ignored_without_changing_failure(self):
+        for info in [SECRET, {'audienceShape': [SECRET], 'configuredAudienceSha256': SECRET,
+                             'tokenAudienceSha256': [SECRET]},
+                     {'audienceShape': 'array', 'configuredAudienceSha256': 'A' * 64,
+                      'tokenAudienceSha256': ['a' * 64] * 9}]:
+            body = json.dumps({'success': False, 'error': 'invalid_access_token',
+                               'authReason': 'audience_mismatch', 'authInfo': info})
+            failure = HTTPError(URL, 403, '', {'Content-Type': 'application/json'}, io.BytesIO(body.encode()))
+            instance, _, _ = client([failure], expected_audience='a' * 64)
+            with self.assertRaises(SharedDataError) as error:
+                instance.health()
+            self.assertEqual(error.exception.auth_reason, 'audience_mismatch')
+            self.assertIsNone(error.exception.audience_configuration_matches)
+            self.assertIsNone(error.exception.audience_token_matches)
+            self.assertNotIn(SECRET, str(error.exception))
 
     def test_known_worker_json_error_takes_priority_over_access_response_headers(self):
         body = json.dumps({'success': False, 'error': 'invalid_access_token'})
@@ -339,7 +380,32 @@ class SharedDataClientTests(unittest.TestCase):
             if reason:
                 self.assertIn(f'auth_reason={reason}', text)
             else:
-                self.assertIn('Manually upload worker.mjs v1.0.1', text)
+                self.assertIn('Manually upload worker.mjs v1.0.2', text)
+
+    def test_smoke_distinguishes_runtime_configuration_from_another_signed_application(self):
+        expected_hash = hashlib.sha256(EXPECTED_INGEST_AUD.encode()).hexdigest()
+        other_hash = hashlib.sha256(('b' * 64).encode()).hexdigest()
+        for configured_hash, token_hash, hint in [
+            (other_hash, expected_hash, 'active Worker configuration does not match'),
+            (expected_hash, other_hash, 'active Worker AUD is correct, but the signed JWT targets another application'),
+        ]:
+            body = json.dumps({'success': False, 'error': 'invalid_access_token', 'authReason': 'audience_mismatch',
+                               'authInfo': {'audienceShape': 'array', 'configuredAudienceSha256': configured_hash,
+                                            'tokenAudienceSha256': [token_hash]}})
+            instance, opener, _ = client([
+                HTTPError(URL, 403, '', {}, io.BytesIO()),
+                HTTPError(URL, 403, '', {'Content-Type': 'application/json'}, io.BytesIO(body.encode())),
+            ], expected_audience=EXPECTED_INGEST_AUD)
+            output, errors = io.StringIO(), io.StringIO()
+            with patch('scripts.shared_data_smoke.SharedDataClient', return_value=instance) as factory, redirect_stdout(output), redirect_stderr(errors):
+                self.assertEqual(smoke_main(), 1)
+            factory.assert_called_once_with(expected_audience=EXPECTED_INGEST_AUD)
+            text = output.getvalue() + errors.getvalue()
+            self.assertIn(hint, text)
+            self.assertNotIn('[3/4]', text)
+            self.assertTrue(all(request.get_method() == 'GET' for request, _ in opener.requests))
+            for raw in [SECRET, EXPECTED_INGEST_AUD, expected_hash, other_hash]:
+                self.assertNotIn(raw, text)
 
 
 if __name__ == '__main__':

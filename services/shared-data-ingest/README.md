@@ -103,23 +103,33 @@ Worker 的 Live 日志与 Access 认证日志是不同来源。在 Access 层被
 
 客户端源码更新后，请在 Actions 点击 **Run workflow**，选择最新 **main** 发起新测试，不要只重跑旧提交的测试记录。
 
-### Worker v1.0.1：准确定位 JWT 拒绝原因
+### Worker v1.0.2：准确定位 JWT 拒绝原因
 
 **这次需要在 Cloudflare Edit Code 手动替换整个 `worker.mjs` 并发布**，仅更新 GitHub 客户端不会改变已部署的 Worker。先下载旧代码作为回退；binding、域名、Access 策略保持不变，不使用任何部署 CLI。
 
-旧版把多个 JWT 校验失败归入同一个 `invalid_access_token`，不能仅凭它断定 Cookie/Token 过期、Client Secret 错误或签名有问题。新版继续拒绝全部不合法请求，仅在错误 JSON 中添加固定的 `authReason` 枚举，客户端以 `auth_reason` 显示，不输出 JWT、claims、配置值或凭证。
+旧版把多个 JWT 校验失败归入同一个 `invalid_access_token`，不能仅凭它断定 Cookie/Token 过期、Client Secret 错误或签名有问题。新版继续拒绝全部不合法请求，仅在错误 JSON 中添加固定的 `authReason` 枚举，客户端以 `auth_reason` 显示，不输出 JWT、原始 claims、配置值或凭证。
 
 | `auth_reason` | 下一步只核对这一项 |
 | --- | --- |
 | `issuer_mismatch` | Worker `TEAM_DOMAIN` 与实际 Access 团队 HTTPS 域名 |
-| `audience_mismatch` | Worker `POLICY_AUD` 与当前 ingest **应用** AUD（不是策略 ID） |
+| `audience_mismatch` | 先看下方两个脱敏比对结果，区分生效配置不同与 JWT 来自另一应用，不直接认定 AUD 填错 |
 | `client_id_mismatch` | Worker `ACCESS_CLIENT_ID` 与 GitHub `CF_ACCESS_CLIENT_ID` 一致；是完整 `.access` ID，不是 `github-data-ingest` 名称或 Secret |
 | `service_identity_mismatch` / `token_type_mismatch` | 是否收到官方服务身份 JWT；不能以放弃校验作为修复 |
 | `expired_token` / `token_not_yet_valid` / `invalid_token_time` | 有效期、复用的 assertion 或运行时钟 |
 | `unknown_signing_key` / `signature_mismatch` | 团队公钥/密钥轮换与签名；不能跳过验签 |
 | `malformed_token` / `unsupported_header` / `token_too_large` | assertion 的结构、算法或大小 |
 
-健康检查成功将显示版本 `1.0.1`；所有 JWT 诊断路径仍不读取/写入 KV 或 D1。
+健康检查成功将显示版本 `1.0.2`；所有 JWT 诊断路径仍不读取/写入 KV 或 D1。
+
+v1.0.2 按 RFC 7519 §4.1.3 接受 `aud` 的单字符串和字符串数组两种标准形式，仍要求精确等于/包含配置 AUD，不做子串、前缀或大小写宽松匹配。旧版只接受数组，并把合法字符串错误归为 `audience_mismatch`；这是兼容性缺口，但不能仅凭旧日志断定现网收到的就是字符串。
+
+对已通过签名验证、但 AUD 不匹配的请求，Worker 仅返回应用 ID 的 SHA-256 指纹及字段形状。冒烟脚本使用所有者提供、且已从 Access 响应头核对过的公开 ingest AUD 作诊断参考，客户端不打印指纹，只显示：
+
+- `worker_aud_matches_expected=False`：线上 Worker 的配置不等于参考 AUD，核查活动部署版本，而不是只看编辑弹窗。
+- `worker_aud_matches_expected=True` 且 `jwt_aud_matches_expected=False`：配置正确，但验签后的 JWT 指向另一应用；核查额外 Worker Access 保护与重叠应用，不要盲目替换正确值。
+- `aud_shape=string/array/missing/other`：实际 JWT 的 AUD 字段形式。格式不合法时为 `invalid_audience_format`，不再混同数值不匹配。
+
+诊断参考值只用于比对，不是认证授权依据；真正的允许/拒绝仍由 Worker 的配置、精确 AUD 校验、机器身份、有效期与签名共同决定。若将来重建 Access 应用，只更新公开参考值和 Worker 配置，不将服务凭证写入代码。
 
 ## 7. 接入真实模块（冒烟通过后另行切换）
 
@@ -176,3 +186,4 @@ python -m unittest tests.test_shared_data_client tests.test_dashboard_snapshot -
 - [Access 应用匹配与策略继承](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
 - [Access 认证日志](https://developers.cloudflare.com/cloudflare-one/insights/logs/dashboard-logs/access-authentication-logs/)
 - [Cloudflare 1010 与 Browser Integrity Check](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/)
+- [RFC 7519 Audience 字段的两种形式](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.3)

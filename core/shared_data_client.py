@@ -4,6 +4,7 @@ This module is deliberately not wired into existing exports yet. Switching a
 production module requires registering it on the server and a separate opt-in.
 """
 import json
+import hashlib
 import os
 import re
 import time
@@ -28,7 +29,7 @@ AUTH_REASON_CODES = frozenset({
     'token_too_large', 'malformed_token', 'unsupported_header', 'issuer_mismatch',
     'audience_mismatch', 'token_type_mismatch', 'invalid_token_time', 'expired_token',
     'token_not_yet_valid', 'service_identity_mismatch', 'client_id_mismatch',
-    'unknown_signing_key', 'signature_mismatch',
+    'unknown_signing_key', 'signature_mismatch', 'invalid_audience_format',
 })
 MAX_DIAGNOSTIC_BYTES = 4096
 USER_AGENT = 'SCI-SharedKV/1.0'
@@ -36,7 +37,8 @@ USER_AGENT = 'SCI-SharedKV/1.0'
 
 class SharedDataError(Exception):
     def __init__(self, code, status=None, *, layer=None, response_kind=None,
-                 worker_code=None, ray_id=None, edge_error_code=None, auth_reason=None):
+                 worker_code=None, ray_id=None, edge_error_code=None, auth_reason=None,
+                 audience_shape=None, audience_configuration_matches=None, audience_token_matches=None):
         self.code = code
         self.status = status
         # Only enum values and a tightly checked public request ID may be logged.
@@ -48,12 +50,19 @@ class SharedDataError(Exception):
                                          and isinstance(auth_reason, str) and auth_reason in AUTH_REASON_CODES) else None
         self.ray_id = ray_id if isinstance(ray_id, str) and re.fullmatch(r'[a-f0-9]{16,32}-[A-Z]{3}', ray_id) else None
         self.edge_error_code = edge_error_code if type(edge_error_code) is int and edge_error_code == 1010 else None
+        audience_failure = self.auth_reason in {'audience_mismatch', 'invalid_audience_format'}
+        self.audience_shape = audience_shape if audience_failure and isinstance(audience_shape, str) and audience_shape in {'string', 'array', 'missing', 'other'} else None
+        self.audience_configuration_matches = audience_configuration_matches if audience_failure and type(audience_configuration_matches) is bool else None
+        self.audience_token_matches = audience_token_matches if audience_failure and type(audience_token_matches) is bool else None
         details = [f'{name}={value}' for name, value in [
             ('layer', self.layer), ('response', self.response_kind),
             ('worker_error', self.worker_code), ('cf_ray', self.ray_id),
             ('auth_reason', self.auth_reason),
             ('edge_error_code', self.edge_error_code),
-        ] if value]
+            ('aud_shape', self.audience_shape),
+            ('worker_aud_matches_expected', self.audience_configuration_matches),
+            ('jwt_aud_matches_expected', self.audience_token_matches),
+        ] if value is not None]
         message = f"Shared data request failed: {code}" + (f" (HTTP {status})" if status else "")
         super().__init__(message + (f" [{', '.join(details)}]" if details else ''))
 
@@ -67,7 +76,7 @@ class NoRedirectHandler(HTTPRedirectHandler):
 
 class SharedDataClient:
     def __init__(self, url=None, client_id=None, client_secret=None, *, opener=None,
-                 sleeper=time.sleep, attempts=3, timeout=20):
+                 sleeper=time.sleep, attempts=3, timeout=20, expected_audience=None):
         self.url = str(url if url is not None else os.getenv('STATUS_PUSH_URL', '')).strip()
         self.client_id = str(client_id if client_id is not None else os.getenv('CF_ACCESS_CLIENT_ID', '')).strip()
         self.client_secret = str(client_secret if client_secret is not None else os.getenv('CF_ACCESS_CLIENT_SECRET', '')).strip()
@@ -93,6 +102,8 @@ class SharedDataClient:
         self.sleeper = sleeper
         self.attempts = attempts
         self.timeout = timeout
+        # Diagnostic reference only. Authentication authority remains in Worker.
+        self.expected_audience = expected_audience if isinstance(expected_audience, str) and re.fullmatch(r'[a-f0-9]{64}', expected_audience) else None
 
     def _headers(self):
         return {
@@ -106,7 +117,7 @@ class SharedDataClient:
         }
 
     @staticmethod
-    def _http_error_details(error):
+    def _http_error_details(error, expected_audience=None):
         headers = error.headers or {}
         mime = headers.get('Content-Type', '').split(';')[0].strip().lower()
         kind = 'json' if mime == 'application/json' else 'html' if mime == 'text/html' else 'other' if mime else 'unknown'
@@ -127,6 +138,20 @@ class SharedDataClient:
                     reason = value.get('authReason')
                     if code == 'invalid_access_token' and isinstance(reason, str) and reason in AUTH_REASON_CODES:
                         details['auth_reason'] = reason
+                        info = value.get('authInfo')
+                        if reason in {'audience_mismatch', 'invalid_audience_format'} and isinstance(info, dict):
+                            shape = info.get('audienceShape')
+                            if isinstance(shape, str) and shape in {'string', 'array', 'missing', 'other'}:
+                                details['audience_shape'] = shape
+                            if isinstance(expected_audience, str) and re.fullmatch(r'[a-f0-9]{64}', expected_audience):
+                                expected_hash = hashlib.sha256(expected_audience.encode('utf-8')).hexdigest()
+                                configured_hash = info.get('configuredAudienceSha256')
+                                token_hashes = info.get('tokenAudienceSha256')
+                                if isinstance(configured_hash, str) and re.fullmatch(r'[a-f0-9]{64}', configured_hash):
+                                    details['audience_configuration_matches'] = configured_hash == expected_hash
+                                if (isinstance(token_hashes, list) and len(token_hashes) <= 8
+                                        and all(isinstance(item, str) and re.fullmatch(r'[a-f0-9]{64}', item) for item in token_hashes)):
+                                    details['audience_token_matches'] = expected_hash in token_hashes
                 elif (isinstance(value, dict) and type(value.get('error_code')) is int
                       and value['error_code'] == 1010 and value.get('status') == 403
                       and headers.get('Server', '').lower() == 'cloudflare'):
@@ -163,7 +188,7 @@ class SharedDataClient:
                 retry_after = error.headers.get('Retry-After', '') if error.headers else ''
                 if status not in RETRYABLE_STATUS or attempt + 1 == self.attempts:
                     try:
-                        details = self._http_error_details(error)
+                        details = self._http_error_details(error, self.expected_audience)
                     finally:
                         error.close()
                     raise SharedDataError('access_or_redirect_rejected' if status in (301, 302, 303, 307, 308, 401, 403)

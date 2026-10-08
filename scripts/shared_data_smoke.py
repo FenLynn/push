@@ -7,11 +7,15 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.shared_data_client import SharedDataClient, SharedDataError
 
+# Public application AUD supplied by the owner and confirmed by Access response
+# headers. Used only to diagnose equality, never to authorize a request.
+EXPECTED_INGEST_AUD = 'df19a23935af2f04980d9b5e8ab934520218ed7d514fdaf29a4079ca63f3ba84'
+
 
 def main():
     stage = 'configuration'
     try:
-        client = SharedDataClient()
+        client = SharedDataClient(expected_audience=EXPECTED_INGEST_AUD)
         stage = 'unauthenticated_health'
         print('[1/4] Verify no-credential access is denied.', flush=True)
         denied_status = client.check_unauthenticated_denied()
@@ -51,18 +55,24 @@ def main():
             if error.worker_code == 'invalid_access_token':
                 hints = {
                     'issuer_mismatch': 'Compare Worker TEAM_DOMAIN with the Access team domain (HTTPS origin).',
-                    'audience_mismatch': 'Compare Worker POLICY_AUD with the current ingest Access application AUD, not a policy ID.',
+                    'audience_mismatch': 'The signed JWT and active Worker AUD differ. Use the equality diagnostics below before changing configuration.',
                     'client_id_mismatch': 'Worker ACCESS_CLIENT_ID must equal GitHub CF_ACCESS_CLIENT_ID; use the full .access ID, not the token name, AUD, or Client Secret.',
                     'service_identity_mismatch': 'The JWT is not in the expected service-identity form. Keep Service Auth and do not remove JWT validation.',
                     'unknown_signing_key': 'The JWT signing key is not in the configured team JWKS. Check TEAM_DOMAIN and key rotation.',
                     'signature_mismatch': 'Signature verification failed. Check the configured team and integrity of the assertion; never skip signature verification.',
                     'expired_token': 'The assertion is expired. Check for a reused assertion and runtime clock; do not log the JWT.',
                     'token_not_yet_valid': 'The assertion is not yet valid. Check runtime clock and issuance timing; do not log the JWT.',
+                    'invalid_audience_format': 'JWT aud must be a string or a non-empty array of strings. Do not change the configured AUD to bypass a malformed claim.',
                 }
                 if error.auth_reason in hints:
                     print(hints[error.auth_reason], file=sys.stderr)
+                    if error.auth_reason == 'audience_mismatch':
+                        if error.audience_configuration_matches is False:
+                            print('The active Worker configuration does not match the known ingest AUD. Check the deployed version, not only the variable edit dialog.', file=sys.stderr)
+                        elif error.audience_configuration_matches is True and error.audience_token_matches is False:
+                            print('The active Worker AUD is correct, but the signed JWT targets another application. Check additional Worker Access protection or overlapping Access applications; do not replace the correct AUD blindly.', file=sys.stderr)
                 elif not error.auth_reason:
-                    print('The deployed Worker is missing detailed auth diagnostics. Manually upload worker.mjs v1.0.1; no deployment CLI is needed.', file=sys.stderr)
+                    print('The deployed Worker is missing detailed auth diagnostics. Manually upload worker.mjs v1.0.2; no deployment CLI is needed.', file=sys.stderr)
         elif error.layer == 'cloudflare_html':
             print('Cloudflare returned HTML; the exact blocker is not confirmed. Check Access and Security Events using cf_ray.', file=sys.stderr)
         elif error.layer == 'cloudflare_bic':

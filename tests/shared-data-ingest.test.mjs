@@ -1,6 +1,7 @@
 // Run with node --test tests/shared-data-ingest.test.mjs; no deployment tooling.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createIngestWorker } from '../services/shared-data-ingest/worker.mjs';
 
 const NOW = Date.parse('2026-10-08T03:00:00.000Z');
@@ -8,6 +9,7 @@ const AUD = 'a'.repeat(64);
 const ISSUER = 'https://unit-test.cloudflareaccess.com';
 const CLIENT_ID = 'test-client.access';
 const base64url = value => Buffer.from(value).toString('base64url');
+const sha256 = value => createHash('sha256').update(value).digest('hex');
 const keyPair = await crypto.subtle.generateKey(
   { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
   true, ['sign', 'verify'],
@@ -101,7 +103,7 @@ test('valid service token writes only the registered key and preserves the paylo
 
 test('wrong issuer, AUD, service identity, times, and algorithms are rejected', async () => {
   const variants = [
-    [{ iss: 'https://evil.example' }], [{ aud: ['b'.repeat(64)] }], [{ aud: AUD }],
+    [{ iss: 'https://evil.example' }], [{ aud: ['b'.repeat(64)] }], [{ aud: 'b'.repeat(64) }],
     [{ type: 'org' }], [{ exp: NOW / 1000 }], [{ iat: NOW / 1000 + 31 }],
     [{ nbf: NOW / 1000 + 1 }], [{ exp: '1234' }], [{ sub: 'human', email: 'user@example.com' }],
     [{ common_name: 'another.access' }], [{ common_name: '' }], [{}, { alg: 'none' }],
@@ -111,7 +113,7 @@ test('wrong issuer, AUD, service identity, times, and algorithms are rejected', 
     const f = fixture();
     assert.equal((await f.worker.fetch(request(await token(claims, headers)), f.env)).status, 403);
     assert.equal(f.calls.writes.length, 0);
-    assert.equal(f.calls.jwks, 0);
+    assert.equal(f.calls.jwks, Object.hasOwn(claims, 'aud') ? 1 : 0);
   }
 });
 
@@ -119,7 +121,8 @@ test('JWT failures expose only fixed reasons, never JWT claims, and never touch 
   const variants = [
     [{ iss: 'https://sensitive-team.example' }, {}, 'issuer_mismatch'],
     [{ aud: ['b'.repeat(64)] }, {}, 'audience_mismatch'],
-    [{ aud: AUD }, {}, 'audience_mismatch'],
+    [{ aud: 'b'.repeat(64) }, {}, 'audience_mismatch'],
+    [{ aud: null }, {}, 'invalid_audience_format'],
     [{ type: 'org' }, {}, 'token_type_mismatch'],
     [{ exp: 'sensitive-value' }, {}, 'invalid_token_time'],
     [{ iat: NOW / 1000 + 300 }, {}, 'invalid_token_time'],
@@ -141,9 +144,16 @@ test('JWT failures expose only fixed reasons, never JWT claims, and never touch 
     const response = await f.worker.fetch(request(jwt, null, '/api/health', 'GET'), f.env);
     assert.equal(response.status, 403);
     const raw = await response.text();
-    assert.deepEqual(JSON.parse(raw), {
+    const { authInfo, ...body } = JSON.parse(raw);
+    assert.deepEqual(body, {
       success: false, error: 'invalid_access_token', message: 'Access token validation failed.', authReason: reason,
     });
+    if (reason === 'audience_mismatch' || reason === 'invalid_audience_format') {
+      assert.equal(authInfo.configuredAudienceSha256, sha256(AUD));
+      assert.ok(['array', 'string', 'other'].includes(authInfo.audienceShape));
+      assert.equal(raw.includes(AUD), false);
+      assert.equal(raw.includes('b'.repeat(64)), false);
+    } else assert.equal(authInfo, undefined);
     assert.equal(raw.includes('sensitive-'), false);
     assert.equal(raw.includes(jwt), false);
     assert.equal(f.calls.reads, 0);
@@ -173,10 +183,50 @@ test('diagnostics identify malformed assertions, forged signatures, and a mismat
   assert.equal(f.calls.jwks, 0);
 });
 
+test('audience accepts both RFC 7519 forms with exact membership only', async () => {
+  for (const audience of [AUD, [AUD], ['b'.repeat(64), AUD]]) {
+    const f = fixture();
+    const response = await f.worker.fetch(request(await token({ aud: audience }), null, '/api/health', 'GET'), f.env);
+    assert.equal(response.status, 200);
+    assert.equal(f.calls.reads, 0);
+    assert.equal(f.calls.writes.length, 0);
+  }
+  for (const [audience, reason] of [
+    ['x' + AUD, 'audience_mismatch'], [AUD + 'x', 'audience_mismatch'],
+    [[], 'invalid_audience_format'], [[AUD, 1], 'invalid_audience_format'],
+    [{ value: AUD }, 'invalid_audience_format'], [undefined, 'invalid_audience_format'],
+  ]) {
+    const f = fixture();
+    const response = await f.worker.fetch(request(await token({ aud: audience }), null, '/api/health', 'GET'), f.env);
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).authReason, reason);
+    assert.equal(f.calls.reads, 0);
+    assert.equal(f.calls.writes.length, 0);
+  }
+});
+
+test('audience diagnostics are hashed and emitted only after signature verification', async () => {
+  const jwt = await token({ aud: ['b'.repeat(64)] });
+  const f = fixture();
+  const response = await f.worker.fetch(request(jwt, null, '/api/health', 'GET'), f.env);
+  const body = await response.json();
+  assert.deepEqual(body.authInfo, {
+    audienceShape: 'array', configuredAudienceSha256: sha256(AUD), tokenAudienceSha256: [sha256('b'.repeat(64))],
+  });
+  const parts = jwt.split('.');
+  parts[2] = base64url(new Uint8Array(256));
+  const forged = await f.worker.fetch(request(parts.join('.'), null, '/api/health', 'GET'), f.env);
+  const invalid = await forged.json();
+  assert.equal(invalid.authReason, 'signature_mismatch');
+  assert.equal(invalid.authInfo, undefined);
+  assert.equal(f.calls.reads, 0);
+  assert.equal(f.calls.writes.length, 0);
+});
+
 test('updated health version is authenticated and does not touch KV', async () => {
   const f = fixture();
   const response = await f.worker.fetch(request(await token(), null, '/api/health', 'GET'), f.env);
-  assert.deepEqual(await response.json(), { success: true, service: 'shared-data-ingest', version: '1.0.1' });
+  assert.deepEqual(await response.json(), { success: true, service: 'shared-data-ingest', version: '1.0.2' });
   assert.equal(f.calls.reads, 0);
   assert.equal(f.calls.writes.length, 0);
 });
