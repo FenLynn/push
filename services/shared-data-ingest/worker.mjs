@@ -1,7 +1,7 @@
 // Standalone module Worker maintained with the upload client in the Push repo.
 // Paste this entire file into Cloudflare's code editor.
 // No build tools, dependencies, deployment CLI, D1, or Cloudflare API token.
-const VERSION = '1.0.2';
+const VERSION = '1.0.3';
 const MAX_BODY_BYTES = 1024 * 1024;
 const JWKS_TTL_MS = 60 * 60 * 1000;
 const JWKS_REFRESH_INTERVAL_MS = 60 * 1000;
@@ -212,7 +212,9 @@ export function createIngestWorker({ fetcher = (...args) => fetch(...args), now 
         const timer = setTimeout(() => controller.abort(), 5000);
         try {
           const response = await fetcher(`${issuer}/cdn-cgi/access/certs`, {
-            headers: { Accept: 'application/json' }, redirect: 'error', signal: controller.signal,
+            // workerd rejects redirect:"error" at Request construction. Use
+            // manual and reject every non-2xx response (including all 3xx).
+            headers: { Accept: 'application/json' }, redirect: 'manual', signal: controller.signal,
           });
           if (!response.ok) throw new Error();
           const document = JSON.parse(await boundedText(response.body, 128 * 1024));

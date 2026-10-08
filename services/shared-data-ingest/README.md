@@ -103,7 +103,7 @@ Worker 的 Live 日志与 Access 认证日志是不同来源。在 Access 层被
 
 客户端源码更新后，请在 Actions 点击 **Run workflow**，选择最新 **main** 发起新测试，不要只重跑旧提交的测试记录。
 
-### Worker v1.0.2：准确定位 JWT 拒绝原因
+### Worker v1.0.3：公钥加载修复与 JWT 拒绝诊断
 
 **这次需要在 Cloudflare Edit Code 手动替换整个 `worker.mjs` 并发布**，仅更新 GitHub 客户端不会改变已部署的 Worker。先下载旧代码作为回退；binding、域名、Access 策略保持不变，不使用任何部署 CLI。
 
@@ -119,7 +119,13 @@ Worker 的 Live 日志与 Access 认证日志是不同来源。在 Access 层被
 | `unknown_signing_key` / `signature_mismatch` | 团队公钥/密钥轮换与签名；不能跳过验签 |
 | `malformed_token` / `unsupported_header` / `token_too_large` | assertion 的结构、算法或大小 |
 
-健康检查成功将显示版本 `1.0.2`；所有 JWT 诊断路径仍不读取/写入 KV 或 D1。
+健康检查成功将显示版本 `1.0.3`；所有 JWT 诊断路径仍不读取/写入 KV 或 D1。
+
+v1.0.3 修复公钥请求的 Workers 运行时兼容问题：`workerd` 不支持 `redirect: "error"`，会在发出网络请求前抛 `TypeError`，旧代码捕获后只显示 `access_keys_unavailable`。现改为 `redirect: "manual"`，且所有非 2xx（包括全部 3xx）仍直接拒绝，不跟随重定向、不信任重定向响应中的公钥。团队、AUD、有效期、机器身份与签名校验均保持不变。
+
+新增本地运行时回归 `tests/shared-data-ingest.workerd.capnp` / `.mjs`，可直接用独立 `workerd` 二进制的 `test` 命令运行，不使用部署 CLI。测试不监听端口、不联网、不含真实凭证、仅使用本地生成的 RSA 密钥和内存存储；已复现旧版返回 503，并验证修正版通过字符串/数组 AUD 验签、拒绝伪造签名/错误 AUD/公钥重定向。
+
+运行时实现依据：[Cloudflare workerd Request 的重定向解析](https://github.com/cloudflare/workerd/blob/main/src/workerd/api/http.c%2B%2B)。应同时保留 Node 单元测试和真实运行时回归，避免两种环境差异被 mock 隐藏。
 
 v1.0.2 按 RFC 7519 §4.1.3 接受 `aud` 的单字符串和字符串数组两种标准形式，仍要求精确等于/包含配置 AUD，不做子串、前缀或大小写宽松匹配。旧版只接受数组，并把合法字符串错误归为 `audience_mismatch`；这是兼容性缺口，但不能仅凭旧日志断定现网收到的就是字符串。
 

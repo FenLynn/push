@@ -72,7 +72,7 @@ def main():
                         elif error.audience_configuration_matches is True and error.audience_token_matches is False:
                             print('The active Worker AUD is correct, but the signed JWT targets another application. Check additional Worker Access protection or overlapping Access applications; do not replace the correct AUD blindly.', file=sys.stderr)
                 elif not error.auth_reason:
-                    print('The deployed Worker is missing detailed auth diagnostics. Manually upload worker.mjs v1.0.2; no deployment CLI is needed.', file=sys.stderr)
+                    print('The deployed Worker is missing detailed auth diagnostics. Manually upload worker.mjs v1.0.3; no deployment CLI is needed.', file=sys.stderr)
         elif error.layer == 'cloudflare_html':
             print('Cloudflare returned HTML; the exact blocker is not confirmed. Check Access and Security Events using cf_ray.', file=sys.stderr)
         elif error.layer == 'cloudflare_bic':

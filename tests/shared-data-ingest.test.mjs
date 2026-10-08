@@ -35,7 +35,10 @@ function fixture(options = {}) {
     fetcher: async (url, config) => {
       calls.jwks++;
       assert.equal(url, `${ISSUER}/cdn-cgi/access/certs`);
-      assert.equal(config.redirect, 'error');
+      assert.equal(config.redirect, 'manual');
+      // Enforce Workers' supported redirect mode; a Node-only mock previously
+      // hid the runtime incompatibility before any JWKS request was sent.
+      assert.equal(new Request(url, config).redirect, 'manual');
       if (options.fetcher) return options.fetcher(url, config);
       return new Response(JSON.stringify({ keys: options.keys || [publicKey] }));
     },
@@ -226,7 +229,7 @@ test('audience diagnostics are hashed and emitted only after signature verificat
 test('updated health version is authenticated and does not touch KV', async () => {
   const f = fixture();
   const response = await f.worker.fetch(request(await token(), null, '/api/health', 'GET'), f.env);
-  assert.deepEqual(await response.json(), { success: true, service: 'shared-data-ingest', version: '1.0.2' });
+  assert.deepEqual(await response.json(), { success: true, service: 'shared-data-ingest', version: '1.0.3' });
   assert.equal(f.calls.reads, 0);
   assert.equal(f.calls.writes.length, 0);
 });
@@ -277,6 +280,20 @@ test('JWKS outages never fall back to trusting a decoded JWT', async () => {
   assert.equal((await response.json()).error, 'access_keys_unavailable');
   assert.equal(f.calls.writes.length, 0);
   assert.equal(f.calls.reads, 0);
+});
+
+test('JWKS redirects are rejected without following, trusting their body, or touching KV', async () => {
+  for (const status of [301, 302, 303, 307, 308]) {
+    const f = fixture({ fetcher: async () => new Response(JSON.stringify({ keys: [publicKey] }), {
+      status, headers: { Location: 'https://untrusted.example/certs' },
+    }) });
+    const response = await f.worker.fetch(request(await token(), null, '/api/health', 'GET'), f.env);
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, 'access_keys_unavailable');
+    assert.equal(f.calls.jwks, 1);
+    assert.equal(f.calls.reads, 0);
+    assert.equal(f.calls.writes.length, 0);
+  }
 });
 
 test('expired key caches fail closed when refresh is unavailable', async () => {

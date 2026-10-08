@@ -380,7 +380,7 @@ class SharedDataClientTests(unittest.TestCase):
             if reason:
                 self.assertIn(f'auth_reason={reason}', text)
             else:
-                self.assertIn('Manually upload worker.mjs v1.0.2', text)
+                self.assertIn('Manually upload worker.mjs v1.0.3', text)
 
     def test_smoke_distinguishes_runtime_configuration_from_another_signed_application(self):
         expected_hash = hashlib.sha256(EXPECTED_INGEST_AUD.encode()).hexdigest()
