@@ -172,7 +172,12 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(raw_teams, list) or len(raw_teams) != 2:
         return None
     teams = [_normalize_team(team if isinstance(team, dict) else {}) for team in raw_teams]
-    if not any(team["code"] in WATCHED_TEAM_CODES for team in teams):
+    league = event.get("league") if isinstance(event.get("league"), dict) else {}
+    league_name = str(league.get("name") or "").upper()
+    league_slug = str(league.get("slug") or "").upper()
+    watched = any(team["code"] in WATCHED_TEAM_CODES for team in teams)
+    is_worlds = any(token in league_name or token in league_slug for token in ("WORLDS", "WORLD CHAMPIONSHIP", "全球总决赛", "S16"))
+    if not watched and not is_worlds:
         return None
 
     match = event.get("match") if isinstance(event.get("match"), dict) else {}
@@ -219,7 +224,6 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         else min(completed + 1, best_of or completed + 1) if has_started
         else None
     )
-    league = event.get("league") if isinstance(event.get("league"), dict) else {}
     tournament = event.get("tournament") if isinstance(event.get("tournament"), dict) else {}
     match_id = str(match.get("id") or event.get("id") or "").strip()
 
@@ -237,8 +241,8 @@ def normalize_event(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "stage": str(event.get("blockName") or tournament.get("name") or "").strip(),
         "status": state,
         "live": state == "inProgress",
-        "watched": True,
-        "highlight": True,
+        "watched": watched,
+        "highlight": watched,
         "bestOf": best_of,
         "currentGame": current_game,
         "scoreA": teams[0]["score"] if has_started else None,
@@ -300,5 +304,14 @@ def fetch_watched_matches(
         raise RuntimeError(str(payload["errors"][0].get("message") or "LoL Esports query failed"))
     events: Iterable[Dict[str, Any]] = (((payload.get("data") or {}).get("esports") or {}).get("events") or [])
     matches = [normalized for normalized in (normalize_event(event) for event in events) if normalized]
+    # Far-future bracket placeholders are not actionable and would fill the
+    # five-row home carousel before actual teams are assigned.
+    placeholder_horizon = now.astimezone(BEIJING_TZ) + timedelta(days=3)
+    matches = [match for match in matches if not (
+        not match["watched"]
+        and match["teamACode"] in {"", "TBD"}
+        and match["teamBCode"] in {"", "TBD"}
+        and (_parse_time(match["startTime"]) or now) > placeholder_horizon
+    )]
     matches = [enrich_live_game_winners(match, now, session=session) for match in matches]
     return sorted(matches, key=lambda item: item.get("startTime") or "")

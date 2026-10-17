@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from core.utils.lol_esports import enrich_live_game_winners, normalize_event
+from core.utils.lol_esports import enrich_live_game_winners, fetch_watched_matches, normalize_event
 from scripts.notify_game import select_notification_candidates
 
 
@@ -39,6 +39,46 @@ def test_normalizes_exact_watched_live_match():
 
 def test_non_watched_match_is_ignored():
     assert normalize_event(_event('KT', 'DK')) is None
+
+
+def test_worlds_match_is_kept_without_watched_team():
+    event = _event('KT', 'DK', state='unstarted')
+    event['league'] = {'name': 'Worlds 2026', 'slug': 'worlds'}
+    match = normalize_event(event)
+    assert match['league'] == 'Worlds 2026'
+    assert match['watched'] is False
+    assert match['highlight'] is False
+    assert select_notification_candidates([match], {}, datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc)) == []
+
+
+def test_far_future_tbd_worlds_placeholders_do_not_fill_home_carousel():
+    near = _event('TBD', 'TBD', state='unstarted')
+    near['league'] = {'name': 'Worlds', 'slug': 'worlds'}
+    near['startTime'] = '2026-10-18T01:00:00Z'
+    near['match']['id'] = 'near'
+    near['match']['games'] = []
+    far = _event('TBD', 'TBD', state='unstarted')
+    far['league'] = {'name': 'Worlds', 'slug': 'worlds'}
+    far['startTime'] = '2026-10-25T01:00:00Z'
+    far['match']['id'] = 'far'
+    far['match']['games'] = []
+
+    class Session:
+        @staticmethod
+        def post(*args, **kwargs):
+            class Response:
+                @staticmethod
+                def raise_for_status():
+                    pass
+
+                @staticmethod
+                def json():
+                    return {'data': {'esports': {'events': [near, far]}}}
+
+            return Response()
+
+    matches = fetch_watched_matches(now=datetime(2026, 10, 17, tzinfo=timezone.utc), session=Session())
+    assert [match['providerId'] for match in matches] == ['near']
 
 
 def test_nested_unstarted_state_rejects_false_completed_wrapper():

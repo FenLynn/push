@@ -39,7 +39,7 @@ class GameSource(BaseSource):
     LOL_MAJOR_EVENT_KEYWORDS = (
         'LPL', 'LCK', 'LEC', 'LCS', 'LTA', 'LCP',
         'MSI', 'MID-SEASON', '季中冠军',
-        'WORLD CHAMPIONSHIP', 'WORLDS', '全球总决赛', 'S赛',
+        'WORLD CHAMPIONSHIP', 'WORLDS', '全球总决赛', 'S赛', 'S16',
         'ESPORTS WORLD CUP', 'EWC', '电竞世界杯',
         'FIRST STAND', '先锋赛', '亚运会',
     )
@@ -263,7 +263,7 @@ class GameSource(BaseSource):
         issues = []
         if self._official_error:
             issues.append({'code': 'official-source-unavailable', 'message': self._official_error})
-        elif not official_matches and self._has_watched_schedule(days_data):
+        elif not any(match.get('watched') for match in official_matches) and self._has_watched_schedule(days_data):
             issues.append({
                 'code': 'official-watched-matches-missing',
                 'message': '赛程中存在关注队伍，但官方 LoL 数据未返回对应比赛',
@@ -331,7 +331,7 @@ class GameSource(BaseSource):
                 'team_b_code': match.get('teamBCode', ''),
                 'type': 'LOL',
                 'media': 'LOL',
-                'highlight': True,
+                'highlight': bool(match.get('watched')),
             }
             duplicate_index = -1
             for index, old in enumerate(day['matches']):
@@ -341,7 +341,10 @@ class GameSource(BaseSource):
                     break
                 old_teams = (str(old.get('team_a') or '').upper(), str(old.get('team_b') or '').upper())
                 codes = (str(match.get('teamACode') or ''), str(match.get('teamBCode') or ''))
-                if all(any(code and code in team for team in old_teams) for code in codes):
+                # Placeholder teams are shared by many distinct Worlds fixtures.
+                if (len(set(codes)) == 2 and all(code and code != 'TBD' for code in codes)
+                        and (old.get('provider') != 'lol-esports' or not old_id)
+                        and all(any(code in team for team in old_teams) for code in codes)):
                     duplicate_index = index
                     break
             if duplicate_index >= 0:

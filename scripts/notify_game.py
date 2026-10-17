@@ -79,6 +79,8 @@ def select_notification_candidates(matches, ledger, now=None):
     deadline = now + timedelta(minutes=NOTIFY_AHEAD_MINUTES)
     candidates = []
     for match in matches:
+        if not match.get('watched'):
+            continue
         match_id = str(match.get('providerId') or match.get('id') or '').strip()
         if not match_id or match_id in ledger or match.get('status') == 'completed':
             continue

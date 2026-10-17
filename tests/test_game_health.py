@@ -18,6 +18,7 @@ def test_public_schedule_keeps_major_lol_events_and_filters_ljl():
     assert source._should_publish_match('LOL', 'LPL第三赛段登峰组', 'LGD', 'EDG')
     assert source._should_publish_match('LOL', 'LEC Summer', 'G2', 'KC')
     assert source._should_publish_match('LOL', '英雄联盟全球总决赛', 'AAA', 'BBB')
+    assert source._should_publish_match('LOL', 'S16 瑞士轮', 'AAA', 'BBB')
     assert not source._should_publish_match('LOL', 'LJL Summer Split', 'AAA', 'BBB')
     assert not source._should_publish_match('电竞', 'LJL BO5 第2局', 'New Meta', 'UWInks')
     assert not source._should_publish_match('LOL', 'LCK CL常规赛', 'AAA', 'BBB')
@@ -28,6 +29,18 @@ def test_followed_lol_teams_and_other_sports_are_never_filtered():
     source = GameSource(topic='me')
     assert source._should_publish_match('LOL', 'Invitational', 'T1', 'Unknown')
     assert source._should_publish_match('Dota2', 'Regional Qualifier', 'AAA', 'BBB')
+
+
+def test_distinct_worlds_placeholder_matches_are_not_merged():
+    source = GameSource(topic='me')
+    today = datetime.now().strftime('%Y-%m-%d')
+    matches = [{
+        'provider': 'lol-esports', 'providerId': f'worlds-{index}', 'date': today,
+        'time': f'0{index}:00', 'league': 'Worlds', 'teamA': 'TBD', 'teamB': 'TBD',
+        'teamACode': 'TBD', 'teamBCode': 'TBD', 'status': 'unstarted'
+    } for index in (1, 2)]
+    days = source._merge_official_matches([], matches)
+    assert len(days[0]['matches']) == 2
 
 
 def test_official_match_overrides_snapshot_and_records_nonfatal_conflicts():
