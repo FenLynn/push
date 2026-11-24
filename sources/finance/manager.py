@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import os
 import logging
+import hashlib
 from core.db import db
 from core.data_archive import DataArchive
 from .archive_catalog import ARCHIVE_CATALOG
@@ -76,10 +77,7 @@ class DataManager:
             self.logger.warning(f"No data for {name}")
             return False, None
 
-        # The chart cache is also the archive freshness marker.  Check it
-        # before touching either SQLite or D1: scheduled finance jobs often
-        # fetch the same latest date repeatedly, and re-archiving the full
-        # history only creates redundant reads/writes.
+        # Chart and normalized archive have independent success markers.
         try:
             latest_date = str(df.iloc[-1]['date'])
             if '.' in latest_date:
@@ -95,26 +93,15 @@ class DataManager:
             cached_url = str(cached.get('url') or '')
             expected_path = f"/finance/{name}/latest.png"
             cache_hit = cached_date == latest_date and expected_path in cached_url
-            if cache_hit and not force:
-                self.logger.debug(f"{name} skipped (Cached: {latest_date})")
-                return False, cached_url
 
         archive_spec = ARCHIVE_CATALOG.get(name)
-        if self.archive and archive_spec and not cache_hit:
-            try:
-                self.archive.store_dataframe(
-                    domain='finance',
-                    group_name=name,
-                    frame=df,
-                    metrics=archive_spec['metrics'],
-                    label=archive_spec['label'],
-                    source=archive_spec['source'],
-                    frequency=archive_spec['frequency'],
-                    quality=archive_spec.get('quality', 'official'),
-                    replace_observations=archive_spec.get('replace_observations', False),
-                )
-            except Exception as exc:
-                self.logger.warning(f"D1 archive failed for {name}: {exc}")
+        archive_changed = False
+        if self.archive and archive_spec:
+            archive_changed = self._archive_with_checkpoint(name, df, archive_spec, latest_date, force)
+
+        if cache_hit and not force and not archive_changed:
+            self.logger.debug(f"{name} chart skipped (Cached: {latest_date}); archive checked separately")
+            return False, cached_url
 
         # 1. Save to DB (Full Replace for Macro Data to ensure consistency)
         name_map = {
@@ -138,6 +125,41 @@ class DataManager:
             self.logger.error(f"DB Save error: {e}")
 
         return True, latest_date
+
+    def _archive_with_checkpoint(self, name, frame, spec, latest_date, force):
+        if not getattr(self, '_archive_checkpoint_ready', False):
+            result = self.d1_client.query("""CREATE TABLE IF NOT EXISTS finance_archive_checkpoints (
+                name TEXT PRIMARY KEY, content_hash TEXT NOT NULL, observed_on TEXT NOT NULL,
+                archived_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+            if not result.get('success'):
+                raise RuntimeError(f"Archive checkpoint unavailable for {name}")
+            self._archive_checkpoint_ready = True
+        content = frame.to_json(orient='split', date_format='iso', double_precision=15, index=False)
+        fingerprint = hashlib.sha256((content + json.dumps(spec, sort_keys=True, ensure_ascii=False)).encode('utf-8')).hexdigest()
+        result = self.d1_client.query('SELECT content_hash FROM finance_archive_checkpoints WHERE name = ?', [name])
+        if not result.get('success'):
+            raise RuntimeError(f"Archive checkpoint read failed for {name}")
+        rows = result.get('data') or []
+        if rows and isinstance(rows[0], dict) and 'results' in rows[0]:
+            rows = rows[0]['results']
+        if not force and rows and rows[0].get('content_hash') == fingerprint:
+            return False
+        # A failed or partial archive must never advance the marker, even when
+        # the chart already exists or a force refresh was requested.
+        saved = self.archive.store_dataframe(
+            domain='finance', group_name=name, frame=frame, metrics=spec['metrics'],
+            label=spec['label'], source=spec['source'], frequency=spec['frequency'],
+            quality=spec.get('quality', 'official'),
+            replace_observations=spec.get('replace_observations', False), require_complete=True,
+        )
+        if not saved:
+            raise RuntimeError(f"Archive wrote no observations for {name}")
+        result = self.d1_client.query("""INSERT INTO finance_archive_checkpoints (name, content_hash, observed_on)
+            VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET content_hash=excluded.content_hash,
+            observed_on=excluded.observed_on, archived_at=datetime('now')""", [name, fingerprint, latest_date])
+        if not result.get('success'):
+            raise RuntimeError(f"Archive checkpoint write failed for {name}; next run will retry")
+        return True
 
     def save_plot_info(self, name: str, date_str: str, pic_path: str):
         """Upload a chart to a stable R2 key and cache its public URL."""

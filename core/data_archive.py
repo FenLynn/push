@@ -208,8 +208,11 @@ class DataArchive:
         quality: str = "observed",
         date_column: str = "date",
         replace_observations: bool = False,
+        require_complete: bool = False,
     ) -> int:
         if frame is None or frame.empty or date_column not in frame.columns or not self.ensure_schema():
+            if require_complete:
+                raise RuntimeError(f"D1 archive unavailable or empty for {group_name}")
             return 0
 
         working = frame.copy()
@@ -217,6 +220,7 @@ class DataArchive:
         working = working.dropna(subset=[date_column]).sort_values(date_column)
         collected_at = _iso_now()
         saved = 0
+        complete = True
 
         for column, spec in metrics.items():
             if column not in working.columns:
@@ -246,6 +250,7 @@ class DataArchive:
                 "quality": metric_quality,
             }
             if not self._upsert_series(metadata):
+                complete = False
                 continue
 
             observation_frames = [(frequency, series_frame, metric_quality)]
@@ -284,18 +289,24 @@ class DataArchive:
                 refresh_unchanged=replace_observations,
             )
             saved += series_saved
+            if series_saved != len(rows):
+                complete = False
             if replace_observations and series_saved == len(rows):
                 # Source migrations (for example stale event calendars to
                 # official sparse decisions) must remove observations that no
                 # longer exist. Delete only after the replacement batch has
                 # been written successfully, identified by this run's unique
                 # collected_at timestamp.
-                self.client.query(
+                result = self.client.query(
                     "DELETE FROM data_observations WHERE series_id = ? AND collected_at <> ?",
                     [series_id, collected_at],
                 )
+                if not result.get("success"):
+                    complete = False
 
-        self.record_run(domain, group_name, "success" if saved else "empty", saved)
+        self.record_run(domain, group_name, "success" if complete and saved else "partial" if saved else "empty", saved)
+        if require_complete and (not complete or not saved):
+            raise RuntimeError(f"D1 archive incomplete for {group_name}; retry required")
         return saved
 
     def store_points(self, domain: str, group_name: str, points: Iterable[Mapping[str, Any]], source: str) -> int:
