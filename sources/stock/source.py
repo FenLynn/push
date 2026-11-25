@@ -567,7 +567,7 @@ class StockSource(BaseSource):
         r2 = [
             ('上证50', 'sh000016'),
             ('沪深300', 'sh000300'),
-            ('中证2000', 'sz399303'), # Using 国证2000 as it handles better in various APIs
+            ('国证2000', 'sz399303'), # CNI 2000; CSI 2000 is 932000, not a substitute
             ('恒生指数', 'hkHSI'),
         ]
         target_indices = r1 + r2

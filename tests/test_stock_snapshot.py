@@ -5,6 +5,19 @@ from sources.stock.source import StockSource
 
 
 class StockSnapshotTests(unittest.TestCase):
+    def test_index_names_match_the_actual_provider_security(self):
+        source = StockSource.__new__(StockSource)
+        source.logger = MagicMock()
+        requested = []
+        def quotes(symbols):
+            requested.extend(symbols)
+            return {symbol: {'close': '100', 'growth_rate': '1', 'name': symbol} for symbol in symbols}
+        source._get_tencent_data = quotes
+        result = source._get_index_data()
+        self.assertIn('sz399303', requested)
+        self.assertEqual(next(row['name'] for row in result if '399303' in row['url']), '国证2000')
+        self.assertFalse(any(row['name'] == '中证2000' and '399303' in row['url'] for row in result))
+
     @patch('sources.stock.source.export_dashboard_snapshot')
     def test_exports_mean_and_median_to_fixed_stock_snapshot(self, export_snapshot):
         export_snapshot.return_value = {'success': True}
